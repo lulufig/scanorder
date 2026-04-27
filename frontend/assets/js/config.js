@@ -6,10 +6,10 @@ const API_URL = "http://localhost:8000";
 
 // Rutas de la aplicación
 const ROUTES = {
-  login:    "/login.html",
-  admin:    "/admin/index.html",
-  cocina:   "/cocina/pedidos.html",
-  menu:     "/cliente/menu.html",
+  login:    "../login.html",
+  admin:    "../admin/index.html",
+  cocina:   "../cocina/pedidos.html",
+  menu:     "../cliente/menu.html",
 };
 
 // Roles válidos — tienen que coincidir exactamente con los
