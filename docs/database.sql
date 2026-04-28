@@ -34,7 +34,7 @@ CREATE TABLE usuarios (
 CREATE TABLE mesas (
     id_mesa     INT AUTO_INCREMENT PRIMARY KEY,
     numero      INT             NOT NULL UNIQUE,
-    codigo_qr   VARCHAR(255)    NOT NULL UNIQUE,
+    qr_url      VARCHAR(255)    DEFAULT NULL,
     estado      ENUM('disponible', 'ocupada') NOT NULL DEFAULT 'disponible',
     activa      BOOLEAN         NOT NULL DEFAULT TRUE,
 
