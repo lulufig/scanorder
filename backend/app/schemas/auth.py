@@ -1,12 +1,21 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 
+ROLES_VALIDOS = {"admin", "cocina"}
+
 class UserRegister(BaseModel):
-    """Schema para registrar un usuario nuevo"""
+    """Schema para registrar un usuario nuevo."""
     nombre: str
     email: EmailStr
     password: str
-    rol: str = "cocina"  # por defecto cocina, puede ser "admin"
+    rol: str = "cocina"
+
+    @field_validator("rol")
+    @classmethod
+    def validar_rol(cls, value: str) -> str:
+        if value not in ROLES_VALIDOS:
+            raise ValueError(f"Rol inválido. Debe ser uno de: {', '.join(ROLES_VALIDOS)}")
+        return value
 
 class UserLogin(BaseModel):
     """Schema para login"""

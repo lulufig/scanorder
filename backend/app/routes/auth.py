@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from app.schemas.auth import UserRegister, UserLogin, Token
 from app.database import get_db_connection, close_db_connection
 from app.utils.security import hash_password, verify_password, create_access_token
+from app.utils.dependencies import get_current_user, require_role
 
 router = APIRouter(
     prefix="/auth",
@@ -51,8 +52,10 @@ def register_user(user: UserRegister):
         }
         
     except HTTPException:
+        connection.rollback()
         raise
     except Exception as e:
+        connection.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al registrar usuario: {str(e)}"
@@ -132,9 +135,7 @@ def login_user(credentials: UserLogin):
     finally:
         cursor.close()
         close_db_connection(connection)
-        
-from fastapi import Depends
-from app.utils.dependencies import get_current_user, require_role
+
 
 @router.get("/me")
 def get_current_user_info(current_user: dict = Depends(get_current_user)):
