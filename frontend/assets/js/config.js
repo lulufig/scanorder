@@ -2,14 +2,14 @@
 //  config.js — Configuración global del frontend ScanOrder
 // ============================================================
 
-const API_URL = "http://192.168.1.10:8000";
+const API_URL = "http://localhost:8000"; //"http://192.168.1.10:8000";
 
 // Rutas de la aplicación
 const ROUTES = {
-  login:    "../login.html",
-  admin:    "../admin/index.html",
-  cocina:   "../cocina/pedidos.html",
-  menu:     "../cliente/menu.html",
+  login:    "/frontend/login.html",
+  admin:    "/frontend/admin/index.html",
+  cocina:   "/frontend/cocina/pedidos.html",
+  menu:     "/frontend/cliente/menu.html",
 };
 
 // Roles válidos — tienen que coincidir exactamente con los
