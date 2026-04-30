@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ScanOrder — Panel Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --red:    #C0392B;
+      --red2:   #96281B;
+      --beige:  #F5ECD7;
+      --beige2: #EBD9BC;
+      --dark:   #1A1009;
+      --amber:  #E8A020;
+      --sidebar-w: 220px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: #F0E6CC;
+      color: var(--dark);
+      min-height: 100vh;
+      display: flex;
+    }
+
+    /* ===== SIDEBAR ===== */
+    .sidebar {
+      width: var(--sidebar-w);
+      background: var(--dark);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 32px 0;
+      position: fixed;
+      top: 0; left: 0;
+      z-index: 100;
+    }
+    .sidebar-logo {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--beige);
+      padding: 0 24px 28px;
+      border-bottom: 1px solid rgba(245,236,215,0.08);
+    }
+    .sidebar-logo span { color: var(--red); }
+    .sidebar-section {
+      padding: 20px 24px 8px;
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: rgba(245,236,215,0.3);
+    }
+    .sidebar-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 24px;
+      color: rgba(245,236,215,0.55);
+      font-size: 0.9rem;
+      text-decoration: none;
+      border-left: 3px solid transparent;
+      transition: all 0.2s;
+    }
+    .sidebar-link:hover { color: var(--beige); background: rgba(245,236,215,0.05); }
+    .sidebar-link.active {
+      color: var(--beige);
+      border-left-color: var(--red);
+      background: rgba(192,57,43,0.12);
+    }
+    .sidebar-bottom {
+      margin-top: auto;
+      padding: 20px 24px;
+      border-top: 1px solid rgba(245,236,215,0.08);
+    }
+    .user-info { font-size: 0.8rem; color: rgba(245,236,215,0.4); margin-bottom: 12px; }
+    .user-name { font-weight: 600; color: rgba(245,236,215,0.8); display: block; }
+    .btn-logout {
+      width: 100%;
+      padding: 9px;
+      background: rgba(192,57,43,0.15);
+      border: 1px solid rgba(192,57,43,0.3);
+      border-radius: 8px;
+      color: #f4a49e;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-logout:hover { background: rgba(192,57,43,0.28); }
+
+    /* ===== MAIN ===== */
+    .main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      padding: 36px 40px;
+    }
+
+    .page-header { margin-bottom: 32px; }
+    .page-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: var(--dark);
+    }
+    .page-subtitle { font-size: 0.875rem; color: #7a6a58; margin-top: 2px; }
+
+    /* ===== BIENVENIDA ===== */
+    .welcome-card {
+      background: var(--dark);
+      border-radius: 20px;
+      padding: 32px 36px;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+    }
+    .welcome-card::before {
+      content: '';
+      position: absolute;
+      top: -60px; right: -60px;
+      width: 260px; height: 260px;
+      border-radius: 50%;
+      background: rgba(192,57,43,0.18);
+      filter: blur(40px);
+    }
+    .welcome-card::after {
+      content: '';
+      position: absolute;
+      bottom: -40px; left: 30%;
+      width: 200px; height: 200px;
+      border-radius: 50%;
+      background: rgba(232,160,32,0.1);
+      filter: blur(50px);
+    }
+    .welcome-text { position: relative; z-index: 1; }
+    .welcome-saludo {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--amber);
+      margin-bottom: 6px;
+    }
+    .welcome-nombre {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: var(--beige);
+      line-height: 1.1;
+    }
+    .welcome-sub {
+      font-size: 0.875rem;
+      color: rgba(245,236,215,0.45);
+      margin-top: 6px;
+    }
+    .welcome-emoji {
+      font-size: 3.5rem;
+      position: relative;
+      z-index: 1;
+      animation: float 3s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(-8px); }
+    }
+
+    /* ===== GRID DE ACCESOS RÁPIDOS ===== */
+    .accesos-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .acceso-card {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      border: 1px solid rgba(26,16,9,0.07);
+      box-shadow: 0 2px 8px rgba(26,16,9,0.05);
+      text-decoration: none;
+      color: var(--dark);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+      cursor: pointer;
+    }
+    .acceso-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(26,16,9,0.1);
+      border-color: rgba(192,57,43,0.2);
+    }
+    .acceso-icon {
+      font-size: 1.8rem;
+      width: 48px; height: 48px;
+      background: #faf6f0;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .acceso-titulo {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--dark);
+    }
+    .acceso-desc {
+      font-size: 0.8rem;
+      color: #a89880;
+      line-height: 1.4;
+    }
+    .acceso-arrow {
+      margin-top: auto;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--red);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* ===== SECCIÓN REPORTES ===== */
+    .section-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: var(--dark);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 2px;
+      background: var(--beige2);
+      border-radius: 2px;
+    }
+
+    .reportes-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .reporte-card {
+      background: white;
+      border-radius: 16px;
+      border: 1px solid rgba(26,16,9,0.07);
+      box-shadow: 0 2px 8px rgba(26,16,9,0.05);
+      overflow: hidden;
+    }
+
+    .reporte-card-header {
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid rgba(26,16,9,0.06);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .reporte-icon {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      background: rgba(192,57,43,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }
+    .reporte-titulo {
+      font-family: 'Syne', sans-serif;
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--dark);
+    }
+    .reporte-desc { font-size: 0.78rem; color: #a89880; margin-top: 2px; }
+
+    .reporte-card-body { padding: 20px 24px 24px; }
+
+    /* ===== FORM FECHAS ===== */
+    .fechas-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #7a6a58;
+    }
+    .form-input {
+      padding: 10px 13px;
+      background: #faf6f0;
+      border: 1px solid rgba(26,16,9,0.12);
+      border-radius: 9px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.875rem;
+      color: var(--dark);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-input:focus { border-color: var(--amber); background: white; }
+
+    /* Atajos de fecha */
+    .atajos-fecha {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .atajo-btn {
+      padding: 4px 10px;
+      background: rgba(26,16,9,0.05);
+      border: 1px solid rgba(26,16,9,0.1);
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #7a6a58;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .atajo-btn:hover {
+      background: rgba(192,57,43,0.08);
+      border-color: rgba(192,57,43,0.25);
+      color: var(--red);
+    }
+
+    /* ===== BOTÓN GENERAR ===== */
+    .btn-generar {
+      width: 100%;
+      padding: 13px;
+      background: var(--red);
+      color: white;
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 0.9rem;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 3px 12px rgba(192,57,43,0.3);
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .btn-generar:hover {
+      background: var(--red2);
+      transform: translateY(-1px);
+      box-shadow: 0 5px 16px rgba(192,57,43,0.4);
+    }
+    .btn-generar:active  { transform: translateY(0); }
+    .btn-generar:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+    /* ===== HISTORIAL DE DESCARGAS ===== */
+    .historial {
+      margin-top: 16px;
+      border-top: 1px solid rgba(26,16,9,0.06);
+      padding-top: 14px;
+    }
+    .historial-titulo {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #a89880;
+      margin-bottom: 10px;
+    }
+    .historial-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: #faf6f0;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateX(-6px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    .historial-nombre { font-size: 0.8rem; font-weight: 500; color: var(--dark); }
+    .historial-hora   { font-size: 0.72rem; color: #a89880; }
+    .historial-empty  { font-size: 0.8rem; color: #c4b49a; text-align: center; padding: 12px 0; }
+
+    /* ===== SPINNER ===== */
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.35);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== TOAST ===== */
+    .toast {
+      position: fixed;
+      bottom: 28px; right: 28px;
+      z-index: 500;
+      padding: 14px 20px;
+      border-radius: 12px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 8px 24px rgba(26,16,9,0.15);
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all 0.35s cubic-bezier(0.16,1,0.3,1);
+      pointer-events: none;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.success { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+    .toast.error   { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+
+    /* ===== ANIMACIÓN ENTRADA ===== */
+    .fade-in {
+      animation: fadeUp 0.4s ease both;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">Scan<span>Order</span></div>
+
+    <div class="sidebar-section">Gestión</div>
+    <a href="productos.html" class="sidebar-link">🍔 Productos</a>
+    <a href="mesas.html"     class="sidebar-link">🪑 Mesas</a>
+
+    <div class="sidebar-section">Reportes</div>
+    <a href="index.html" class="sidebar-link active">📊 Reportes</a>
+
+    <div class="sidebar-bottom">
+      <div class="user-info">
+        Panel de administración
+        <span class="user-name" id="sidebar-username">—</span>
+      </div>
+      <button class="btn-logout" onclick="logout()">Cerrar sesión</button>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN ===== -->
+  <main class="main">
+
+    <!-- Bienvenida -->
+    <div class="welcome-card fade-in">
+      <div class="welcome-text">
+        <div class="welcome-saludo">Panel de administración</div>
+        <div class="welcome-nombre" id="welcome-nombre">Bienvenida 👋</div>
+        <div class="welcome-sub">Maven Burger — Sistema ScanOrder</div>
+      </div>
+      <div class="welcome-emoji">🍔</div>
+    </div>
+
+    <!-- Accesos rápidos -->
+    <div class="accesos-grid fade-in" style="animation-delay:0.1s;">
+      <a href="productos.html" class="acceso-card">
+        <div class="acceso-icon">🍔</div>
+        <div>
+          <div class="acceso-titulo">Productos</div>
+          <div class="acceso-desc">Gestioná el menú: agregá, editá y eliminá productos</div>
+        </div>
+        <div class="acceso-arrow">Ir a productos →</div>
+      </a>
+
+      <a href="mesas.html" class="acceso-card">
+        <div class="acceso-icon">🪑</div>
+        <div>
+          <div class="acceso-titulo">Mesas y QR</div>
+          <div class="acceso-desc">Creá mesas y generá los códigos QR para los clientes</div>
+        </div>
+        <div class="acceso-arrow">Ir a mesas →</div>
+      </a>
+
+      <div class="acceso-card" onclick="document.getElementById('seccion-reportes').scrollIntoView({behavior:'smooth'})">
+        <div class="acceso-icon">📊</div>
+        <div>
+          <div class="acceso-titulo">Reportes</div>
+          <div class="acceso-desc">Generá reportes de ventas en PDF por rango de fechas</div>
+        </div>
+        <div class="acceso-arrow">Ver reportes →</div>
+      </div>
+    </div>
+
+    <!-- Sección Reportes -->
+    <div id="seccion-reportes" class="fade-in" style="animation-delay:0.2s;">
+      <div class="section-title">📊 Reportes de ventas</div>
+
+      <div class="reportes-grid">
+
+        <!-- Reporte de ventas -->
+        <div class="reporte-card">
+          <div class="reporte-card-header">
+            <div class="reporte-icon">📄</div>
+            <div>
+              <div class="reporte-titulo">Reporte de ventas</div>
+              <div class="reporte-desc">PDF con total, pedidos y productos más vendidos</div>
+            </div>
+          </div>
+          <div class="reporte-card-body">
+
+            <!-- Atajos de fecha -->
+            <div class="atajos-fecha">
+              <button class="atajo-btn" onclick="setAtajo('hoy')">Hoy</button>
+              <button class="atajo-btn" onclick="setAtajo('semana')">Esta semana</button>
+              <button class="atajo-btn" onclick="setAtajo('mes')">Este mes</button>
+              <button class="atajo-btn" onclick="setAtajo('mes_anterior')">Mes anterior</button>
+            </div>
+
+            <!-- Fechas -->
+            <div class="fechas-row">
+              <div class="form-group">
+                <label class="form-label" for="fecha-inicio">Fecha inicio</label>
+                <input class="form-input" type="date" id="fecha-inicio" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="fecha-fin">Fecha fin</label>
+                <input class="form-input" type="date" id="fecha-fin" />
+              </div>
+            </div>
+
+            <!-- Botón generar -->
+            <button class="btn-generar" id="btn-ventas" onclick="generarReporteVentas()">
+              📥 Generar reporte de ventas
+            </button>
+
+            <!-- Historial de esta sesión -->
+            <div class="historial" id="historial-ventas">
+              <div class="historial-titulo">Últimas descargas</div>
+              <div class="historial-empty" id="historial-ventas-empty">
+                Aún no generaste ningún reporte en esta sesión.
+              </div>
+              <div id="historial-ventas-lista"></div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Info / ayuda -->
+        <div class="reporte-card">
+          <div class="reporte-card-header">
+            <div class="reporte-icon">💡</div>
+            <div>
+              <div class="reporte-titulo">¿Qué incluye el reporte?</div>
+              <div class="reporte-desc">Detalle del contenido generado</div>
+            </div>
+          </div>
+          <div class="reporte-card-body">
+            <div style="display:flex; flex-direction:column; gap:14px;">
+
+              <div style="display:flex; gap:12px; align-items:flex-start;">
+                <span style="font-size:1.2rem; flex-shrink:0;">💰</span>
+                <div>
+                  <div style="font-weight:600; font-size:0.875rem; margin-bottom:2px;">Total de ventas</div>
+                  <div style="font-size:0.78rem; color:#a89880;">Suma total del período seleccionado</div>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:12px; align-items:flex-start;">
+                <span style="font-size:1.2rem; flex-shrink:0;">🧾</span>
+                <div>
+                  <div style="font-weight:600; font-size:0.875rem; margin-bottom:2px;">Cantidad de pedidos</div>
+                  <div style="font-size:0.78rem; color:#a89880;">Total de pedidos procesados</div>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:12px; align-items:flex-start;">
+                <span style="font-size:1.2rem; flex-shrink:0;">🏆</span>
+                <div>
+                  <div style="font-weight:600; font-size:0.875rem; margin-bottom:2px;">Productos más vendidos</div>
+                  <div style="font-size:0.78rem; color:#a89880;">Ranking de productos por cantidad</div>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:12px; align-items:flex-start;">
+                <span style="font-size:1.2rem; flex-shrink:0;">📅</span>
+                <div>
+                  <div style="font-weight:600; font-size:0.875rem; margin-bottom:2px;">Período del reporte</div>
+                  <div style="font-size:0.78rem; color:#a89880;">Fechas de inicio y fin seleccionadas</div>
+                </div>
+              </div>
+
+              <div style="margin-top:8px; padding:14px; background:#faf6f0; border-radius:10px; border:1px solid rgba(26,16,9,0.07);">
+                <div style="font-size:0.78rem; color:#7a6a58; line-height:1.5;">
+                  El reporte se descarga como <strong>archivo PDF</strong> con el logo de Maven Burger y se genera en el momento con los datos actuales de la base de datos.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ===== TOAST ===== -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Scripts — orden obligatorio -->
+  <script src="../assets/js/config.js"></script>
+  <script src="../assets/js/auth.js"></script>
+  <script src="../assets/js/api.js"></script>
+
+  <script>
+    // ── PROTECCIÓN DE RUTA ──────────────────────────────────────
+    requireAuth(ROLES.ADMIN);
+
+    const usuario = getUser();
+    if (usuario) {
+      document.getElementById("sidebar-username").textContent = usuario.nombre;
+      document.getElementById("welcome-nombre").textContent   = `Bienvenida, ${usuario.nombre} 👋`;
+    }
+
+    // ── FECHAS POR DEFECTO (hoy) ─────────────────────────────────
+    const hoy = new Date().toISOString().split("T")[0];
+    document.getElementById("fecha-inicio").value = hoy;
+    document.getElementById("fecha-fin").value    = hoy;
+
+    // ── ATAJOS DE FECHA ──────────────────────────────────────────
+    function setAtajo(tipo) {
+      const ahora  = new Date();
+      let inicio, fin;
+
+      if (tipo === "hoy") {
+        inicio = fin = formatFecha(ahora);
+
+      } else if (tipo === "semana") {
+        const lunes  = new Date(ahora);
+        lunes.setDate(ahora.getDate() - ((ahora.getDay() + 6) % 7));
+        inicio = formatFecha(lunes);
+        fin    = formatFecha(ahora);
+
+      } else if (tipo === "mes") {
+        inicio = formatFecha(new Date(ahora.getFullYear(), ahora.getMonth(), 1));
+        fin    = formatFecha(ahora);
+
+      } else if (tipo === "mes_anterior") {
+        const primerDiaMesAnt = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+        const ultimoDiaMesAnt = new Date(ahora.getFullYear(), ahora.getMonth(), 0);
+        inicio = formatFecha(primerDiaMesAnt);
+        fin    = formatFecha(ultimoDiaMesAnt);
+      }
+
+      document.getElementById("fecha-inicio").value = inicio;
+      document.getElementById("fecha-fin").value    = fin;
+    }
+
+    function formatFecha(date) {
+      return date.toISOString().split("T")[0];
+    }
+
+    // ── GENERAR REPORTE DE VENTAS ────────────────────────────────
+    async function generarReporteVentas() {
+      const fechaInicio = document.getElementById("fecha-inicio").value;
+      const fechaFin    = document.getElementById("fecha-fin").value;
+
+      // Validaciones
+      if (!fechaInicio || !fechaFin) {
+        mostrarToast("Seleccioná ambas fechas para generar el reporte.", "error");
+        return;
+      }
+      if (fechaInicio > fechaFin) {
+        mostrarToast("La fecha de inicio no puede ser mayor a la fecha fin.", "error");
+        return;
+      }
+
+      const btn = document.getElementById("btn-ventas");
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Generando PDF...';
+
+      try {
+        // GET /reportes/ventas?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD
+        // Devuelve un PDF — usamos downloadFile() de api.js
+        const endpoint  = `/reportes/ventas?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
+        const filename  = `reporte_ventas_${fechaInicio}_${fechaFin}.pdf`;
+
+        await downloadFile(endpoint, filename);
+
+        mostrarToast("✅ Reporte descargado correctamente.", "success");
+        agregarHistorial(filename, fechaInicio, fechaFin);
+
+      } catch (error) {
+        mostrarToast("Error al generar el reporte: " + error.message, "error");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = "📥 Generar reporte de ventas";
+      }
+    }
+
+    // ── HISTORIAL DE DESCARGAS DE ESTA SESIÓN ───────────────────
+    let historialItems = [];
+
+    function agregarHistorial(filename, inicio, fin) {
+      const ahora = new Date().toLocaleTimeString("es-AR", {
+        hour: "2-digit", minute: "2-digit"
+      });
+
+      historialItems.unshift({ filename, inicio, fin, hora: ahora });
+
+      // Máximo 5 items en el historial
+      if (historialItems.length > 5) historialItems.pop();
+
+      renderHistorial();
+    }
+
+    function renderHistorial() {
+      const empty = document.getElementById("historial-ventas-empty");
+      const lista = document.getElementById("historial-ventas-lista");
+
+      if (historialItems.length === 0) {
+        empty.style.display = "block";
+        lista.innerHTML = "";
+        return;
+      }
+
+      empty.style.display = "none";
+      lista.innerHTML = historialItems.map(item => `
+        <div class="historial-item">
+          <div>
+            <div class="historial-nombre">📄 ${item.inicio} → ${item.fin}</div>
+          </div>
+          <div class="historial-hora">Descargado ${item.hora}</div>
+        </div>
+      `).join("");
+    }
+
+    // ── TOAST ────────────────────────────────────────────────────
+    let toastTimer;
+    function mostrarToast(mensaje, tipo = "success") {
+      const toast = document.getElementById("toast");
+      toast.textContent = mensaje;
+      toast.className   = `toast ${tipo} show`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 3500);
+    }
+  </script>
+</body>
+</html>
