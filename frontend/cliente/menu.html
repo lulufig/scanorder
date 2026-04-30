@@ -798,9 +798,9 @@
       btn.innerHTML = '<span class="spinner"></span> Enviando pedido...';
 
       // Body que espera el backend:
-      // { mesa_id: int, productos: [{ id_producto, cantidad }] }
+      // { id_mesa: int, productos: [{ id_producto, cantidad }] }
       const body = {
-        mesa_id: parseInt(mesaId),
+        id_mesa: parseInt(mesaId),
         productos: carrito.map(c => ({
           id_producto: c.id_producto,
           cantidad:    c.cantidad

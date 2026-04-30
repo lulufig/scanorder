@@ -534,13 +534,20 @@
         // GET /pedidos — devuelve todos los pedidos activos
         // El backend filtra por estado si se pasa ?estado=pendiente
         // Traemos todos para mostrar las tres columnas
-        const data = await fetchAPI("/pedidos");
-        const lista = Array.isArray(data) ? data : [];
+        const lista = await fetchAPI("/pedidos");
+        const base  = Array.isArray(lista) ? lista : [];
+
+        // GET /pedidos/{id} para cada pedido — trae el detalle de productos
+        const conDetalle = await Promise.all(
+          base.map(p =>
+            fetchAPI(`/pedidos/${p.id_pedido}`).catch(() => p)
+          )
+        );
 
         // Separar por estado
-        pedidos.pendiente       = lista.filter(p => p.estado === "pendiente");
-        pedidos.en_preparacion  = lista.filter(p => p.estado === "en_preparacion" || p.estado === "en preparación");
-        pedidos.listo           = lista.filter(p => p.estado === "listo");
+        pedidos.pendiente      = conDetalle.filter(p => p.estado === "pendiente");
+        pedidos.en_preparacion = conDetalle.filter(p => p.estado === "en_preparacion");
+        pedidos.listo          = conDetalle.filter(p => p.estado === "listo");
 
         actualizarStats();
         renderColumnas();
@@ -604,7 +611,7 @@
     function renderPedidoCard(pedido, estado, color) {
       const hora      = pedido.fecha ? formatHora(pedido.fecha) : "—";
       const tiempo    = pedido.fecha ? calcularTiempo(pedido.fecha) : null;
-      const productos = pedido.detalles || pedido.productos || [];
+      const productos = pedido.detalle || [];
       const total     = pedido.total || calcularTotal(productos);
 
       // Clase de urgencia según tiempo transcurrido
@@ -639,7 +646,7 @@
 
           <div class="pedido-header">
             <div>
-              <div class="pedido-mesa">🪑 Mesa ${pedido.mesa_id || pedido.numero_mesa || "—"}</div>
+              <div class="pedido-mesa">🪑 Mesa ${pedido.id_mesa || "—"}</div>
               <div class="pedido-id">#${pedido.id_pedido}</div>
             </div>
             <div class="pedido-hora">
