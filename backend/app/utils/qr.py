@@ -14,8 +14,8 @@ def generate_qr(mesa_id: int) -> str:
     """
     QR_DIR.mkdir(parents=True, exist_ok=True)
 
-    base_url = os.getenv("MENU_BASE_URL", "http://localhost:8000")
-    url_menu = f"{base_url}/menu?mesa={mesa_id}"
+    menu_url = os.getenv("MENU_URL", "http://localhost/frontend/cliente/menu.html")
+    url_menu = f"{menu_url}?mesa={mesa_id}"
 
     imagen_qr = qrcode.make(url_menu)
 

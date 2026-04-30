@@ -22,7 +22,14 @@ def listar_productos():
         )
     try:
         cursor = connection.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM productos WHERE disponible = TRUE")
+        cursor.execute(
+            """
+            SELECT p.*, c.nombre AS categoria
+            FROM productos p
+            LEFT JOIN categorias c ON p.id_categoria = c.id_categoria
+            WHERE p.disponible = TRUE
+            """
+        )
         return cursor.fetchall()
     except HTTPException:
         raise
@@ -48,7 +55,12 @@ def get_producto(id_producto: int):
     try:
         cursor = connection.cursor(dictionary=True)
         cursor.execute(
-            "SELECT * FROM productos WHERE id_producto = %s",
+            """
+            SELECT p.*, c.nombre AS categoria
+            FROM productos p
+            LEFT JOIN categorias c ON p.id_categoria = c.id_categoria
+            WHERE p.id_producto = %s
+            """,
             (id_producto,)
         )
         producto = cursor.fetchone()
@@ -100,7 +112,12 @@ def create_producto(
 
         nuevo_id = cursor.lastrowid
         cursor.execute(
-            "SELECT * FROM productos WHERE id_producto = %s",
+            """
+            SELECT p.*, c.nombre AS categoria
+            FROM productos p
+            LEFT JOIN categorias c ON p.id_categoria = c.id_categoria
+            WHERE p.id_producto = %s
+            """,
             (nuevo_id,)
         )
         return cursor.fetchone()
@@ -169,7 +186,12 @@ def update_producto(
         connection.commit()
 
         cursor.execute(
-            "SELECT * FROM productos WHERE id_producto = %s",
+            """
+            SELECT p.*, c.nombre AS categoria
+            FROM productos p
+            LEFT JOIN categorias c ON p.id_categoria = c.id_categoria
+            WHERE p.id_producto = %s
+            """,
             (id_producto,)
         )
         return cursor.fetchone()

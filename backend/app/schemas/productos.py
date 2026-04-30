@@ -31,3 +31,4 @@ class ProductoResponse(BaseModel):
     id_categoria: int
     imagen_url: Optional[str]
     disponible: bool
+    categoria: Optional[str] = None

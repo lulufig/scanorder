@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 # Importar rutas
-from app.routes import auth, productos, mesas, pedidos
+from app.routes import auth, productos, mesas, pedidos, reportes
 
 # Crear instancia de FastAPI
 app = FastAPI(
@@ -31,6 +31,7 @@ app.include_router(auth.router)
 app.include_router(productos.router)
 app.include_router(mesas.router)
 app.include_router(pedidos.router)
+app.include_router(reportes.router)
 
 # Servir archivos estáticos (QR images)
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
