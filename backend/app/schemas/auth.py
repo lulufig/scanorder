@@ -10,6 +10,13 @@ class UserRegister(BaseModel):
     password: str
     rol: str = "cocina"
 
+    @field_validator("password")
+    @classmethod
+    def validar_password(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("La contraseña no puede superar 72 caracteres")
+        return value
+
     @field_validator("rol")
     @classmethod
     def validar_rol(cls, value: str) -> str:
