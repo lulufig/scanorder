@@ -2,7 +2,7 @@
 //  config.js — Configuración global del frontend ScanOrder
 // ============================================================
 
-const API_URL = "http://localhost:8000";
+const API_URL = "http://192.168.1.10:8000";
 
 // Rutas de la aplicación
 const ROUTES = {

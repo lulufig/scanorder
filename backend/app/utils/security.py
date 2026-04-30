@@ -7,7 +7,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuración para hashear passwords
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt__truncate_error=False: passlib no lanza excepción por passwords > 72 bytes.
+# La validación de longitud ya ocurre en el schema UserRegister (devuelve 422).
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__truncate_error=False)
 
 # Configuración JWT
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -18,15 +20,11 @@ if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY no está definida en el archivo .env")
 
 def hash_password(password: str) -> str:
-    """
-    Hashea una contraseña usando bcrypt.
-    """
+    """Hashea una contraseña usando bcrypt."""
     return pwd_context.hash(password)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    Verifica que la contraseña coincida con el hash.
-    """
+    """Verifica que la contraseña coincida con el hash."""
     return pwd_context.verify(plain_password, hashed_password)
 
 def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
