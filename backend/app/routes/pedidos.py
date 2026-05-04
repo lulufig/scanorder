@@ -17,6 +17,9 @@ router = APIRouter(
     tags=["Pedidos"]
 )
 
+# Cache de columnas opcionales — se verifica una sola vez por proceso
+_col_cache: dict[str, bool] = {}
+
 # Transiciones de estado permitidas en orden
 TRANSICION_ESTADO = {
     "pendiente": "confirmado",
@@ -64,9 +67,12 @@ def notificar_cocina(message: dict):
 
 
 def pedidos_tiene_columna(cursor, columna: str) -> bool:
-    """Indica si la tabla pedidos tiene una columna determinada."""
-    cursor.execute("SHOW COLUMNS FROM pedidos LIKE %s", (columna,))
-    return cursor.fetchone() is not None
+    """Indica si la tabla pedidos tiene una columna determinada. Resultado cacheado por proceso."""
+    key = f"pedidos.{columna}"
+    if key not in _col_cache:
+        cursor.execute("SHOW COLUMNS FROM pedidos LIKE %s", (columna,))
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
 
 
 @router.websocket("/ws/cocina")
@@ -107,9 +113,11 @@ def create_pedido(pedido: PedidoCreate):
     try:
         cursor = connection.cursor(dictionary=True)
         tiene_observaciones = pedidos_tiene_columna(cursor, "observaciones")
-        tiene_qr_token = False
-        cursor.execute("SHOW COLUMNS FROM mesas LIKE %s", ("qr_token",))
-        tiene_qr_token = cursor.fetchone() is not None
+        tiene_qr_token_key = "mesas.qr_token"
+        if tiene_qr_token_key not in _col_cache:
+            cursor.execute("SHOW COLUMNS FROM mesas LIKE %s", ("qr_token",))
+            _col_cache[tiene_qr_token_key] = cursor.fetchone() is not None
+        tiene_qr_token = _col_cache[tiene_qr_token_key]
 
         # Validar que la mesa exista. El frontend envia el numero visible de mesa.
         campos_mesa = "id_mesa, numero, qr_token" if tiene_qr_token else "id_mesa, numero, NULL AS qr_token"
@@ -235,19 +243,16 @@ def listar_pedidos(
         cursor = connection.cursor(dictionary=True)
         tiene_observaciones = pedidos_tiene_columna(cursor, "observaciones")
         campos_observaciones = ", observaciones" if tiene_observaciones else ", NULL AS observaciones"
-        query_listado = (
+        select_base = (
             "SELECT id_pedido, id_mesa, estado, total, created_at AS fecha"
             + campos_observaciones
-            + """
-            FROM pedidos
-            WHERE (%s IS NULL OR estado = %s)
-            ORDER BY created_at DESC
-            """
+            + " FROM pedidos "
         )
-        cursor.execute(
-            query_listado,
-            (estado, estado)
-        )
+        if estado:
+            cursor.execute(select_base + "WHERE estado = %s ORDER BY created_at DESC", (estado,))
+        else:
+            # Sin filtro: devuelve todos los activos (excluye 'entregado')
+            cursor.execute(select_base + "WHERE estado != 'entregado' ORDER BY created_at DESC")
         return cursor.fetchall()
     except HTTPException:
         raise

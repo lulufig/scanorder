@@ -13,11 +13,16 @@ router = APIRouter(
     tags=["Mesas"]
 )
 
+_col_cache: dict[str, bool] = {}
+
 
 def mesa_tiene_columna(cursor, columna: str) -> bool:
-    """Indica si la tabla mesas tiene una columna determinada."""
-    cursor.execute("SHOW COLUMNS FROM mesas LIKE %s", (columna,))
-    return cursor.fetchone() is not None
+    """Indica si la tabla mesas tiene una columna determinada. Resultado cacheado por proceso."""
+    key = f"mesas.{columna}"
+    if key not in _col_cache:
+        cursor.execute("SHOW COLUMNS FROM mesas LIKE %s", (columna,))
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
 
 
 @router.post("/", response_model=MesaResponse, status_code=status.HTTP_201_CREATED)

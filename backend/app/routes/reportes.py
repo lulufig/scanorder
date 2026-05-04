@@ -4,6 +4,7 @@ from datetime import date
 
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
@@ -136,7 +137,8 @@ def reporte_ventas(
         return FileResponse(
             path=tmp.name,
             media_type="application/pdf",
-            filename=f"reporte_ventas_{fecha_inicio}_{fecha_fin}.pdf"
+            filename=f"reporte_ventas_{fecha_inicio}_{fecha_fin}.pdf",
+            background=BackgroundTask(os.unlink, tmp.name)
         )
 
     except HTTPException:

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Importar rutas
 from app.routes import auth, productos, mesas, pedidos, reportes
@@ -22,7 +23,17 @@ def get_cors_origins() -> list[str]:
         "CORS_ORIGINS",
         "http://localhost:5500,http://127.0.0.1:5500,http://localhost:8000,http://127.0.0.1:8000"
     )
-    return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+
+    # Agrega automáticamente el origen del frontend configurado en MENU_URL
+    menu_url = os.getenv("MENU_URL", "")
+    if menu_url:
+        parsed = urlparse(menu_url)
+        menu_origin = f"{parsed.scheme}://{parsed.netloc}"
+        if menu_origin and menu_origin not in origins:
+            origins.append(menu_origin)
+
+    return origins
 
 
 # Configurar CORS
