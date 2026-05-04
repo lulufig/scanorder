@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.responses import FileResponse
 from typing import List
+import secrets
 
 from app.database import get_db_connection, close_db_connection
 from app.schemas.mesas import MesaCreate, MesaResponse
@@ -11,6 +12,12 @@ router = APIRouter(
     prefix="/mesas",
     tags=["Mesas"]
 )
+
+
+def mesa_tiene_columna(cursor, columna: str) -> bool:
+    """Indica si la tabla mesas tiene una columna determinada."""
+    cursor.execute("SHOW COLUMNS FROM mesas LIKE %s", (columna,))
+    return cursor.fetchone() is not None
 
 
 @router.post("/", response_model=MesaResponse, status_code=status.HTTP_201_CREATED)
@@ -27,6 +34,7 @@ def create_mesa(
         )
     try:
         cursor = connection.cursor(dictionary=True)
+        tiene_qr_token = mesa_tiene_columna(cursor, "qr_token")
 
         cursor.execute(
             "SELECT id_mesa FROM mesas WHERE numero = %s",
@@ -38,13 +46,20 @@ def create_mesa(
                 detail=f"Ya existe una mesa con el número {mesa.numero}"
             )
 
-        cursor.execute(
-            "INSERT INTO mesas (numero) VALUES (%s)",
-            (mesa.numero,)
-        )
+        qr_token = secrets.token_urlsafe(24) if tiene_qr_token else None
+        if tiene_qr_token:
+            cursor.execute(
+                "INSERT INTO mesas (numero, qr_token) VALUES (%s, %s)",
+                (mesa.numero, qr_token)
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO mesas (numero) VALUES (%s)",
+                (mesa.numero,)
+            )
         nueva_id = cursor.lastrowid
 
-        qr_url = generate_qr(nueva_id)
+        qr_url = generate_qr(nueva_id, qr_token)
 
         cursor.execute(
             "UPDATE mesas SET qr_url = %s WHERE id_mesa = %s",
@@ -82,7 +97,10 @@ def listar_mesas():
         )
     try:
         cursor = connection.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM mesas ORDER BY numero ASC")
+        tiene_qr_token = mesa_tiene_columna(cursor, "qr_token")
+        campo_token = ", qr_token" if tiene_qr_token else ", NULL AS qr_token"
+        query = "SELECT id_mesa, numero, qr_url" + campo_token + " FROM mesas ORDER BY numero ASC"
+        cursor.execute(query)
         return cursor.fetchall()
     except HTTPException:
         raise
@@ -128,6 +146,7 @@ def regenerar_qr_mesa(
         )
     try:
         cursor = connection.cursor(dictionary=True)
+        tiene_qr_token = mesa_tiene_columna(cursor, "qr_token")
 
         cursor.execute(
             "SELECT * FROM mesas WHERE id_mesa = %s",
@@ -139,12 +158,19 @@ def regenerar_qr_mesa(
                 detail="Mesa no encontrada"
             )
 
-        qr_url = generate_qr(id_mesa)
+        qr_token = secrets.token_urlsafe(24) if tiene_qr_token else None
+        qr_url = generate_qr(id_mesa, qr_token)
 
-        cursor.execute(
-            "UPDATE mesas SET qr_url = %s WHERE id_mesa = %s",
-            (qr_url, id_mesa)
-        )
+        if tiene_qr_token:
+            cursor.execute(
+                "UPDATE mesas SET qr_url = %s, qr_token = %s WHERE id_mesa = %s",
+                (qr_url, qr_token, id_mesa)
+            )
+        else:
+            cursor.execute(
+                "UPDATE mesas SET qr_url = %s WHERE id_mesa = %s",
+                (qr_url, id_mesa)
+            )
         connection.commit()
 
         cursor.execute(

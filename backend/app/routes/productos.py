@@ -11,6 +11,52 @@ router = APIRouter(
 )
 
 
+def resolver_id_categoria(cursor, id_categoria=None, categoria=None):
+    """Resuelve el id_categoria desde un ID explícito o desde el nombre de categoría."""
+    if id_categoria is not None:
+        cursor.execute(
+            "SELECT id_categoria FROM categorias WHERE id_categoria = %s AND activa = TRUE",
+            (id_categoria,)
+        )
+        if not cursor.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La categoría seleccionada no existe"
+            )
+        return id_categoria
+
+    if categoria:
+        aliases = {
+            "papas": "Acompañamientos",
+            "acompanamientos": "Acompañamientos",
+            "acompañamientos": "Acompañamientos",
+            "hamburguesas": "Hamburguesas",
+            "bebidas": "Bebidas",
+            "postres": "Postres",
+            "combos": "Combos",
+            "otros": "Otros",
+        }
+        categoria_busqueda = aliases.get(categoria.lower(), categoria)
+        cursor.execute(
+            "SELECT id_categoria FROM categorias WHERE LOWER(nombre) = LOWER(%s) AND activa = TRUE",
+            (categoria_busqueda,)
+        )
+        row = cursor.fetchone()
+        if row:
+            return row["id_categoria"]
+
+        cursor.execute(
+            "INSERT INTO categorias (nombre) VALUES (%s)",
+            (categoria_busqueda,)
+        )
+        return cursor.lastrowid
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Seleccioná una categoría válida"
+    )
+
+
 @router.get("/", response_model=List[ProductoResponse])
 def listar_productos():
     """Lista todos los productos con disponible = TRUE."""
@@ -96,6 +142,11 @@ def create_producto(
         )
     try:
         cursor = connection.cursor(dictionary=True)
+        id_categoria = resolver_id_categoria(
+            cursor,
+            id_categoria=producto.id_categoria,
+            categoria=producto.categoria
+        )
         query = """
             INSERT INTO productos (nombre, descripcion, precio, id_categoria, imagen_url, disponible)
             VALUES (%s, %s, %s, %s, %s, %s)
@@ -104,7 +155,7 @@ def create_producto(
             producto.nombre,
             producto.descripcion,
             producto.precio,
-            producto.id_categoria,
+            id_categoria,
             producto.imagen_url,
             producto.disponible
         ))
@@ -162,6 +213,14 @@ def update_producto(
                 detail="Producto no encontrado"
             )
 
+        id_categoria = existing["id_categoria"]
+        if producto.id_categoria is not None or producto.categoria:
+            id_categoria = resolver_id_categoria(
+                cursor,
+                id_categoria=producto.id_categoria,
+                categoria=producto.categoria
+            )
+
         # COALESCE preserva el valor actual cuando el campo llega como NULL
         query = """
             UPDATE productos
@@ -178,7 +237,7 @@ def update_producto(
             producto.nombre,
             producto.descripcion,
             producto.precio,
-            producto.id_categoria,
+            id_categoria,
             producto.imagen_url,
             producto.disponible,
             id_producto

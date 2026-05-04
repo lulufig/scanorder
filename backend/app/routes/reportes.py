@@ -48,7 +48,7 @@ def reporte_ventas(
             """
             SELECT COUNT(*) AS cantidad_pedidos, COALESCE(SUM(total), 0) AS total_ventas
             FROM pedidos
-            WHERE estado = 'listo'
+            WHERE estado IN ('listo', 'entregado')
               AND DATE(created_at) BETWEEN %s AND %s
             """,
             (fecha_inicio, fecha_fin)
@@ -63,7 +63,7 @@ def reporte_ventas(
             FROM detalle_pedidos dp
             JOIN productos p  ON dp.id_producto = p.id_producto
             JOIN pedidos    pe ON dp.id_pedido   = pe.id_pedido
-            WHERE pe.estado = 'listo'
+            WHERE pe.estado IN ('listo', 'entregado')
               AND DATE(pe.created_at) BETWEEN %s AND %s
             GROUP BY p.id_producto, p.nombre
             ORDER BY total_vendido DESC
@@ -145,6 +145,91 @@ def reporte_ventas(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al generar reporte: {str(e)}"
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
+@router.get("/dashboard")
+def dashboard_metricas(current_user: dict = Depends(require_role("admin"))):
+    """
+    Retorna métricas operativas para el dashboard admin.
+    Incluye ventas del día, pedidos activos, ticket promedio, producto destacado y mesas activas.
+    """
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos"
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) AS pedidos_hoy,
+                COALESCE(SUM(CASE WHEN estado IN ('listo', 'entregado') THEN total ELSE 0 END), 0) AS ventas_hoy,
+                COALESCE(AVG(CASE WHEN estado IN ('listo', 'entregado') THEN total ELSE NULL END), 0) AS ticket_promedio
+            FROM pedidos
+            WHERE DATE(created_at) = CURDATE()
+            """
+        )
+        resumen = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT estado, COUNT(*) AS cantidad
+            FROM pedidos
+            WHERE estado IN ('pendiente', 'confirmado', 'en_preparacion', 'listo')
+            GROUP BY estado
+            """
+        )
+        estados = {row["estado"]: row["cantidad"] for row in cursor.fetchall()}
+
+        cursor.execute(
+            """
+            SELECT p.nombre, SUM(dp.cantidad) AS cantidad
+            FROM detalle_pedidos dp
+            JOIN productos p ON p.id_producto = dp.id_producto
+            JOIN pedidos pe ON pe.id_pedido = dp.id_pedido
+            WHERE DATE(pe.created_at) = CURDATE()
+            GROUP BY p.id_producto, p.nombre
+            ORDER BY cantidad DESC
+            LIMIT 1
+            """
+        )
+        producto_top = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT id_mesa) AS mesas_activas
+            FROM pedidos
+            WHERE estado IN ('pendiente', 'confirmado', 'en_preparacion', 'listo')
+            """
+        )
+        mesas = cursor.fetchone()
+
+        return {
+            "ventas_hoy": float(resumen["ventas_hoy"]),
+            "pedidos_hoy": int(resumen["pedidos_hoy"]),
+            "ticket_promedio": float(resumen["ticket_promedio"]),
+            "pedidos_activos": {
+                "pendiente": estados.get("pendiente", 0),
+                "confirmado": estados.get("confirmado", 0),
+                "en_preparacion": estados.get("en_preparacion", 0),
+                "listo": estados.get("listo", 0),
+            },
+            "producto_top": producto_top or {"nombre": "—", "cantidad": 0},
+            "mesas_activas": int(mesas["mesas_activas"]),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener métricas: {str(e)}"
         )
     finally:
         cursor.close()

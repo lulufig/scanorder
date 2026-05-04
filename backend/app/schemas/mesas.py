@@ -12,3 +12,4 @@ class MesaResponse(BaseModel):
     id_mesa: int
     numero: int
     qr_url: Optional[str]
+    qr_token: Optional[str] = None

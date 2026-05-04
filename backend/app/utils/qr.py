@@ -6,7 +6,7 @@ from pathlib import Path
 QR_DIR = Path(__file__).resolve().parent.parent.parent / "static" / "qr"
 
 
-def generate_qr(mesa_id: int) -> str:
+def generate_qr(mesa_id: int, token: str | None = None) -> str:
     """
     Genera un código QR para la mesa indicada y lo guarda como PNG.
     Crea el directorio si no existe.
@@ -16,6 +16,8 @@ def generate_qr(mesa_id: int) -> str:
 
     menu_url = os.getenv("MENU_URL", "http://localhost:5500/frontend/cliente/menu.html")
     url_menu = f"{menu_url}?mesa={mesa_id}"
+    if token:
+        url_menu = f"{url_menu}&token={token}"
 
     imagen_qr = qrcode.make(url_menu)
 

@@ -7,7 +7,8 @@ class ProductoCreate(BaseModel):
     nombre: str
     descripcion: Optional[str] = None
     precio: float
-    id_categoria: int
+    id_categoria: Optional[int] = None
+    categoria: Optional[str] = None
     imagen_url: Optional[str] = None
     disponible: bool = True
 
@@ -18,6 +19,7 @@ class ProductoUpdate(BaseModel):
     descripcion: Optional[str] = None
     precio: Optional[float] = None
     id_categoria: Optional[int] = None
+    categoria: Optional[str] = None
     imagen_url: Optional[str] = None
     disponible: Optional[bool] = None
 

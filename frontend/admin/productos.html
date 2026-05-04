@@ -4,17 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ScanOrder — Productos</title>
-  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
   <style>
     :root {
-      --red:    #C0392B;
-      --red2:   #96281B;
-      --beige:  #F5ECD7;
-      --beige2: #EBD9BC;
-      --dark:   #1A1009;
+      --red:    #D50000;
+      --red2:   #980000;
+      --beige:  #FFF0D0;
+      --beige2: #F7D9A8;
+      --dark:   #220A04;
       --amber:  #E8A020;
       --sidebar-w: 220px;
     }
@@ -22,7 +21,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'DM Sans', sans-serif;
+      font-family: 'Nunito', sans-serif;
       background: #F0E6CC;
       color: var(--dark);
       min-height: 100vh;
@@ -43,7 +42,7 @@
     }
 
     .sidebar-logo {
-      font-family: 'Syne', sans-serif;
+      font-family: 'Lilita One', 'Arial Black', sans-serif;
       font-size: 1.5rem;
       font-weight: 800;
       color: var(--beige);
@@ -105,7 +104,7 @@
       border: 1px solid rgba(192,57,43,0.3);
       border-radius: 8px;
       color: #f4a49e;
-      font-family: 'DM Sans', sans-serif;
+      font-family: 'Nunito', sans-serif;
       font-size: 0.85rem;
       cursor: pointer;
       transition: background 0.2s;
@@ -128,7 +127,7 @@
     }
 
     .page-title {
-      font-family: 'Syne', sans-serif;
+      font-family: 'Lilita One', 'Arial Black', sans-serif;
       font-size: 1.8rem;
       font-weight: 800;
       color: var(--dark);
@@ -147,7 +146,7 @@
       padding: 11px 20px;
       background: var(--red);
       color: white;
-      font-family: 'Syne', sans-serif;
+      font-family: 'Lilita One', 'Arial Black', sans-serif;
       font-weight: 700;
       font-size: 0.9rem;
       border: none;
@@ -187,7 +186,7 @@
       margin-bottom: 6px;
     }
     .stat-value {
-      font-family: 'Syne', sans-serif;
+      font-family: 'Lilita One', 'Arial Black', sans-serif;
       font-size: 2rem;
       font-weight: 800;
       color: var(--dark);
@@ -217,7 +216,7 @@
       background: #F0E6CC;
       border: 1px solid rgba(26,16,9,0.1);
       border-radius: 8px;
-      font-family: 'DM Sans', sans-serif;
+      font-family: 'Nunito', sans-serif;
       font-size: 0.875rem;
       color: var(--dark);
       outline: none;
@@ -306,7 +305,7 @@
     .badge-cat   { background: #fef3c7; color: #92400e; }
 
     .price-cell {
-      font-family: 'Syne', sans-serif;
+      font-family: 'Lilita One', 'Arial Black', sans-serif;
       font-weight: 700;
       color: var(--dark);
     }
@@ -388,7 +387,7 @@
       border-bottom: 1px solid rgba(26,16,9,0.06);
     }
     .modal-title {
-      font-family: 'Syne', sans-serif;
+      font-family: 'Lilita One', 'Arial Black', sans-serif;
       font-size: 1.2rem;
       font-weight: 800;
       color: var(--dark);
@@ -438,7 +437,7 @@
       background: #faf6f0;
       border: 1px solid rgba(26,16,9,0.12);
       border-radius: 9px;
-      font-family: 'DM Sans', sans-serif;
+      font-family: 'Nunito', sans-serif;
       font-size: 0.9rem;
       color: var(--dark);
       outline: none;
@@ -473,7 +472,7 @@
       border: none;
       border-radius: 10px;
       color: #7a6a58;
-      font-family: 'DM Sans', sans-serif;
+      font-family: 'Nunito', sans-serif;
       font-size: 0.9rem;
       font-weight: 500;
       cursor: pointer;
@@ -514,7 +513,7 @@
     .confirm-overlay.open .confirm-box { transform: scale(1); }
     .confirm-icon { font-size: 2.5rem; margin-bottom: 12px; }
     .confirm-title {
-      font-family: 'Syne', sans-serif;
+      font-family: 'Lilita One', 'Arial Black', sans-serif;
       font-size: 1.15rem;
       font-weight: 800;
       margin-bottom: 8px;
@@ -528,7 +527,7 @@
       border: none;
       border-radius: 10px;
       color: white;
-      font-family: 'Syne', sans-serif;
+      font-family: 'Lilita One', 'Arial Black', sans-serif;
       font-weight: 700;
       font-size: 0.9rem;
       cursor: pointer;
@@ -577,7 +576,7 @@
 
   <!-- ===== SIDEBAR ===== -->
   <aside class="sidebar">
-    <div class="sidebar-logo">Scan<span>Order</span></div>
+    <div class="sidebar-logo">Maven<span>Burger</span></div>
 
     <div class="sidebar-section">Gestión</div>
     <a href="productos.html" class="sidebar-link active">🍔 Productos</a>

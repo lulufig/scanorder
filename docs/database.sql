@@ -35,6 +35,7 @@ CREATE TABLE mesas (
     id_mesa     INT AUTO_INCREMENT PRIMARY KEY,
     numero      INT             NOT NULL UNIQUE,
     qr_url      VARCHAR(255)    DEFAULT NULL,
+    qr_token    VARCHAR(255)    DEFAULT NULL,
     estado      ENUM('disponible', 'ocupada') NOT NULL DEFAULT 'disponible',
     activa      BOOLEAN         NOT NULL DEFAULT TRUE,
 
@@ -84,10 +85,14 @@ CREATE TABLE pedidos (
     id_pedido    INT AUTO_INCREMENT PRIMARY KEY,
     id_mesa      INT             NOT NULL,
     id_usuario   INT             DEFAULT NULL,  -- NULL = creado por cliente vía QR
-    estado       ENUM('pendiente', 'en_preparacion', 'listo', 'entregado', 'cancelado')
+    estado       ENUM('pendiente', 'confirmado', 'en_preparacion', 'listo', 'entregado', 'cancelado')
                                  NOT NULL DEFAULT 'pendiente',
     total        DECIMAL(10, 2)  NOT NULL DEFAULT 0.00,
     observaciones TEXT           DEFAULT NULL,
+    confirmado_at DATETIME       DEFAULT NULL,
+    preparacion_at DATETIME      DEFAULT NULL,
+    listo_at      DATETIME       DEFAULT NULL,
+    entregado_at  DATETIME       DEFAULT NULL,
     created_at   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 

@@ -4,7 +4,7 @@
 //  Contrato con el backend:
 //  - Header de autenticación: "Authorization: Bearer <token>"
 //  - Errores del backend llegan como: { "detail": "mensaje" }
-//  - 401 = token inválido/expirado → se cierra la sesión
+//  - 401 en rutas protegidas = token inválido/expirado → se cierra la sesión
 // ============================================================
 
 /**
@@ -46,8 +46,9 @@ async function fetchAPI(endpoint, method = "GET", body = null, auth = true) {
     );
   }
 
-  // 401: token inválido o expirado → cerrar sesión
-  if (response.status === 401) {
+  // 401 en rutas protegidas: token inválido o expirado → cerrar sesión.
+  // En rutas públicas (auth=false), se devuelve el error sin redirigir al login.
+  if (auth && response.status === 401) {
     logout();
     return;
   }

@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, WebSocket, WebSocketDisconnect
 from typing import List, Optional
+from anyio import from_thread
 
 from app.database import get_db_connection, close_db_connection
 from app.schemas.pedidos import (
@@ -9,6 +10,7 @@ from app.schemas.pedidos import (
     EstadoUpdate,
 )
 from app.utils.dependencies import get_current_user
+from app.utils.security import decode_access_token
 
 router = APIRouter(
     prefix="/pedidos",
@@ -17,9 +19,70 @@ router = APIRouter(
 
 # Transiciones de estado permitidas en orden
 TRANSICION_ESTADO = {
-    "pendiente": "en_preparacion",
+    "pendiente": "confirmado",
+    "confirmado": "en_preparacion",
     "en_preparacion": "listo",
+    "listo": "entregado",
 }
+
+
+class CocinaConnectionManager:
+    """Gestiona conexiones WebSocket activas del panel de cocina."""
+
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                disconnected.append(connection)
+
+        for connection in disconnected:
+            self.disconnect(connection)
+
+
+manager = CocinaConnectionManager()
+
+
+def notificar_cocina(message: dict):
+    """Envía una notificación a cocina sin bloquear la respuesta HTTP."""
+    try:
+        from_thread.run(manager.broadcast, message)
+    except RuntimeError:
+        pass
+
+
+def pedidos_tiene_columna(cursor, columna: str) -> bool:
+    """Indica si la tabla pedidos tiene una columna determinada."""
+    cursor.execute("SHOW COLUMNS FROM pedidos LIKE %s", (columna,))
+    return cursor.fetchone() is not None
+
+
+@router.websocket("/ws/cocina")
+async def websocket_cocina(websocket: WebSocket, token: str = ""):
+    """Canal en tiempo real para avisar a cocina cuando cambian los pedidos."""
+    payload = decode_access_token(token)
+    if not payload or payload.get("rol") not in {"cocina", "admin"}:
+        await websocket.close(code=1008)
+        return
+
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 
 @router.post("/", response_model=PedidoResponse, status_code=status.HTTP_201_CREATED)
@@ -43,16 +106,25 @@ def create_pedido(pedido: PedidoCreate):
         )
     try:
         cursor = connection.cursor(dictionary=True)
+        tiene_observaciones = pedidos_tiene_columna(cursor, "observaciones")
+        tiene_qr_token = False
+        cursor.execute("SHOW COLUMNS FROM mesas LIKE %s", ("qr_token",))
+        tiene_qr_token = cursor.fetchone() is not None
 
         # Validar que la mesa exista
-        cursor.execute(
-            "SELECT id_mesa FROM mesas WHERE id_mesa = %s",
-            (pedido.id_mesa,)
-        )
-        if not cursor.fetchone():
+        campos_mesa = "id_mesa, qr_token" if tiene_qr_token else "id_mesa, NULL AS qr_token"
+        query_mesa = "SELECT " + campos_mesa + " FROM mesas WHERE id_mesa = %s"
+        cursor.execute(query_mesa, (pedido.id_mesa,))
+        mesa = cursor.fetchone()
+        if not mesa:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Mesa {pedido.id_mesa} no encontrada"
+            )
+        if tiene_qr_token and mesa.get("qr_token") and pedido.qr_token != mesa["qr_token"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="QR inválido para esta mesa"
             )
 
         # Validar cada producto y armar los datos del detalle
@@ -90,10 +162,17 @@ def create_pedido(pedido: PedidoCreate):
             })
 
         # Insertar cabecera del pedido
-        cursor.execute(
-            "INSERT INTO pedidos (id_mesa, total) VALUES (%s, %s)",
-            (pedido.id_mesa, total)
-        )
+        observaciones = pedido.observaciones.strip() if pedido.observaciones else None
+        if tiene_observaciones:
+            cursor.execute(
+                "INSERT INTO pedidos (id_mesa, total, observaciones) VALUES (%s, %s, %s)",
+                (pedido.id_mesa, total, observaciones)
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO pedidos (id_mesa, total) VALUES (%s, %s)",
+                (pedido.id_mesa, total)
+            )
         nuevo_id = cursor.lastrowid
 
         # Insertar cada línea de detalle
@@ -108,11 +187,19 @@ def create_pedido(pedido: PedidoCreate):
 
         connection.commit()
 
+        campos_observaciones = ", observaciones" if tiene_observaciones else ", NULL AS observaciones"
+        query_pedido_creado = (
+            "SELECT id_pedido, id_mesa, estado, total, created_at AS fecha"
+            + campos_observaciones
+            + " FROM pedidos WHERE id_pedido = %s"
+        )
         cursor.execute(
-            "SELECT id_pedido, id_mesa, estado, total, created_at AS fecha FROM pedidos WHERE id_pedido = %s",
+            query_pedido_creado,
             (nuevo_id,)
         )
-        return cursor.fetchone()
+        creado = cursor.fetchone()
+        notificar_cocina({"type": "pedido_creado", "id_pedido": nuevo_id})
+        return creado
 
     except HTTPException:
         connection.rollback()
@@ -146,13 +233,19 @@ def listar_pedidos(
         )
     try:
         cursor = connection.cursor(dictionary=True)
-        cursor.execute(
-            """
-            SELECT id_pedido, id_mesa, estado, total, created_at AS fecha
+        tiene_observaciones = pedidos_tiene_columna(cursor, "observaciones")
+        campos_observaciones = ", observaciones" if tiene_observaciones else ", NULL AS observaciones"
+        query_listado = (
+            "SELECT id_pedido, id_mesa, estado, total, created_at AS fecha"
+            + campos_observaciones
+            + """
             FROM pedidos
             WHERE (%s IS NULL OR estado = %s)
             ORDER BY created_at DESC
-            """,
+            """
+        )
+        cursor.execute(
+            query_listado,
             (estado, estado)
         )
         return cursor.fetchall()
@@ -185,9 +278,16 @@ def get_pedido(
         )
     try:
         cursor = connection.cursor(dictionary=True)
+        tiene_observaciones = pedidos_tiene_columna(cursor, "observaciones")
+        campos_observaciones = ", observaciones" if tiene_observaciones else ", NULL AS observaciones"
+        query_pedido = (
+            "SELECT id_pedido, id_mesa, estado, total, created_at AS fecha"
+            + campos_observaciones
+            + " FROM pedidos WHERE id_pedido = %s"
+        )
 
         cursor.execute(
-            "SELECT id_pedido, id_mesa, estado, total, created_at AS fecha FROM pedidos WHERE id_pedido = %s",
+            query_pedido,
             (id_pedido,)
         )
         pedido = cursor.fetchone()
@@ -215,6 +315,7 @@ def get_pedido(
             "estado": pedido["estado"],
             "total": pedido["total"],
             "fecha": pedido["fecha"],
+            "observaciones": pedido.get("observaciones"),
             "detalle": detalle,
         }
     except HTTPException:
@@ -248,6 +349,13 @@ def actualizar_estado_pedido(
         )
     try:
         cursor = connection.cursor(dictionary=True)
+        tiene_observaciones = pedidos_tiene_columna(cursor, "observaciones")
+        campos_observaciones = ", observaciones" if tiene_observaciones else ", NULL AS observaciones"
+        query_pedido_actualizado = (
+            "SELECT id_pedido, id_mesa, estado, total, created_at AS fecha"
+            + campos_observaciones
+            + " FROM pedidos WHERE id_pedido = %s"
+        )
 
         cursor.execute(
             "SELECT id_pedido, estado FROM pedidos WHERE id_pedido = %s",
@@ -276,17 +384,35 @@ def actualizar_estado_pedido(
                 detail=f"Transición inválida. El siguiente estado para '{estado_actual}' es '{siguiente_estado}'"
             )
 
+        campos_update = ["estado = %s"]
+        valores_update = [body.estado]
+        columnas_trazabilidad = {
+            "confirmado": "confirmado_at",
+            "en_preparacion": "preparacion_at",
+            "listo": "listo_at",
+            "entregado": "entregado_at",
+        }
+        columna_fecha = columnas_trazabilidad.get(body.estado)
+        if columna_fecha and pedidos_tiene_columna(cursor, columna_fecha):
+            campos_update.append(columna_fecha + " = NOW()")
+
         cursor.execute(
-            "UPDATE pedidos SET estado = %s WHERE id_pedido = %s",
-            (body.estado, id_pedido)
+            "UPDATE pedidos SET " + ", ".join(campos_update) + " WHERE id_pedido = %s",
+            (*valores_update, id_pedido)
         )
         connection.commit()
 
         cursor.execute(
-            "SELECT id_pedido, id_mesa, estado, total, created_at AS fecha FROM pedidos WHERE id_pedido = %s",
+            query_pedido_actualizado,
             (id_pedido,)
         )
-        return cursor.fetchone()
+        actualizado = cursor.fetchone()
+        notificar_cocina({
+            "type": "pedido_actualizado",
+            "id_pedido": id_pedido,
+            "estado": body.estado
+        })
+        return actualizado
     except HTTPException:
         raise
     except Exception as e:

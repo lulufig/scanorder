@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Literal
+from typing import List, Literal, Optional
 from datetime import datetime
 
 
@@ -13,11 +13,13 @@ class PedidoCreate(BaseModel):
     """Schema para crear un pedido completo."""
     id_mesa: int
     productos: List[DetallePedidoCreate]
+    observaciones: Optional[str] = None
+    qr_token: Optional[str] = None
 
 
 class EstadoUpdate(BaseModel):
     """Schema para cambiar el estado de un pedido."""
-    estado: Literal["en_preparacion", "listo"]
+    estado: Literal["confirmado", "en_preparacion", "listo", "entregado"]
 
 
 class DetallePedidoResponse(BaseModel):
@@ -35,6 +37,7 @@ class PedidoResponse(BaseModel):
     estado: str
     total: float
     fecha: datetime
+    observaciones: Optional[str] = None
 
 
 class PedidoCompletoResponse(PedidoResponse):
