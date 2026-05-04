@@ -463,6 +463,412 @@
       animation: spin 0.7s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+  
+
+    /* ===== AJUSTE PROFESIONAL ADMIN ===== */
+    :root {
+      --red: #B91C1C;
+      --red2: #991B1B;
+      --beige: #F8FAFC;
+      --beige2: #E5E7EB;
+      --dark: #111827;
+      --amber: #B45309;
+      --muted: #6B7280;
+      --line: #E5E7EB;
+      --surface: #FFFFFF;
+      --surface-soft: #F9FAFB;
+    }
+
+    body {
+      background: #F3F4F6;
+      color: #111827;
+      font-family: 'Nunito', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    .sidebar {
+      background: #111827;
+      padding: 28px 0;
+      box-shadow: 1px 0 0 rgba(255,255,255,0.06);
+    }
+
+    .sidebar-logo,
+    .page-title,
+    .welcome-nombre,
+    .metric-value,
+    .acceso-titulo,
+    .section-title,
+    .reporte-titulo,
+    .card-title,
+    .mesa-numero,
+    .mini-stat-val,
+    .stat-value,
+    .price-cell,
+    .modal-title,
+    .modal-qr-title,
+    .confirm-title,
+    .btn-primary,
+    .btn-generar,
+    .btn-danger,
+    .btn-dl-grande {
+      font-family: 'Nunito', system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+
+    .sidebar-logo {
+      font-size: 1.15rem;
+      color: #F9FAFB;
+      letter-spacing: 0.01em;
+    }
+    .sidebar-logo span { color: #FCA5A5; }
+    .sidebar-section { color: #6B7280; }
+    .sidebar-link {
+      color: #CBD5E1;
+      font-weight: 700;
+    }
+    .sidebar-link:hover { background: rgba(255,255,255,0.06); color: #FFFFFF; }
+    .sidebar-link.active {
+      background: rgba(185,28,28,0.18);
+      border-left-color: #EF4444;
+      color: #FFFFFF;
+    }
+
+    .main { padding: 34px 38px; }
+    .page-title { font-size: 1.65rem; font-weight: 800; }
+    .page-subtitle,
+    .card-subtitle,
+    .reporte-desc,
+    .acceso-desc,
+    .metric-help,
+    .historial-empty,
+    .product-desc { color: var(--muted); }
+
+    .welcome-card,
+    .metric-card,
+    .acceso-card,
+    .reporte-card,
+    .card,
+    .table-card,
+    .stat-card,
+    .modal,
+    .modal-qr,
+    .confirm-box {
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      box-shadow: 0 1px 2px rgba(17,24,39,0.06);
+      background: var(--surface);
+    }
+
+    .welcome-card {
+      background: #111827;
+      padding: 28px 32px;
+    }
+    .welcome-card::before,
+    .welcome-card::after { display: none; }
+    .welcome-saludo { color: #FCA5A5; }
+    .welcome-nombre { color: #FFFFFF; font-size: 1.55rem; }
+    .welcome-sub { color: #CBD5E1; }
+    .welcome-mark,
+    .acceso-icon,
+    .reporte-icon,
+    .empty-state .icon,
+    .mesa-qr-placeholder,
+    .product-img-placeholder,
+    .confirm-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #F3F4F6;
+      border: 1px solid #E5E7EB;
+      color: #374151;
+      font-weight: 800;
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border-radius: 8px;
+    }
+    .welcome-mark {
+      width: 56px;
+      height: 56px;
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.14);
+      color: #FFFFFF;
+      font-size: 0.9rem;
+    }
+    .acceso-icon,
+    .reporte-icon { width: 44px; height: 44px; }
+    .empty-state .icon { width: auto; min-width: 44px; height: 36px; padding: 0 10px; margin: 0 auto 12px; }
+    .confirm-icon { width: 44px; height: 44px; margin: 0 auto 12px; color: #B91C1C; background: #FEF2F2; border-color: #FECACA; }
+
+    .metric-card,
+    .acceso-card,
+    .stat-card { padding: 18px; }
+    .metric-label,
+    .stat-label,
+    .mini-stat-lbl,
+    .form-label,
+    .historial-titulo {
+      color: #6B7280;
+      font-weight: 800;
+    }
+    .metric-value,
+    .stat-value,
+    .mini-stat-val { color: #111827; font-weight: 800; }
+    .metric-value.red,
+    .stat-value.red { color: #B91C1C; }
+
+    .acceso-card:hover,
+    .mesa-card:hover {
+      transform: translateY(-1px);
+      border-color: #CBD5E1;
+      box-shadow: 0 8px 20px rgba(17,24,39,0.08);
+    }
+    .acceso-arrow { color: #B91C1C; font-weight: 800; }
+
+    .section-title::after { background: #E5E7EB; height: 1px; }
+    .card-header,
+    .table-toolbar,
+    .reporte-card-header,
+    .modal-header { background: #FFFFFF; border-bottom-color: var(--line); }
+    .card-body,
+    .reporte-card-body,
+    .modal-body { background: #FFFFFF; }
+
+    .form-input,
+    .form-select,
+    .form-textarea,
+    .search-input {
+      background: #FFFFFF;
+      border-color: #D1D5DB;
+      border-radius: 8px;
+    }
+    .form-input:focus,
+    .form-select:focus,
+    .form-textarea:focus,
+    .search-input:focus {
+      border-color: #B91C1C;
+      box-shadow: 0 0 0 3px rgba(185,28,28,0.10);
+    }
+
+    .btn-primary,
+    .btn-generar,
+    .btn-danger {
+      background: #B91C1C;
+      border-radius: 8px;
+      box-shadow: none;
+      font-weight: 800;
+    }
+    .btn-primary:hover,
+    .btn-generar:hover,
+    .btn-danger:hover {
+      background: #991B1B;
+      box-shadow: none;
+    }
+    .btn-cancel,
+    .atajo-btn,
+    .btn-edit,
+    .btn-ver-qr,
+    .btn-dl-qr,
+    .btn-dl-grande,
+    .btn-logout {
+      border-radius: 8px;
+      font-weight: 800;
+      box-shadow: none;
+    }
+    .btn-edit,
+    .btn-ver-qr {
+      background: #FFF7ED;
+      border-color: #FED7AA;
+      color: #9A3412;
+    }
+    .btn-delete,
+    .btn-dl-qr {
+      background: #FEF2F2;
+      border-color: #FECACA;
+      color: #B91C1C;
+    }
+    .btn-dl-grande { background: #111827; color: #FFFFFF; }
+
+    .mini-stat,
+    .mesa-card,
+    .historial-item,
+    .qr-url,
+    thead th,
+    tbody tr:hover,
+    .product-img,
+    .modal-close,
+    .btn-cancel {
+      background: var(--surface-soft);
+    }
+    .mesa-card { border-radius: 8px; border-width: 1px; }
+    .badge { border-radius: 999px; font-weight: 800; }
+    .badge-cat { background: #EFF6FF; color: #1D4ED8; }
+    .badge-green { background: #ECFDF5; color: #047857; }
+    .badge-gray { background: #F3F4F6; color: #4B5563; }
+
+    .modal-overlay,
+    .confirm-overlay { background: rgba(17,24,39,0.56); }
+    .toast { border-radius: 8px; box-shadow: 0 10px 24px rgba(17,24,39,0.14); }
+
+    @media (max-width: 980px) {
+      .dashboard-grid,
+      .stats-row,
+      .accesos-grid,
+      .reportes-grid,
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { position: static; width: 100%; min-height: auto; }
+      body { display: block; }
+      .main { margin-left: 0; padding: 24px; }
+    }
+
+  
+
+    /* ===== PALETA MAVEN LOGIN ===== */
+    :root {
+      --red: #B91C1C;
+      --red2: #991B1B;
+      --beige: #FFF8ED;
+      --beige2: #E9D5BC;
+      --dark: #21130F;
+      --amber: #B45309;
+      --muted: #7A6654;
+      --line: #E2D2BE;
+      --surface: #FFFDF8;
+      --surface-soft: #F8EFE2;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 12% 10%, rgba(185,28,28,0.08), transparent 28%),
+        linear-gradient(135deg, #FFF8ED 0%, #F4E7D6 50%, #EAD8C1 100%);
+      color: #21130F;
+    }
+
+    .sidebar {
+      background: #21130F;
+      box-shadow: 1px 0 0 rgba(255,248,237,0.08);
+    }
+    .sidebar-logo { color: #FFF8ED; }
+    .sidebar-logo span { color: #FCA5A5; }
+    .sidebar-section { color: rgba(255,248,237,0.42); }
+    .sidebar-link { color: rgba(255,248,237,0.70); }
+    .sidebar-link:hover { background: rgba(255,248,237,0.08); color: #FFF8ED; }
+    .sidebar-link.active {
+      background: rgba(185,28,28,0.22);
+      border-left-color: #EF4444;
+      color: #FFF8ED;
+    }
+    .sidebar-bottom { border-top-color: rgba(255,248,237,0.10); }
+    .user-info { color: rgba(255,248,237,0.48); }
+    .user-name { color: #FFF8ED; }
+
+    .welcome-card {
+      background: linear-gradient(135deg, #21130F, #3A1B14);
+      border-color: rgba(255,248,237,0.08);
+    }
+    .welcome-saludo { color: #F6C177; }
+    .welcome-sub { color: rgba(255,248,237,0.68); }
+
+    .metric-card,
+    .acceso-card,
+    .reporte-card,
+    .card,
+    .table-card,
+    .stat-card,
+    .modal,
+    .modal-qr,
+    .confirm-box {
+      background: #FFFDF8;
+      border-color: #E2D2BE;
+      box-shadow: 0 8px 22px rgba(33,19,15,0.07);
+    }
+
+    .card-header,
+    .table-toolbar,
+    .reporte-card-header,
+    .modal-header,
+    .card-body,
+    .reporte-card-body,
+    .modal-body {
+      background: #FFFDF8;
+      border-bottom-color: #E2D2BE;
+    }
+
+    .mini-stat,
+    .mesa-card,
+    .historial-item,
+    .qr-url,
+    thead th,
+    tbody tr:hover,
+    .product-img,
+    .modal-close,
+    .btn-cancel,
+    .form-input,
+    .form-select,
+    .form-textarea,
+    .search-input {
+      background: #F8EFE2;
+    }
+
+    .page-title,
+    .card-title,
+    .metric-value,
+    .stat-value,
+    .mini-stat-val,
+    .mesa-numero,
+    .price-cell,
+    .modal-title,
+    .modal-qr-title,
+    .confirm-title,
+    .product-name {
+      color: #21130F;
+    }
+
+    .page-subtitle,
+    .card-subtitle,
+    .reporte-desc,
+    .acceso-desc,
+    .metric-help,
+    .historial-empty,
+    .product-desc,
+    .form-label,
+    .metric-label,
+    .stat-label,
+    .mini-stat-lbl,
+    .historial-titulo {
+      color: #7A6654;
+    }
+
+    .field-input,
+    .form-input,
+    .form-select,
+    .form-textarea,
+    .search-input {
+      border-color: #D8C8B7;
+      color: #21130F;
+    }
+    .form-input:focus,
+    .form-select:focus,
+    .form-textarea:focus,
+    .search-input:focus {
+      border-color: #B91C1C;
+      box-shadow: 0 0 0 3px rgba(185,28,28,0.12);
+    }
+
+    .btn-primary,
+    .btn-generar,
+    .btn-danger {
+      background: #B91C1C;
+    }
+    .btn-primary:hover,
+    .btn-generar:hover,
+    .btn-danger:hover {
+      background: #991B1B;
+    }
+
+    .badge-cat { background: #FFF7ED; color: #9A3412; }
+    .badge-green { background: #ECFDF5; color: #047857; }
+    .badge-gray { background: #EFE7DC; color: #6B4F3A; }
+
   </style>
 </head>
 
@@ -553,7 +959,7 @@
         <div id="mesas-grid-container">
           <div class="mesas-grid">
             <div class="empty-state">
-              <div class="icon">⏳</div>
+              <div class="icon">...</div>
               <p>Cargando mesas...</p>
             </div>
           </div>
@@ -568,13 +974,13 @@
     <div class="modal-qr">
       <div class="modal-qr-header">
         <span class="modal-qr-title" id="modal-qr-title">QR — Mesa 1</span>
-        <button class="modal-close" onclick="cerrarModal()">✕</button>
+        <button class="modal-close" onclick="cerrarModal()">X</button>
       </div>
       <div class="modal-qr-body">
         <img id="modal-qr-img" class="qr-img-grande" src="" alt="Código QR" />
         <div class="qr-url" id="modal-qr-url"></div>
         <button class="btn-dl-grande" id="btn-dl-modal" onclick="descargarQRModal()">
-          ⬇ Descargar QR
+           Descargar QR
         </button>
       </div>
     </div>
@@ -621,7 +1027,7 @@
         document.getElementById("mesas-grid-container").innerHTML = `
           <div class="mesas-grid">
             <div class="empty-state">
-              <div class="icon">⚠️</div>
+              <div class="icon">️</div>
               <p>No se pudo cargar las mesas: ${escapeHtml(error.message)}</p>
             </div>
           </div>`;
@@ -651,7 +1057,7 @@
         container.innerHTML = `
           <div class="mesas-grid">
             <div class="empty-state">
-              <div class="icon">🪑</div>
+              <div class="icon">Mesa</div>
               <p>No hay mesas todavía.<br>¡Creá la primera!</p>
             </div>
           </div>`;
@@ -673,15 +1079,15 @@
                    class="mesa-qr-preview"
                    alt="QR Mesa ${mesa.numero}"
                    onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
-                 <div class="mesa-qr-placeholder" style="display:none;">📷</div>`
-              : `<div class="mesa-qr-placeholder">📷</div>`
+                 <div class="mesa-qr-placeholder" style="display:none;">QR</div>`
+              : `<div class="mesa-qr-placeholder">QR</div>`
             }
             <div class="mesa-actions">
               <button class="btn-ver-qr" onclick="verQR(${mesa.id_mesa}, ${mesa.numero}, '${escapeHtml(qrSrc)}')">
                 Ver QR
               </button>
               <button class="btn-dl-qr" onclick="descargarQR('${escapeHtml(qrEndpoint)}', ${mesa.numero})">
-                ⬇
+                Descargar
               </button>
             </div>
           </div>`;
@@ -714,7 +1120,7 @@
         // POST /mesas — body: { numero }
         // El backend genera el QR automáticamente
         await fetchAPI("/mesas", "POST", { numero });
-        mostrarToast(`✅ Mesa ${numero} creada con QR generado.`, "success");
+        mostrarToast(`Mesa ${numero} creada con QR generado.`, "success");
         document.getElementById("input-numero").value = "";
         await cargarMesas(); // recarga el grid
       } catch (error) {
@@ -748,7 +1154,7 @@
       try {
         // Usa downloadFile() de api.js que maneja el Bearer token
         await downloadFile(endpoint, `mesa_${numero}_qr.png`);
-        mostrarToast(`⬇ QR de mesa ${numero} descargado.`, "success");
+        mostrarToast(`QR de mesa ${numero} descargado.`, "success");
       } catch (error) {
         mostrarToast("Error al descargar el QR: " + error.message, "error");
       }

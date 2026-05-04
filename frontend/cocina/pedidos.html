@@ -455,6 +455,291 @@
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
+  
+
+    /* ===== AJUSTE PROFESIONAL COCINA ===== */
+    :root {
+      --dark: #F3F4F6;
+      --dark2: #FFFFFF;
+      --dark3: #F9FAFB;
+      --border: #E5E7EB;
+      --text: #111827;
+      --text-dim: #6B7280;
+      --amarillo: #B45309;
+      --amarillo-bg: #FFFBEB;
+      --amarillo-bd: #FDE68A;
+      --naranja: #C2410C;
+      --naranja-bg: #FFF7ED;
+      --naranja-bd: #FED7AA;
+      --verde: #047857;
+      --verde-bg: #ECFDF5;
+      --verde-bd: #A7F3D0;
+      --red: #B91C1C;
+    }
+
+    body {
+      background: #F3F4F6;
+      color: #111827;
+      font-family: 'Nunito', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    .topbar {
+      background: #111827;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      height: 68px;
+      box-shadow: 0 1px 2px rgba(17,24,39,0.10);
+    }
+    .logo,
+    .stat-num,
+    .columna-titulo,
+    .columna-count,
+    .pedido-mesa,
+    .pedido-item-cantidad,
+    .pedido-total-val,
+    .btn-accion {
+      font-family: 'Nunito', system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+    .logo { color: #FFFFFF; font-size: 1.15rem; }
+    .logo span { color: #FCA5A5; }
+    .cocina-badge {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.14);
+      color: #E5E7EB;
+      border-radius: 999px;
+      font-weight: 800;
+    }
+    .polling-indicator,
+    .topbar-user { color: #CBD5E1; }
+    .topbar-user strong { color: #FFFFFF; }
+    .btn-logout {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.14);
+      color: #F9FAFB;
+      border-radius: 8px;
+      font-weight: 800;
+    }
+    .btn-logout:hover { background: rgba(255,255,255,0.14); }
+
+    .stats-bar {
+      background: #FFFFFF;
+      border-bottom: 1px solid #E5E7EB;
+      box-shadow: 0 1px 2px rgba(17,24,39,0.04);
+    }
+    .stats-bar-divider { background: #E5E7EB; }
+    .last-update { color: #6B7280; }
+    .stat-lbl { color: #6B7280; font-weight: 800; }
+    .stat-num { font-weight: 900; }
+
+    .columnas {
+      gap: 16px;
+      padding: 20px;
+      min-height: calc(100vh - 136px);
+    }
+    .columna {
+      background: #FFFFFF;
+      border: 1px solid #E5E7EB;
+      border-radius: 8px;
+      padding: 16px;
+      min-height: calc(100vh - 176px);
+      box-shadow: 0 1px 2px rgba(17,24,39,0.05);
+    }
+    .columna:last-child { border-right: 1px solid #E5E7EB; }
+    .columna-header {
+      border-bottom-color: #E5E7EB;
+      margin-bottom: 14px;
+    }
+    .columna-titulo { font-size: 0.78rem; font-weight: 900; }
+    .columna-count { border-radius: 999px; font-weight: 900; }
+
+    .pedido-card {
+      background: #FFFFFF;
+      border: 1px solid #E5E7EB;
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(17,24,39,0.05);
+      transition: box-shadow 0.2s, border-color 0.2s, transform 0.2s;
+    }
+    .pedido-card:hover {
+      border-color: #CBD5E1;
+      box-shadow: 0 8px 18px rgba(17,24,39,0.08);
+      transform: translateY(-1px);
+    }
+    .pedido-header { padding: 14px 14px 10px; }
+    .pedido-mesa { color: #111827; font-size: 1rem; font-weight: 900; }
+    .pedido-id,
+    .pedido-hora { color: #6B7280; }
+    .pedido-items {
+      border-top-color: #E5E7EB;
+      padding: 0 14px 10px;
+    }
+    .pedido-item { border-bottom-color: #F3F4F6; }
+    .pedido-item-nombre { color: #111827; font-weight: 700; }
+    .pedido-item-cantidad { border-radius: 6px; font-weight: 900; }
+    .pedido-total {
+      background: #F9FAFB;
+      border-top-color: #E5E7EB;
+      color: #6B7280;
+    }
+    .pedido-total-val { color: #111827; }
+    .pedido-observaciones {
+      background: #FFFBEB;
+      border-color: #FDE68A;
+      color: #92400E;
+      border-radius: 8px;
+    }
+    .pedido-observaciones strong { color: #92400E; }
+
+    .btn-accion {
+      border-radius: 8px;
+      font-weight: 900;
+      box-shadow: none;
+    }
+    .btn-accion:hover { opacity: 0.95; }
+    .btn-preparar { background: #C2410C; color: #FFFFFF; }
+    .btn-listo { background: #047857; color: #FFFFFF; }
+    .btn-entregar { background: #B91C1C; color: #FFFFFF; }
+
+    .columna-empty {
+      background: #F9FAFB;
+      border: 1px dashed #D1D5DB;
+      border-radius: 8px;
+      color: #6B7280;
+      padding: 28px 14px;
+    }
+    .columna-empty .icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 48px;
+      height: 32px;
+      padding: 0 10px;
+      margin-bottom: 10px;
+      border-radius: 999px;
+      background: #FFFFFF;
+      border: 1px solid #E5E7EB;
+      font-size: 0.68rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      opacity: 1;
+    }
+    .loading-screen { color: #6B7280; }
+    .loading-screen .big-spinner { border-color: #E5E7EB; border-top-color: #B91C1C; }
+    .toast { border-radius: 8px; box-shadow: 0 10px 24px rgba(17,24,39,0.14); }
+    .toast.success { background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; }
+    .toast.error { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; }
+
+    @media (max-width: 1100px) {
+      .columnas { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 720px) {
+      .topbar,
+      .stats-bar { flex-wrap: wrap; height: auto; gap: 12px; padding: 14px 18px; }
+      .columnas { grid-template-columns: 1fr; padding: 14px; }
+      .columna { min-height: auto; }
+      .last-update { margin-left: 0; width: 100%; }
+    }
+
+  
+
+    /* ===== PALETA MAVEN LOGIN COCINA ===== */
+    :root {
+      --dark: #FFF8ED;
+      --dark2: #FFFDF8;
+      --dark3: #F8EFE2;
+      --border: #E2D2BE;
+      --text: #21130F;
+      --text-dim: #7A6654;
+      --amarillo: #B45309;
+      --amarillo-bg: #FFF7D6;
+      --amarillo-bd: #EAC46A;
+      --naranja: #C2410C;
+      --naranja-bg: #FFF1E3;
+      --naranja-bd: #FDBA74;
+      --verde: #047857;
+      --verde-bg: #E7F7EE;
+      --verde-bd: #9EDDBB;
+      --red: #B91C1C;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 8% 8%, rgba(185,28,28,0.08), transparent 28%),
+        linear-gradient(135deg, #FFF8ED 0%, #F4E7D6 50%, #EAD8C1 100%);
+      color: #21130F;
+    }
+
+    .topbar {
+      background: #21130F;
+      border-bottom-color: rgba(255,248,237,0.10);
+    }
+    .logo { color: #FFF8ED; }
+    .logo span { color: #FCA5A5; }
+    .cocina-badge {
+      background: rgba(255,248,237,0.08);
+      border-color: rgba(255,248,237,0.16);
+      color: #FFF8ED;
+    }
+    .polling-indicator,
+    .topbar-user { color: rgba(255,248,237,0.72); }
+    .topbar-user strong { color: #FFF8ED; }
+    .btn-logout {
+      background: rgba(255,248,237,0.08);
+      border-color: rgba(255,248,237,0.16);
+      color: #FFF8ED;
+    }
+
+    .stats-bar,
+    .columna,
+    .pedido-card {
+      background: #FFFDF8;
+      border-color: #E2D2BE;
+      box-shadow: 0 8px 22px rgba(33,19,15,0.07);
+    }
+    .stats-bar-divider,
+    .columna-header,
+    .pedido-items,
+    .pedido-total { border-color: #E2D2BE; }
+    .last-update,
+    .stat-lbl,
+    .pedido-id,
+    .pedido-hora,
+    .pedido-total,
+    .columna-empty { color: #7A6654; }
+    .pedido-mesa,
+    .pedido-item-nombre,
+    .pedido-total-val { color: #21130F; }
+
+    .pedido-total,
+    .columna-empty {
+      background: #F8EFE2;
+    }
+    .columna-empty {
+      border-color: #D8C8B7;
+    }
+    .columna-empty .icon {
+      background: #FFFDF8;
+      border-color: #E2D2BE;
+      color: #7A6654;
+    }
+
+    .pedido-card:hover {
+      border-color: #D8C8B7;
+      box-shadow: 0 12px 26px rgba(33,19,15,0.10);
+    }
+    .pedido-observaciones {
+      background: #FFF7D6;
+      border-color: #EAC46A;
+      color: #7C4A03;
+    }
+    .pedido-observaciones strong { color: #7C4A03; }
+
+    .btn-preparar { background: #C2410C; }
+    .btn-listo { background: #047857; }
+    .btn-entregar { background: #B91C1C; }
+
+    .toast.success { background: #ECFDF5; color: #047857; border-color: #A7F3D0; }
+    .toast.error { background: #FEF2F2; color: #B91C1C; border-color: #FECACA; }
+
   </style>
 </head>
 
@@ -464,7 +749,7 @@
   <header class="topbar">
     <div class="topbar-left">
       <div class="logo">Maven<span>Burger</span></div>
-      <div class="cocina-badge">🍳 Cocina</div>
+      <div class="cocina-badge">Cocina</div>
     </div>
     <div class="topbar-right">
       <div class="polling-indicator">
@@ -604,7 +889,7 @@
         if (primeraVez) {
           document.getElementById("columnas").innerHTML = `
             <div class="loading-screen" style="grid-column:1/-1;">
-              <p style="color:#ef4444;">⚠ No se pudo cargar los pedidos: ${escapeHtml(error.message)}</p>
+              <p style="color:#ef4444;"> No se pudo cargar los pedidos: ${escapeHtml(error.message)}</p>
             </div>`;
         }
       }
@@ -621,10 +906,10 @@
     // ── RENDER DE COLUMNAS ───────────────────────────────────────
     function renderColumnas() {
       document.getElementById("columnas").innerHTML = `
-        ${renderColumna("pendiente",      "amarillo", "⏳ Pendientes",      pedidos.pendiente)}
-        ${renderColumna("confirmado",     "rojo",     "✅ Confirmados",     pedidos.confirmado)}
-        ${renderColumna("en_preparacion", "naranja",  "🔥 En preparación",  pedidos.en_preparacion)}
-        ${renderColumna("listo",          "verde",    "✅ Listos",           pedidos.listo)}
+        ${renderColumna("pendiente",      "amarillo", " Pendientes",      pedidos.pendiente)}
+        ${renderColumna("confirmado",     "rojo",     " Confirmados",     pedidos.confirmado)}
+        ${renderColumna("en_preparacion", "naranja",  " En preparación",  pedidos.en_preparacion)}
+        ${renderColumna("listo",          "verde",    " Listos",           pedidos.listo)}
       `;
     }
 
@@ -632,7 +917,7 @@
       const cards = lista.length === 0
         ? `<div class="columna-empty">
              <div class="icon">
-               ${estado === "pendiente" ? "🕐" : estado === "confirmado" ? "📋" : estado === "en_preparacion" ? "👨‍🍳" : "🎉"}
+               ${estado === "pendiente" ? "PEN" : estado === "confirmado" ? "CONF" : estado === "en_preparacion" ? "PREP" : "LISTO"}
              </div>
              <p>${estado === "pendiente" ? "Sin pedidos nuevos" : estado === "confirmado" ? "Sin pedidos confirmados" : estado === "en_preparacion" ? "Nada en preparación" : "Aún no hay pedidos listos"}</p>
            </div>`
@@ -659,7 +944,7 @@
       let tiempoClass = "ok";
       let tiempoLabel = "";
       if (tiempo !== null) {
-        if (tiempo > 20)       { tiempoClass = "urgente"; tiempoLabel = `⚠ ${tiempo}m`; }
+        if (tiempo > 20)       { tiempoClass = "urgente"; tiempoLabel = ` ${tiempo}m`; }
         else if (tiempo > 10)  { tiempoClass = "normal";  tiempoLabel = `${tiempo}m`; }
         else                   { tiempoClass = "ok";      tiempoLabel = `${tiempo}m`; }
       }
@@ -670,8 +955,7 @@
         acciones = `
           <button class="btn-accion btn-preparar"
                   id="btn-${pedido.id_pedido}"
-                  onclick="cambiarEstado(${pedido.id_pedido}, 'confirmado')">
-            ✅ Confirmar
+                  onclick="cambiarEstado(${pedido.id_pedido}, 'confirmado')">Confirmar
           </button>`;
       } else if (estado === "confirmado") {
         acciones = `
@@ -684,15 +968,13 @@
         acciones = `
           <button class="btn-accion btn-listo"
                   id="btn-${pedido.id_pedido}"
-                  onclick="cambiarEstado(${pedido.id_pedido}, 'listo')">
-             Marcar listo
+                  onclick="cambiarEstado(${pedido.id_pedido}, 'listo')">Marcar listo
           </button>`;
       } else if (estado === "listo") {
         acciones = `
           <button class="btn-accion btn-entregar"
                   id="btn-${pedido.id_pedido}"
-                  onclick="cambiarEstado(${pedido.id_pedido}, 'entregado')">
-            🧾 Entregado
+                  onclick="cambiarEstado(${pedido.id_pedido}, 'entregado')">Entregado
           </button>`;
       }
 
@@ -759,10 +1041,10 @@
         await fetchAPI(`/pedidos/${idPedido}/estado`, "PATCH", { estado: nuevoEstado });
 
         const labels = {
-          en_preparacion: "🔥 Pedido en preparación",
-          listo:          "✅ Pedido marcado como listo",
-          confirmado:     "✅ Pedido confirmado",
-          entregado:      "🧾 Pedido entregado",
+          en_preparacion: "Pedido en preparación",
+          listo:          "Pedido marcado como listo",
+          confirmado:     "Pedido confirmado",
+          entregado:      "Pedido entregado",
         };
         mostrarToast(labels[nuevoEstado] || "Estado actualizado", "success");
 
@@ -774,10 +1056,10 @@
         if (btn) {
           btn.disabled = false;
           const textos = {
-            confirmado: "✅ Confirmar",
-            en_preparacion: "🔥 En preparación",
-            listo: "✅ Marcar listo",
-            entregado: "🧾 Entregado",
+            confirmado: "Confirmar",
+            en_preparacion: " En preparación",
+            listo: "Marcar listo",
+            entregado: "Entregado",
           };
           btn.innerHTML = textos[nuevoEstado] || "Actualizar";
         }
