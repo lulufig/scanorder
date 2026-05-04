@@ -580,11 +580,11 @@
     <div class="sidebar-logo">Scan<span>Order</span></div>
 
     <div class="sidebar-section">Gestión</div>
-    <a href="productos.html" class="sidebar-link active">🍔 Productos</a>
-    <a href="mesas.html"     class="sidebar-link">🪑 Mesas</a>
+    <a href="productos.html" class="sidebar-link active"> Productos</a>
+    <a href="mesas.html"     class="sidebar-link"> Mesas</a>
 
     <div class="sidebar-section">Reportes</div>
-    <a href="index.html" class="sidebar-link">📊 Reportes</a>
+    <a href="index.html" class="sidebar-link"> Reportes</a>
 
     <div class="sidebar-bottom">
       <div class="user-info">
@@ -631,7 +631,7 @@
         <input
           type="text"
           class="search-input"
-          placeholder="🔍 Buscar producto..."
+          placeholder=" Buscar producto..."
           id="search-input"
           oninput="filtrarTabla()"
         />
@@ -901,11 +901,11 @@
         if (modoEdicion) {
           // PUT /productos/{id}
           await fetchAPI(`/productos/${idEditando}`, "PUT", body);
-          mostrarToast("✅ Producto actualizado correctamente.", "success");
+          mostrarToast(" Producto actualizado correctamente.", "success");
         } else {
           // POST /productos
           await fetchAPI("/productos", "POST", body);
-          mostrarToast("✅ Producto creado correctamente.", "success");
+          mostrarToast(" Producto creado correctamente.", "success");
         }
         cerrarModal();
         await cargarProductos(); // recarga la tabla
@@ -940,7 +940,7 @@
       try {
         // DELETE /productos/{id}
         await fetchAPI(`/productos/${idAEliminar}`, "DELETE");
-        mostrarToast("🗑️ Producto eliminado.", "success");
+        mostrarToast(" Producto eliminado.", "success");
         cerrarConfirm();
         await cargarProductos(); // recarga la tabla
       } catch (error) {

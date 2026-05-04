@@ -435,7 +435,7 @@
   <header class="topbar">
     <div class="topbar-left">
       <div class="logo">Scan<span>Order</span></div>
-      <div class="cocina-badge">🍳 Cocina</div>
+      <div class="cocina-badge"> Cocina</div>
     </div>
     <div class="topbar-right">
       <div class="polling-indicator">
@@ -581,9 +581,9 @@
     // ── RENDER DE LAS TRES COLUMNAS ──────────────────────────────
     function renderColumnas() {
       document.getElementById("columnas").innerHTML = `
-        ${renderColumna("pendiente",      "amarillo", "⏳ Pendientes",      pedidos.pendiente)}
-        ${renderColumna("en_preparacion", "naranja",  "🔥 En preparación",  pedidos.en_preparacion)}
-        ${renderColumna("listo",          "verde",    "✅ Listos",           pedidos.listo)}
+        ${renderColumna("pendiente",      "amarillo", " Pendientes",      pedidos.pendiente)}
+        ${renderColumna("en_preparacion", "naranja",  " En preparación",  pedidos.en_preparacion)}
+        ${renderColumna("listo",          "verde",    " Listos",           pedidos.listo)}
       `;
     }
 
@@ -591,7 +591,7 @@
       const cards = lista.length === 0
         ? `<div class="columna-empty">
              <div class="icon">
-               ${estado === "pendiente" ? "🕐" : estado === "en_preparacion" ? "👨‍🍳" : "🎉"}
+               ${estado === "pendiente" ? "" : estado === "en_preparacion" ? "" : ""}
              </div>
              <p>${estado === "pendiente" ? "Sin pedidos nuevos" : estado === "en_preparacion" ? "Nada en preparación" : "Aún no hay pedidos listos"}</p>
            </div>`
@@ -630,14 +630,14 @@
           <button class="btn-accion btn-preparar"
                   id="btn-${pedido.id_pedido}"
                   onclick="cambiarEstado(${pedido.id_pedido}, 'en_preparacion')">
-            🔥 En preparación
+             En preparación
           </button>`;
       } else if (estado === "en_preparacion") {
         acciones = `
           <button class="btn-accion btn-listo"
                   id="btn-${pedido.id_pedido}"
                   onclick="cambiarEstado(${pedido.id_pedido}, 'listo')">
-            ✅ Marcar listo
+             Marcar listo
           </button>`;
       }
 
@@ -646,7 +646,7 @@
 
           <div class="pedido-header">
             <div>
-              <div class="pedido-mesa">🪑 Mesa ${pedido.id_mesa || "—"}</div>
+              <div class="pedido-mesa"> Mesa ${pedido.id_mesa || "—"}</div>
               <div class="pedido-id">#${pedido.id_pedido}</div>
             </div>
             <div class="pedido-hora">
@@ -698,8 +698,8 @@
         await fetchAPI(`/pedidos/${idPedido}/estado`, "PATCH", { estado: nuevoEstado });
 
         const labels = {
-          en_preparacion: "🔥 Pedido en preparación",
-          listo:          "✅ Pedido marcado como listo",
+          en_preparacion: " Pedido en preparación",
+          listo:          " Pedido marcado como listo",
         };
         mostrarToast(labels[nuevoEstado] || "Estado actualizado", "success");
 
@@ -710,7 +710,7 @@
         mostrarToast("Error al cambiar estado: " + error.message, "error");
         if (btn) {
           btn.disabled = false;
-          btn.innerHTML = nuevoEstado === "en_preparacion" ? "🔥 En preparación" : "✅ Marcar listo";
+          btn.innerHTML = nuevoEstado === "en_preparacion" ? " En preparación" : " Marcar listo";
         }
       } finally {
         enCambioEstado.delete(idPedido);

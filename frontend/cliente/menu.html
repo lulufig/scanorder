@@ -464,7 +464,7 @@
   <!-- ===== HEADER ===== -->
   <header class="header">
     <div class="header-logo">Maven<span>Burger</span></div>
-    <div class="header-mesa" id="header-mesa">🪑 Mesa —</div>
+    <div class="header-mesa" id="header-mesa"> Mesa —</div>
   </header>
 
   <!-- ===== HERO ===== -->
@@ -508,7 +508,7 @@
 
     <div class="carrito-footer">
       <button class="btn-confirmar" id="btn-confirmar" onclick="confirmarPedido()">
-        🛒 Confirmar pedido
+         Confirmar pedido
       </button>
     </div>
   </div>
@@ -814,7 +814,7 @@
       } catch (error) {
         alert("No se pudo enviar el pedido: " + error.message);
         btn.disabled = false;
-        btn.innerHTML = "🛒 Confirmar pedido";
+        btn.innerHTML = " Confirmar pedido";
       }
     }
 
@@ -822,7 +822,7 @@
     function mostrarExito() {
       document.getElementById("exito-msg").innerHTML =
         `Tu pedido fue enviado a cocina.<br>
-         <strong>Mesa ${mesaId}</strong> — En breve estará listo. 🍔`;
+         <strong>Mesa ${mesaId}</strong> — En breve estará listo. `;
       document.getElementById("exito-overlay").classList.add("visible");
     }
 
@@ -838,7 +838,7 @@
       // Resetear botón
       const btn = document.getElementById("btn-confirmar");
       btn.disabled = false;
-      btn.innerHTML = "🛒 Confirmar pedido";
+      btn.innerHTML = " Confirmar pedido";
 
       // Volver al inicio de la página
       window.scrollTo({ top: 0, behavior: "smooth" });
