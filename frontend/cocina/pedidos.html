@@ -576,11 +576,11 @@
         const base  = Array.isArray(lista) ? lista : [];
 
         // GET /pedidos/{id} para cada pedido — trae el detalle de productos
-        const conDetalle = await Promise.all(
+        const conDetalle = (await Promise.all(
           base.map(p =>
             fetchAPI(`/pedidos/${p.id_pedido}`).catch(() => p)
           )
-        );
+        )).filter(Boolean); // descarta cualquier resultado null/undefined
 
         // Separar por estado
         pedidos.pendiente      = conDetalle.filter(p => p.estado === "pendiente");

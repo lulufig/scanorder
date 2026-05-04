@@ -50,7 +50,7 @@ async function fetchAPI(endpoint, method = "GET", body = null, auth = true) {
   // En rutas públicas (auth=false), se devuelve el error sin redirigir al login.
   if (auth && response.status === 401) {
     logout();
-    return;
+    throw new ApiError("Sesión expirada. Iniciá sesión nuevamente.", 401);
   }
 
   // Intentamos parsear la respuesta como JSON
