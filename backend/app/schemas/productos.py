@@ -1,25 +1,25 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
 class ProductoCreate(BaseModel):
     """Schema para crear un nuevo producto."""
-    nombre: str
+    nombre: str = Field(min_length=1, max_length=150)
     descripcion: Optional[str] = None
-    precio: float
+    precio: float = Field(gt=0)
     id_categoria: Optional[int] = None
-    categoria: Optional[str] = None
+    categoria: Optional[str] = Field(default=None, min_length=1, max_length=100)
     imagen_url: Optional[str] = None
     disponible: bool = True
 
 
 class ProductoUpdate(BaseModel):
     """Schema para actualizar un producto (todos los campos son opcionales)."""
-    nombre: Optional[str] = None
+    nombre: Optional[str] = Field(default=None, min_length=1, max_length=150)
     descripcion: Optional[str] = None
-    precio: Optional[float] = None
+    precio: Optional[float] = Field(default=None, gt=0)
     id_categoria: Optional[int] = None
-    categoria: Optional[str] = None
+    categoria: Optional[str] = Field(default=None, min_length=1, max_length=100)
     imagen_url: Optional[str] = None
     disponible: Optional[bool] = None
 

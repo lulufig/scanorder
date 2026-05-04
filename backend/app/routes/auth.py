@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Request
 from app.schemas.auth import UserRegister, UserLogin, Token
 from app.database import get_db_connection, close_db_connection
-from app.utils.security import hash_password, verify_password, create_access_token
+from app.utils.security import hash_password, verify_password, create_access_token, decode_access_token
 from app.utils.dependencies import get_current_user, require_role
 
 router = APIRouter(
@@ -10,7 +10,7 @@ router = APIRouter(
 )
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-def register_user(user: UserRegister):
+def register_user(user: UserRegister, request: Request):
     """
     Registra un nuevo usuario en el sistema.
     """
@@ -24,6 +24,32 @@ def register_user(user: UserRegister):
     
     try:
         cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("SELECT COUNT(*) AS total FROM usuarios")
+        total_usuarios = cursor.fetchone()["total"]
+
+        if total_usuarios == 0 and user.rol != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El primer usuario del sistema debe tener rol admin",
+            )
+
+        if total_usuarios > 0:
+            auth_header = request.headers.get("Authorization", "")
+            if not auth_header.startswith("Bearer "):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Se requiere token de administrador para registrar usuarios",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            token = auth_header.removeprefix("Bearer ").strip()
+            payload = decode_access_token(token)
+            if not payload or payload.get("rol") != "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Solo un administrador puede registrar usuarios",
+                )
         
         # Verificar si el email ya existe
         cursor.execute("SELECT id_usuario FROM usuarios WHERE email = %s", (user.email,))

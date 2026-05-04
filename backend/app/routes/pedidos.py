@@ -111,9 +111,9 @@ def create_pedido(pedido: PedidoCreate):
         cursor.execute("SHOW COLUMNS FROM mesas LIKE %s", ("qr_token",))
         tiene_qr_token = cursor.fetchone() is not None
 
-        # Validar que la mesa exista
-        campos_mesa = "id_mesa, qr_token" if tiene_qr_token else "id_mesa, NULL AS qr_token"
-        query_mesa = "SELECT " + campos_mesa + " FROM mesas WHERE id_mesa = %s"
+        # Validar que la mesa exista. El frontend envia el numero visible de mesa.
+        campos_mesa = "id_mesa, numero, qr_token" if tiene_qr_token else "id_mesa, numero, NULL AS qr_token"
+        query_mesa = "SELECT " + campos_mesa + " FROM mesas WHERE numero = %s AND activa = TRUE"
         cursor.execute(query_mesa, (pedido.id_mesa,))
         mesa = cursor.fetchone()
         if not mesa:
@@ -166,12 +166,12 @@ def create_pedido(pedido: PedidoCreate):
         if tiene_observaciones:
             cursor.execute(
                 "INSERT INTO pedidos (id_mesa, total, observaciones) VALUES (%s, %s, %s)",
-                (pedido.id_mesa, total, observaciones)
+                (mesa["id_mesa"], total, observaciones)
             )
         else:
             cursor.execute(
                 "INSERT INTO pedidos (id_mesa, total) VALUES (%s, %s)",
-                (pedido.id_mesa, total)
+                (mesa["id_mesa"], total)
             )
         nuevo_id = cursor.lastrowid
 

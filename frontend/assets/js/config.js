@@ -2,7 +2,9 @@
 //  config.js — Configuración global del frontend ScanOrder
 // ============================================================
 
-const API_URL = "http://192.168.1.10:8000"; //"http://192.168.1.10:8000";
+const API_HOST = window.location.hostname || "localhost";
+const API_PROTOCOL = window.location.protocol === "file:" ? "http:" : window.location.protocol;
+const API_URL = window.SCANORDER_API_URL || `${API_PROTOCOL}//${API_HOST}:8000`;
 
 // Rutas de la aplicación
 const ROUTES = {

@@ -59,7 +59,7 @@ def create_mesa(
             )
         nueva_id = cursor.lastrowid
 
-        qr_url = generate_qr(nueva_id, qr_token)
+        qr_url = generate_qr(nueva_id, mesa.numero, qr_token)
 
         cursor.execute(
             "UPDATE mesas SET qr_url = %s WHERE id_mesa = %s",
@@ -152,14 +152,15 @@ def regenerar_qr_mesa(
             "SELECT * FROM mesas WHERE id_mesa = %s",
             (id_mesa,)
         )
-        if not cursor.fetchone():
+        mesa = cursor.fetchone()
+        if not mesa:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Mesa no encontrada"
             )
 
         qr_token = secrets.token_urlsafe(24) if tiene_qr_token else None
-        qr_url = generate_qr(id_mesa, qr_token)
+        qr_url = generate_qr(id_mesa, mesa["numero"], qr_token)
 
         if tiene_qr_token:
             cursor.execute(
