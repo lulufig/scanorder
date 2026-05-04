@@ -213,6 +213,347 @@
       text-align: center;
       margin-top: 28px;
     }
+  
+
+    /* ===== AJUSTE PROFESIONAL LOGIN ===== */
+    :root {
+      --red: #B91C1C;
+      --red2: #991B1B;
+      --beige: #F9FAFB;
+      --beige2: #E5E7EB;
+      --dark: #111827;
+      --amber: #B45309;
+      --gray: #6B7280;
+      --line: #E5E7EB;
+      --surface: #FFFFFF;
+      --surface-soft: #F9FAFB;
+    }
+
+    body {
+      background: #F3F4F6;
+      color: #111827;
+      overflow: auto;
+      padding: 24px;
+      font-family: 'DM Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: min(42vw, 520px);
+      background: #111827;
+      z-index: 0;
+    }
+
+    .bg-circle { display: none; }
+
+    .login-card {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(260px, 38%) 1fr;
+      gap: 0;
+      max-width: 960px;
+      width: min(100%, 960px);
+      min-height: 560px;
+      padding: 0;
+      overflow: hidden;
+      background: #FFFFFF;
+      border: 1px solid #E5E7EB;
+      border-radius: 8px;
+      box-shadow: 0 18px 45px rgba(17,24,39,0.12);
+      backdrop-filter: none;
+      animation: loginFade 0.35s ease both;
+    }
+
+    .login-card::before {
+      content: 'Sistema ScanOrder';
+      display: flex;
+      align-items: flex-end;
+      justify-content: flex-start;
+      padding: 32px;
+      background: #111827;
+      color: #CBD5E1;
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      grid-row: 1 / span 4;
+      grid-column: 1;
+      min-height: 560px;
+    }
+
+    @keyframes loginFade {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .login-card > div:not(.divider),
+    .login-card > p {
+      grid-column: 2;
+    }
+
+    .login-card > div:first-of-type {
+      padding: 48px 48px 0;
+    }
+
+    .login-card > div[style] {
+      padding: 0 48px;
+    }
+
+    .footer-text {
+      padding: 0 48px 42px;
+      margin-top: 24px;
+      color: #6B7280;
+      text-align: left;
+    }
+
+    .logo {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      font-size: 2rem;
+      font-weight: 800;
+      color: #111827;
+      letter-spacing: 0;
+    }
+    .logo span { color: #B91C1C; }
+    .logo-tag {
+      color: #6B7280;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+      margin-top: 8px;
+    }
+
+    .divider {
+      grid-column: 2;
+      height: 1px;
+      background: #E5E7EB;
+      margin: 32px 48px;
+    }
+
+    .field-label {
+      color: #374151;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+    }
+
+    .field-input {
+      background: #FFFFFF;
+      border: 1px solid #D1D5DB;
+      border-radius: 8px;
+      color: #111827;
+      font-size: 0.95rem;
+      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    }
+    .field-input::placeholder { color: #9CA3AF; }
+    .field-input:focus {
+      border-color: #B91C1C;
+      background: #FFFFFF;
+      box-shadow: 0 0 0 3px rgba(185,28,28,0.10);
+    }
+
+    .btn-login {
+      background: #B91C1C;
+      border-radius: 8px;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      font-weight: 800;
+      letter-spacing: 0;
+      box-shadow: none;
+    }
+    .btn-login:hover {
+      background: #991B1B;
+      box-shadow: none;
+    }
+
+    .error-box {
+      background: #FEF2F2;
+      border: 1px solid #FECACA;
+      border-radius: 8px;
+      color: #B91C1C;
+      font-weight: 700;
+    }
+    .error-box span:first-child {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      background: #FEE2E2;
+      color: #B91C1C;
+      font-weight: 900;
+      flex-shrink: 0;
+    }
+
+    .spinner { margin-right: 8px; }
+
+    @media (max-width: 760px) {
+      body { padding: 16px; align-items: flex-start; }
+      body::before { display: none; }
+      .login-card {
+        display: block;
+        min-height: auto;
+        max-width: 440px;
+        margin-top: 24px;
+      }
+      .login-card::before { display: none; }
+      .login-card > div:first-of-type { padding: 34px 28px 0; }
+      .login-card > div[style] { padding: 0 28px; }
+      .divider { margin: 28px; }
+      .footer-text { padding: 0 28px 30px; text-align: center; }
+      .logo { font-size: 1.75rem; }
+    }
+
+    /* ===== LOGIN MAVEN V2 ===== */
+    body {
+      background:
+        radial-gradient(circle at 18% 18%, rgba(185,28,28,0.16) 0, rgba(185,28,28,0.00) 28%),
+        radial-gradient(circle at 82% 78%, rgba(180,83,9,0.18) 0, rgba(180,83,9,0.00) 30%),
+        linear-gradient(135deg, #FFF8ED 0%, #F3E4CF 48%, #E9D5BC 100%);
+      align-items: center;
+      overflow: auto;
+    }
+
+    body::before {
+      display: none;
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(33,19,15,0.08) 0 1px, transparent 1px 100%),
+        linear-gradient(180deg, rgba(33,19,15,0.06) 0 1px, transparent 1px 100%);
+      background-size: 42px 42px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,0.35), transparent 72%);
+      z-index: 0;
+    }
+
+    .login-card {
+      display: block;
+      width: min(100%, 430px);
+      max-width: 430px;
+      min-height: auto;
+      padding: 0;
+      background: #FFFDF8;
+      border: 1px solid rgba(33,19,15,0.10);
+      border-top: 5px solid #B91C1C;
+      border-radius: 10px;
+      box-shadow: 0 18px 42px rgba(33,19,15,0.16);
+    }
+
+    .login-card::before {
+      content: 'Maven Burger';
+      display: block;
+      min-height: auto;
+      padding: 26px 34px 0;
+      background: transparent;
+      color: #8A5A1F;
+      font-size: 0.72rem;
+      font-weight: 900;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .login-card > div:not(.divider),
+    .login-card > p {
+      grid-column: auto;
+    }
+
+    .login-card > div:first-of-type {
+      padding: 8px 34px 0;
+    }
+
+    .login-card > div[style] {
+      padding: 0 34px;
+    }
+
+    .logo {
+      color: #21130F;
+      font-size: 2.15rem;
+      line-height: 1;
+    }
+
+    .logo span {
+      color: #B91C1C;
+    }
+
+    .logo-tag {
+      color: #7A6654;
+      font-size: 0.68rem;
+      letter-spacing: 0.12em;
+    }
+
+    .divider {
+      grid-column: auto;
+      margin: 28px 34px;
+      background: rgba(33,19,15,0.10);
+    }
+
+    .field-label {
+      color: #5F4B3B;
+    }
+
+    .field-input {
+      background: #FFFFFF;
+      border-color: #D8C8B7;
+      color: #21130F;
+    }
+
+    .field-input:focus {
+      border-color: #B91C1C;
+      box-shadow: 0 0 0 3px rgba(185,28,28,0.12);
+    }
+
+    .btn-login {
+      background: #B91C1C;
+      border-radius: 8px;
+    }
+
+    .btn-login:hover {
+      background: #991B1B;
+    }
+
+    .footer-text {
+      padding: 0 34px 32px;
+      color: #7A6654;
+      text-align: center;
+    }
+
+    @media (max-width: 760px) {
+      body {
+        align-items: center;
+        padding: 18px;
+      }
+
+      .login-card {
+        margin-top: 0;
+      }
+
+      .login-card::before {
+        display: block;
+        padding: 24px 28px 0;
+      }
+
+      .login-card > div:first-of-type {
+        padding: 8px 28px 0;
+      }
+
+      .login-card > div[style] {
+        padding: 0 28px;
+      }
+
+      .divider {
+        margin: 26px 28px;
+      }
+
+      .footer-text {
+        padding: 0 28px 30px;
+      }
+    }
+
   </style>
 </head>
 
@@ -255,14 +596,14 @@
           id="password"
           type="password"
           class="field-input"
-          placeholder="••••••••"
+          placeholder="********"
           autocomplete="current-password"
         />
       </div>
 
       <!-- Error -->
       <div class="error-box" id="error-box">
-        <span>⚠</span>
+        <span>!</span>
         <span id="error-msg">Credenciales inválidas</span>
       </div>
 
