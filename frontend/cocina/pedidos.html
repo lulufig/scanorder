@@ -678,14 +678,14 @@
           <button class="btn-accion btn-preparar"
                   id="btn-${pedido.id_pedido}"
                   onclick="cambiarEstado(${pedido.id_pedido}, 'en_preparacion')">
-            🔥 En preparación
+             En preparación
           </button>`;
       } else if (estado === "en_preparacion") {
         acciones = `
           <button class="btn-accion btn-listo"
                   id="btn-${pedido.id_pedido}"
                   onclick="cambiarEstado(${pedido.id_pedido}, 'listo')">
-            ✅ Marcar listo
+             Marcar listo
           </button>`;
       } else if (estado === "listo") {
         acciones = `
@@ -701,7 +701,7 @@
 
           <div class="pedido-header">
             <div>
-              <div class="pedido-mesa">🪑 Mesa ${pedido.id_mesa || "—"}</div>
+              <div class="pedido-mesa"> Mesa ${pedido.id_mesa || "—"}</div>
               <div class="pedido-id">#${pedido.id_pedido}</div>
             </div>
             <div class="pedido-hora">

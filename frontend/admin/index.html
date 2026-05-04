@@ -492,11 +492,11 @@
     <div class="sidebar-logo">Maven<span>Burger</span></div>
 
     <div class="sidebar-section">Gestión</div>
-    <a href="productos.html" class="sidebar-link">🍔 Productos</a>
-    <a href="mesas.html"     class="sidebar-link">🪑 Mesas</a>
+    <a href="productos.html" class="sidebar-link"> Productos</a>
+    <a href="mesas.html"     class="sidebar-link"> Mesas</a>
 
     <div class="sidebar-section">Reportes</div>
-    <a href="index.html" class="sidebar-link active">📊 Reportes</a>
+    <a href="index.html" class="sidebar-link active"> Reportes</a>
 
     <div class="sidebar-bottom">
       <div class="user-info">
@@ -515,7 +515,7 @@
       <div class="welcome-text">
         <div class="welcome-saludo">Panel de administración</div>
         <div class="welcome-nombre" id="welcome-nombre">Bienvenida 👋</div>
-        <div class="welcome-sub">Maven Burger — Sistema Maven Burger</div>
+        <div class="welcome-sub">Maven Burger — Sistema ScanOrder</div>
       </div>
       <div class="welcome-emoji">🍔</div>
     </div>
@@ -551,7 +551,7 @@
 
     <div class="accesos-grid fade-in" style="animation-delay:0.1s;">
       <a href="productos.html" class="acceso-card">
-        <div class="acceso-icon">🍔</div>
+        <div class="acceso-icon"></div>
         <div>
           <div class="acceso-titulo">Productos</div>
           <div class="acceso-desc">Gestioná el menú: agregá, editá y eliminá productos</div>
@@ -560,7 +560,7 @@
       </a>
 
       <a href="mesas.html" class="acceso-card">
-        <div class="acceso-icon">🪑</div>
+        <div class="acceso-icon"></div>
         <div>
           <div class="acceso-titulo">Mesas y QR</div>
           <div class="acceso-desc">Creá mesas y generá los códigos QR para los clientes</div>
@@ -569,7 +569,7 @@
       </a>
 
       <div class="acceso-card" onclick="document.getElementById('seccion-reportes').scrollIntoView({behavior:'smooth'})">
-        <div class="acceso-icon">📊</div>
+        <div class="acceso-icon"></div>
         <div>
           <div class="acceso-titulo">Reportes</div>
           <div class="acceso-desc">Generá reportes de ventas en PDF por rango de fechas</div>
@@ -580,14 +580,14 @@
 
     <!-- Sección Reportes -->
     <div id="seccion-reportes" class="fade-in" style="animation-delay:0.2s;">
-      <div class="section-title">📊 Reportes de ventas</div>
+      <div class="section-title"> Reportes de ventas</div>
 
       <div class="reportes-grid">
 
         <!-- Reporte de ventas -->
         <div class="reporte-card">
           <div class="reporte-card-header">
-            <div class="reporte-icon">📄</div>
+            <div class="reporte-icon"></div>
             <div>
               <div class="reporte-titulo">Reporte de ventas</div>
               <div class="reporte-desc">PDF con total, pedidos y productos más vendidos</div>
@@ -617,7 +617,7 @@
 
             <!-- Botón generar -->
             <button class="btn-generar" id="btn-ventas" onclick="generarReporteVentas()">
-              📥 Generar reporte de ventas
+               Generar reporte de ventas
             </button>
 
             <!-- Historial de esta sesión -->
@@ -635,7 +635,7 @@
         <!-- Info / ayuda -->
         <div class="reporte-card">
           <div class="reporte-card-header">
-            <div class="reporte-icon">💡</div>
+            <div class="reporte-icon"></div>
             <div>
               <div class="reporte-titulo">¿Qué incluye el reporte?</div>
               <div class="reporte-desc">Detalle del contenido generado</div>
@@ -645,7 +645,7 @@
             <div style="display:flex; flex-direction:column; gap:14px;">
 
               <div style="display:flex; gap:12px; align-items:flex-start;">
-                <span style="font-size:1.2rem; flex-shrink:0;">💰</span>
+                <span style="font-size:1.2rem; flex-shrink:0;">-</span>
                 <div>
                   <div style="font-weight:600; font-size:0.875rem; margin-bottom:2px;">Total de ventas</div>
                   <div style="font-size:0.78rem; color:#a89880;">Suma total del período seleccionado</div>
@@ -653,7 +653,7 @@
               </div>
 
               <div style="display:flex; gap:12px; align-items:flex-start;">
-                <span style="font-size:1.2rem; flex-shrink:0;">🧾</span>
+                <span style="font-size:1.2rem; flex-shrink:0;">-</span>
                 <div>
                   <div style="font-weight:600; font-size:0.875rem; margin-bottom:2px;">Cantidad de pedidos</div>
                   <div style="font-size:0.78rem; color:#a89880;">Total de pedidos procesados</div>
@@ -661,7 +661,7 @@
               </div>
 
               <div style="display:flex; gap:12px; align-items:flex-start;">
-                <span style="font-size:1.2rem; flex-shrink:0;">🏆</span>
+                <span style="font-size:1.2rem; flex-shrink:0;">-</span>
                 <div>
                   <div style="font-weight:600; font-size:0.875rem; margin-bottom:2px;">Productos más vendidos</div>
                   <div style="font-size:0.78rem; color:#a89880;">Ranking de productos por cantidad</div>
@@ -669,7 +669,7 @@
               </div>
 
               <div style="display:flex; gap:12px; align-items:flex-start;">
-                <span style="font-size:1.2rem; flex-shrink:0;">📅</span>
+                <span style="font-size:1.2rem; flex-shrink:0;">-</span>
                 <div>
                   <div style="font-weight:600; font-size:0.875rem; margin-bottom:2px;">Período del reporte</div>
                   <div style="font-size:0.78rem; color:#a89880;">Fechas de inicio y fin seleccionadas</div>
@@ -705,7 +705,7 @@
     const usuario = getUser();
     if (usuario) {
       document.getElementById("sidebar-username").textContent = usuario.nombre;
-      document.getElementById("welcome-nombre").textContent   = `Bienvenida, ${usuario.nombre} 👋`;
+      document.getElementById("welcome-nombre").textContent   = `Bienvenida, ${usuario.nombre} `;
     }
 
     // ── FECHAS POR DEFECTO (hoy) ─────────────────────────────────
@@ -799,14 +799,14 @@
 
         await downloadFile(endpoint, filename);
 
-        mostrarToast("✅ Reporte descargado correctamente.", "success");
+        mostrarToast(" Reporte descargado correctamente.", "success");
         agregarHistorial(filename, fechaInicio, fechaFin);
 
       } catch (error) {
         mostrarToast("Error al generar el reporte: " + error.message, "error");
       } finally {
         btn.disabled = false;
-        btn.innerHTML = "📥 Generar reporte de ventas";
+        btn.innerHTML = " Generar reporte de ventas";
       }
     }
 
@@ -840,7 +840,7 @@
       lista.innerHTML = historialItems.map(item => `
         <div class="historial-item">
           <div>
-            <div class="historial-nombre">📄 ${item.inicio} → ${item.fin}</div>
+            <div class="historial-nombre"> ${item.inicio} → ${item.fin}</div>
           </div>
           <div class="historial-hora">Descargado ${item.hora}</div>
         </div>
