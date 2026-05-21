@@ -1,0 +1,49 @@
+
+    :root {
+      --color-brand-red:   #C0392B;
+      --color-brand-beige: #F5ECD7;
+      --color-brand-dark:  #1A1009;
+      --color-brand-amber: #E8A020;
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background-color: var(--color-brand-beige);
+      color: var(--color-brand-dark);
+    }
+
+    .font-display { font-family: 'Syne', sans-serif; }
+
+    /* Estado del health check */
+    #status-badge {
+      transition: all 0.4s ease;
+    }
+    .status-ok      { background: #16a34a; }
+    .status-error   { background: #dc2626; }
+    .status-loading { background: #ca8a04; }
+
+    .card {
+      background: white;
+      border: 2px solid var(--color-brand-dark);
+      border-radius: 12px;
+      box-shadow: 6px 6px 0px var(--color-brand-dark);
+    }
+
+    .btn-primary {
+      background: var(--color-brand-red);
+      color: white;
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      border: 2px solid var(--color-brand-dark);
+      box-shadow: 3px 3px 0px var(--color-brand-dark);
+      transition: all 0.15s ease;
+    }
+    .btn-primary:hover {
+      transform: translate(-2px, -2px);
+      box-shadow: 5px 5px 0px var(--color-brand-dark);
+    }
+    .btn-primary:active {
+      transform: translate(1px, 1px);
+      box-shadow: 2px 2px 0px var(--color-brand-dark);
+    }
+  

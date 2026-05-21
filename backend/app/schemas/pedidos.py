@@ -15,6 +15,14 @@ class PedidoCreate(BaseModel):
     productos: List[DetallePedidoCreate]
     observaciones: Optional[str] = None
     qr_token: Optional[str] = None
+    client_id: Optional[str] = None
+
+
+class ServicioMesaCreate(BaseModel):
+    """Solicitud de atencion desde una mesa."""
+    id_mesa: int
+    tipo: Literal["mozo", "cuenta"]
+    qr_token: Optional[str] = None
 
 
 class EstadoUpdate(BaseModel):

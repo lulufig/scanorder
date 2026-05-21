@@ -8,6 +8,7 @@ from app.schemas.pedidos import (
     PedidoResponse,
     PedidoCompletoResponse,
     EstadoUpdate,
+    ServicioMesaCreate,
 )
 from app.utils.dependencies import get_current_user
 from app.utils.security import decode_access_token
@@ -58,6 +59,110 @@ class CocinaConnectionManager:
 manager = CocinaConnectionManager()
 
 
+class MesaSessionManager:
+    """Mantiene carritos colaborativos activos por mesa mientras corre el servidor."""
+
+    def __init__(self):
+        self.sessions: dict[str, dict] = {}
+
+    def session_key(self, numero_mesa: int, qr_token: str | None) -> str:
+        return f"{numero_mesa}:{qr_token or ''}"
+
+    def get_session(self, key: str) -> dict | None:
+        return self.sessions.get(key)
+
+    def _snapshot(self, key: str, event: str = "snapshot") -> dict:
+        session = self.sessions[key]
+        return {
+            "type": event,
+            "mesa": session["mesa"],
+            "host_client_id": session["host_client_id"],
+            "participantes": [
+                {"client_id": cid, "nombre": data["nombre"]}
+                for cid, data in session["clients"].items()
+            ],
+            "carrito": session["carrito"],
+            "observaciones": session["observaciones"],
+        }
+
+    async def connect(
+        self,
+        websocket: WebSocket,
+        key: str,
+        numero_mesa: int,
+        client_id: str,
+        nombre: str,
+    ):
+        await websocket.accept()
+        session = self.sessions.setdefault(
+            key,
+            {
+                "mesa": numero_mesa,
+                "host_client_id": client_id,
+                "clients": {},
+                "carrito": [],
+                "observaciones": "",
+            },
+        )
+
+        if not session["clients"]:
+            session["host_client_id"] = client_id
+
+        session["clients"][client_id] = {
+            "nombre": nombre or "Cliente",
+            "websocket": websocket,
+        }
+        await websocket.send_json(self._snapshot(key))
+        await self.broadcast(key, self._snapshot(key, "participantes_actualizados"), exclude=client_id)
+
+    def disconnect(self, key: str, client_id: str):
+        session = self.sessions.get(key)
+        if not session:
+            return
+
+        session["clients"].pop(client_id, None)
+        if session["clients"] and session["host_client_id"] == client_id:
+            session["host_client_id"] = next(iter(session["clients"].keys()))
+        if not session["clients"] and not session["carrito"]:
+            self.sessions.pop(key, None)
+
+    async def broadcast(self, key: str, message: dict, exclude: str | None = None):
+        session = self.sessions.get(key)
+        if not session:
+            return
+
+        disconnected = []
+        for client_id, data in session["clients"].items():
+            if exclude and client_id == exclude:
+                continue
+            try:
+                await data["websocket"].send_json(message)
+            except Exception:
+                disconnected.append(client_id)
+
+        for client_id in disconnected:
+            self.disconnect(key, client_id)
+
+    async def update_cart(self, key: str, carrito: list[dict], observaciones: str | None):
+        session = self.sessions.get(key)
+        if not session:
+            return
+        session["carrito"] = carrito
+        session["observaciones"] = observaciones or ""
+        await self.broadcast(key, self._snapshot(key, "carrito_actualizado"))
+
+    async def clear_cart(self, key: str):
+        session = self.sessions.get(key)
+        if not session:
+            return
+        session["carrito"] = []
+        session["observaciones"] = ""
+        await self.broadcast(key, self._snapshot(key, "pedido_confirmado"))
+
+
+mesa_sessions = MesaSessionManager()
+
+
 def notificar_cocina(message: dict):
     """Envía una notificación a cocina sin bloquear la respuesta HTTP."""
     try:
@@ -75,6 +180,23 @@ def pedidos_tiene_columna(cursor, columna: str) -> bool:
     return _col_cache[key]
 
 
+def mesas_tiene_qr_token(cursor) -> bool:
+    """Indica si la tabla mesas tiene qr_token. Resultado cacheado por proceso."""
+    key = "mesas.qr_token"
+    if key not in _col_cache:
+        cursor.execute("SHOW COLUMNS FROM mesas LIKE %s", ("qr_token",))
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
+
+
+def obtener_mesa_por_numero(cursor, numero_mesa: int):
+    tiene_qr_token = mesas_tiene_qr_token(cursor)
+    campos_mesa = "id_mesa, numero, qr_token" if tiene_qr_token else "id_mesa, numero, NULL AS qr_token"
+    query_mesa = "SELECT " + campos_mesa + " FROM mesas WHERE numero = %s AND activa = TRUE"
+    cursor.execute(query_mesa, (numero_mesa,))
+    return cursor.fetchone(), tiene_qr_token
+
+
 @router.websocket("/ws/cocina")
 async def websocket_cocina(websocket: WebSocket, token: str = ""):
     """Canal en tiempo real para avisar a cocina cuando cambian los pedidos."""
@@ -89,6 +211,63 @@ async def websocket_cocina(websocket: WebSocket, token: str = ""):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+
+@router.websocket("/ws/mesa")
+async def websocket_mesa(
+    websocket: WebSocket,
+    mesa: int,
+    token: str = "",
+    client_id: str = "",
+    nombre: str = "Cliente",
+):
+    """Canal publico para sincronizar el carrito colaborativo de una mesa."""
+    connection = get_db_connection()
+    if not connection:
+        await websocket.close(code=1011)
+        return
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        mesa_db, tiene_qr_token = obtener_mesa_por_numero(cursor, mesa)
+        if not mesa_db:
+            await websocket.close(code=1008)
+            return
+
+        if tiene_qr_token and mesa_db.get("qr_token") and token != mesa_db["qr_token"]:
+            await websocket.close(code=1008)
+            return
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+    if not client_id:
+        await websocket.close(code=1008)
+        return
+
+    session_key = mesa_sessions.session_key(mesa, token)
+    await mesa_sessions.connect(websocket, session_key, mesa, client_id, nombre)
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            action = data.get("action")
+
+            if action == "sync_cart":
+                await mesa_sessions.update_cart(
+                    session_key,
+                    data.get("carrito") or [],
+                    data.get("observaciones") or "",
+                )
+            elif action == "clear_cart":
+                await mesa_sessions.clear_cart(session_key)
+    except WebSocketDisconnect:
+        mesa_sessions.disconnect(session_key, client_id)
+        if mesa_sessions.get_session(session_key):
+            await mesa_sessions.broadcast(
+                session_key,
+                mesa_sessions._snapshot(session_key, "participantes_actualizados")
+            )
 
 
 @router.post("/", response_model=PedidoResponse, status_code=status.HTTP_201_CREATED)
@@ -113,17 +292,9 @@ def create_pedido(pedido: PedidoCreate):
     try:
         cursor = connection.cursor(dictionary=True)
         tiene_observaciones = pedidos_tiene_columna(cursor, "observaciones")
-        tiene_qr_token_key = "mesas.qr_token"
-        if tiene_qr_token_key not in _col_cache:
-            cursor.execute("SHOW COLUMNS FROM mesas LIKE %s", ("qr_token",))
-            _col_cache[tiene_qr_token_key] = cursor.fetchone() is not None
-        tiene_qr_token = _col_cache[tiene_qr_token_key]
 
         # Validar que la mesa exista. El frontend envia el numero visible de mesa.
-        campos_mesa = "id_mesa, numero, qr_token" if tiene_qr_token else "id_mesa, numero, NULL AS qr_token"
-        query_mesa = "SELECT " + campos_mesa + " FROM mesas WHERE numero = %s AND activa = TRUE"
-        cursor.execute(query_mesa, (pedido.id_mesa,))
-        mesa = cursor.fetchone()
+        mesa, tiene_qr_token = obtener_mesa_por_numero(cursor, pedido.id_mesa)
         if not mesa:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -133,6 +304,14 @@ def create_pedido(pedido: PedidoCreate):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="QR inválido para esta mesa"
+            )
+
+        session_key = mesa_sessions.session_key(pedido.id_mesa, pedido.qr_token)
+        session = mesa_sessions.get_session(session_key)
+        if session and session.get("host_client_id") and pedido.client_id != session["host_client_id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo el anfitrion de la mesa puede confirmar el pedido"
             )
 
         # Validar cada producto y armar los datos del detalle
@@ -217,6 +396,61 @@ def create_pedido(pedido: PedidoCreate):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al crear pedido: {str(e)}"
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
+@router.post("/servicio")
+def solicitar_servicio(servicio: ServicioMesaCreate):
+    """
+    Notifica a cocina/salon que una mesa pidio mozo o cuenta.
+    No requiere autenticacion porque se accede desde el QR de la mesa.
+    """
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos"
+        )
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+        mesa, tiene_qr_token = obtener_mesa_por_numero(cursor, servicio.id_mesa)
+        if not mesa:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Mesa {servicio.id_mesa} no encontrada"
+            )
+
+        if tiene_qr_token and mesa.get("qr_token") and servicio.qr_token != mesa["qr_token"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="QR inválido para esta mesa"
+            )
+
+        mensaje = "Mesa solicita mozo" if servicio.tipo == "mozo" else "Mesa solicita la cuenta"
+        notificar_cocina({
+            "type": "servicio_mesa",
+            "tipo": servicio.tipo,
+            "id_mesa": mesa["id_mesa"],
+            "numero_mesa": mesa["numero"],
+            "message": f"{mensaje}: Mesa {mesa['numero']}",
+        })
+
+        return {
+            "message": mensaje,
+            "mesa": mesa["numero"],
+            "tipo": servicio.tipo,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al solicitar servicio: {str(e)}"
         )
     finally:
         cursor.close()

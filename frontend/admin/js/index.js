@@ -1,0 +1,159 @@
+
+    // ── PROTECCIÓN DE RUTA ──────────────────────────────────────
+    requireAuth(ROLES.ADMIN);
+
+    const usuario = getUser();
+    if (usuario) {
+      document.getElementById("sidebar-username").textContent = usuario.nombre;
+      document.getElementById("welcome-nombre").textContent   = `Bienvenida, ${usuario.nombre} `;
+    }
+
+    // ── FECHAS POR DEFECTO (hoy) ─────────────────────────────────
+    const hoy = new Date().toISOString().split("T")[0];
+    document.getElementById("fecha-inicio").value = hoy;
+    document.getElementById("fecha-fin").value    = hoy;
+    cargarDashboard();
+
+    const formatterPrecio = new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: "ARS",
+      maximumFractionDigits: 0,
+    });
+
+    async function cargarDashboard() {
+      try {
+        const data = await fetchAPI("/reportes/dashboard");
+        document.getElementById("metric-ventas-hoy").textContent = formatPrecio(data.ventas_hoy);
+        document.getElementById("metric-pedidos-hoy").textContent = data.pedidos_hoy;
+        document.getElementById("metric-ticket").textContent = formatPrecio(data.ticket_promedio);
+        document.getElementById("metric-mesas").textContent = data.mesas_activas;
+        document.getElementById("metric-top").textContent = data.producto_top?.nombre || "-";
+        document.getElementById("metric-top-help").textContent =
+          data.producto_top?.cantidad ? `${data.producto_top.cantidad} vendidos hoy` : "Sin ventas hoy";
+      } catch (error) {
+        mostrarToast("No se pudieron cargar las métricas: " + error.message, "error");
+      }
+    }
+
+    function formatPrecio(valor) {
+      return formatterPrecio.format(Number(valor) || 0);
+    }
+
+    // ── ATAJOS DE FECHA ──────────────────────────────────────────
+    function setAtajo(tipo) {
+      const ahora  = new Date();
+      let inicio, fin;
+
+      if (tipo === "hoy") {
+        inicio = fin = formatFecha(ahora);
+
+      } else if (tipo === "semana") {
+        const lunes  = new Date(ahora);
+        lunes.setDate(ahora.getDate() - ((ahora.getDay() + 6) % 7));
+        inicio = formatFecha(lunes);
+        fin    = formatFecha(ahora);
+
+      } else if (tipo === "mes") {
+        inicio = formatFecha(new Date(ahora.getFullYear(), ahora.getMonth(), 1));
+        fin    = formatFecha(ahora);
+
+      } else if (tipo === "mes_anterior") {
+        const primerDiaMesAnt = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+        const ultimoDiaMesAnt = new Date(ahora.getFullYear(), ahora.getMonth(), 0);
+        inicio = formatFecha(primerDiaMesAnt);
+        fin    = formatFecha(ultimoDiaMesAnt);
+      }
+
+      document.getElementById("fecha-inicio").value = inicio;
+      document.getElementById("fecha-fin").value    = fin;
+    }
+
+    function formatFecha(date) {
+      return date.toISOString().split("T")[0];
+    }
+
+    // ── GENERAR REPORTE DE VENTAS ────────────────────────────────
+    async function generarReporteVentas() {
+      const fechaInicio = document.getElementById("fecha-inicio").value;
+      const fechaFin    = document.getElementById("fecha-fin").value;
+
+      // Validaciones
+      if (!fechaInicio || !fechaFin) {
+        mostrarToast("Seleccioná ambas fechas para generar el reporte.", "error");
+        return;
+      }
+      if (fechaInicio > fechaFin) {
+        mostrarToast("La fecha de inicio no puede ser mayor a la fecha fin.", "error");
+        return;
+      }
+
+      const btn = document.getElementById("btn-ventas");
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Generando PDF...';
+
+      try {
+        // GET /reportes/ventas?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD
+        // Devuelve un PDF — usamos downloadFile() de api.js
+        const endpoint  = `/reportes/ventas?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
+        const filename  = `reporte_ventas_${fechaInicio}_${fechaFin}.pdf`;
+
+        await downloadFile(endpoint, filename);
+
+        mostrarToast("Reporte descargado correctamente.", "success");
+        agregarHistorial(filename, fechaInicio, fechaFin);
+
+      } catch (error) {
+        mostrarToast("Error al generar el reporte: " + error.message, "error");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = "Generar reporte de ventas";
+      }
+    }
+
+    // ── HISTORIAL DE DESCARGAS DE ESTA SESIÓN ───────────────────
+    let historialItems = [];
+
+    function agregarHistorial(filename, inicio, fin) {
+      const ahora = new Date().toLocaleTimeString("es-AR", {
+        hour: "2-digit", minute: "2-digit"
+      });
+
+      historialItems.unshift({ filename, inicio, fin, hora: ahora });
+
+      // Máximo 5 items en el historial
+      if (historialItems.length > 5) historialItems.pop();
+
+      renderHistorial();
+    }
+
+    function renderHistorial() {
+      const empty = document.getElementById("historial-ventas-empty");
+      const lista = document.getElementById("historial-ventas-lista");
+
+      if (historialItems.length === 0) {
+        empty.style.display = "block";
+        lista.innerHTML = "";
+        return;
+      }
+
+      empty.style.display = "none";
+      lista.innerHTML = historialItems.map(item => `
+        <div class="historial-item">
+          <div>
+            <div class="historial-nombre"> ${item.inicio} → ${item.fin}</div>
+          </div>
+          <div class="historial-hora">Descargado ${item.hora}</div>
+        </div>
+      `).join("");
+    }
+
+    // ── TOAST ────────────────────────────────────────────────────
+    let toastTimer;
+    function mostrarToast(mensaje, tipo = "success") {
+      const toast = document.getElementById("toast");
+      toast.textContent = mensaje;
+      toast.className   = `toast ${tipo} show`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 3500);
+    }
+  

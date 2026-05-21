@@ -6,6 +6,7 @@
   <title>Maven Burger — Menú</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
 
   <link rel="stylesheet" href="./menu.css" />
 </head>
@@ -25,10 +26,31 @@
     <p class="hero-sub" id="hero-sub">Elegí lo que querés y confirmá tu pedido</p>
   </div>
 
+  <!-- ===== ACCIONES DE MESA ===== -->
+  <section class="mesa-actions-panel">
+    <button class="mesa-action-btn" type="button" onclick="solicitarServicioMesa('mozo')">
+      Llamar mozo
+    </button>
+    <button class="mesa-action-btn secondary" type="button" onclick="solicitarServicioMesa('cuenta')">
+      Pedir cuenta
+    </button>
+  </section>
+
+  <section class="mesa-session-panel" id="mesa-session-panel">
+    <div>
+      <div class="session-label">Pedido colaborativo</div>
+      <div class="session-title" id="session-title">Conectando con la mesa...</div>
+    </div>
+    <div class="session-meta">
+      <span id="session-role">Mesa</span>
+      <span id="session-count">1 persona</span>
+    </div>
+  </section>
+
   <!-- ===== BUSCADOR ===== -->
   <div class="menu-tools">
     <label class="buscador" for="buscador-productos">
-      <span class="buscador-icon">🔎</span>
+      <span class="buscador-icon"></span>
       <input
         id="buscador-productos"
         type="search"
@@ -39,16 +61,28 @@
   </div>
 
   <!-- ===== FILTROS ===== -->
-  <div class="filtros-wrapper">
+  <div class="filtros-wrapper" id="filtros-wrapper">
     <div class="filtros" id="filtros-container">
-      <button class="filtro-btn active" onclick="filtrarCategoria('todos', this)">🍽 Todos</button>
+      <button class="filtro-btn active" onclick="volverACategorias()">Categorias</button>
     </div>
   </div>
+
+  <!-- ===== RECOMENDACIONES INTELIGENTES ===== -->
+  <section class="smart-recs" id="smart-recs" style="display:none;">
+    <div class="smart-recs-head">
+      <div>
+        <div class="section-kicker">Recomendaciones inteligentes</div>
+        <h2 class="smart-recs-title">Elegido para este momento</h2>
+      </div>
+      <div class="smart-recs-context" id="smart-recs-context">Analizando clima y horario</div>
+    </div>
+    <div class="smart-recs-grid" id="smart-recs-grid"></div>
+  </section>
 
   <!-- ===== CONTENIDO PRINCIPAL ===== -->
   <div id="menu-container">
     <div class="empty-state" style="padding-top: 80px;">
-      <div class="icon">⏳</div>
+      <div class="icon"></div>
       <p>Cargando el menú...</p>
     </div>
   </div>
@@ -83,7 +117,7 @@
       <div class="carrito-actions">
         <button class="btn-vaciar" type="button" onclick="vaciarCarrito()">Vaciar</button>
         <button class="btn-confirmar" id="btn-confirmar" onclick="confirmarPedido()">
-          🛒 Confirmar pedido
+          Confirmar pedido
         </button>
       </div>
     </div>
@@ -109,7 +143,7 @@
 
   <!-- ===== PANTALLA DE ÉXITO ===== -->
   <div class="exito-overlay" id="exito-overlay">
-    <div class="exito-icon">✅</div>
+    <div class="exito-icon">OK</div>
     <h2 class="exito-title">¡Pedido enviado!</h2>
     <p class="exito-msg" id="exito-msg">
       Tu pedido fue enviado a cocina.<br>

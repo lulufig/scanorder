@@ -89,6 +89,56 @@ def listar_productos():
         close_db_connection(connection)
 
 
+@router.get("/populares-hoy")
+def productos_populares_hoy():
+    """Devuelve productos mas pedidos del dia para recomendaciones publicas del menu QR."""
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos"
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT
+                p.id_producto,
+                p.nombre,
+                p.descripcion,
+                p.precio,
+                p.imagen_url,
+                p.disponible,
+                c.nombre AS categoria,
+                SUM(dp.cantidad) AS total_pedido
+            FROM detalle_pedidos dp
+            JOIN pedidos pe ON pe.id_pedido = dp.id_pedido
+            JOIN productos p ON p.id_producto = dp.id_producto
+            LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
+            WHERE DATE(pe.created_at) = CURDATE()
+              AND p.disponible = TRUE
+            GROUP BY p.id_producto, p.nombre, p.descripcion, p.precio, p.imagen_url, p.disponible, c.nombre
+            ORDER BY total_pedido DESC
+            LIMIT 6
+            """
+        )
+        populares = cursor.fetchall()
+        return {
+            "fecha": "hoy",
+            "productos": populares,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener productos populares: {str(e)}"
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
 @router.get("/{id_producto}", response_model=ProductoResponse)
 def get_producto(id_producto: int):
     """Retorna un producto por ID. Retorna 404 si no existe."""

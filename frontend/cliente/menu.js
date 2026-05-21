@@ -11,10 +11,10 @@ const mesaValida = mesaNumero !== null;
 
 if (!mesaValida) {
   document.getElementById("hero-sub").textContent =
-    "⚠ No se detectó una mesa válida. Escaneá el QR de tu mesa.";
-  document.getElementById("header-mesa").textContent = "🪑 Mesa inválida";
+    " No se detectó una mesa válida. Escaneá el QR de tu mesa.";
+  document.getElementById("header-mesa").textContent = " Mesa inválida";
 } else {
-  document.getElementById("header-mesa").textContent = `🪑 Mesa ${mesaNumero}`;
+  document.getElementById("header-mesa").textContent = ` Mesa ${mesaNumero}`;
   document.getElementById("hero-sub").textContent    =
     `Mesa ${mesaNumero} — Elegí lo que querés y confirmá tu pedido`;
 }
@@ -24,8 +24,19 @@ if (!mesaValida) {
 let carrito        = [];
 let todosProductos = [];
 let carritoAbierto = false;
-let categoriaActual = "todos";
+let categoriaActual = null;
 let busquedaActual = "";
+let mesaSocket = null;
+let mesaSocketListo = false;
+let aplicandoCarritoRemoto = false;
+let soyAnfitrion = true;
+let participantesMesa = [];
+let syncMesaTimer = null;
+let recomendacionesInteligentes = [];
+let idsPopularesHoy = new Set();
+let contextoRecomendaciones = "";
+const mesaClientId = obtenerClientIdMesa();
+const mesaClientName = obtenerNombreClienteMesa();
 
 const formatterPrecio = new Intl.NumberFormat("es-AR", {
   style: "currency",
@@ -50,21 +61,23 @@ async function cargarMenu() {
     if (todosProductos.length === 0) {
       document.getElementById("menu-container").innerHTML = `
         <div class="empty-state" style="padding-top:80px;">
-          <div class="icon">🍔</div>
+          <div class="icon"></div>
           <p>El menú no está disponible por el momento.</p>
         </div>`;
       return;
     }
 
-    construirFiltros(todosProductos);
+    await cargarInteligenciaMenu();
     restaurarCarritoGuardado();
-    aplicarFiltros();
+    renderRecomendacionesInteligentes();
+    renderCategorias();
     actualizarCarritoUI();
+    inicializarSesionMesa();
 
   } catch (error) {
     document.getElementById("menu-container").innerHTML = `
       <div class="empty-state" style="padding-top:80px;">
-        <div class="icon">⚠️</div>
+        <div class="icon">️</div>
         <p>No se pudo cargar el menú.<br>
            <small style="color:#c4b49a;">${escapeHtml(error.message)}</small>
         </p>
@@ -73,35 +86,105 @@ async function cargarMenu() {
 }
 
 // ── FILTROS POR CATEGORÍA ────────────────────────────────────
-function construirFiltros(productos) {
-  const categorias = [...new Set(productos.map(p => p.categoria).filter(Boolean))];
-  const container = document.getElementById("filtros-container");
-  categorias.forEach(cat => {
-    const btn = document.createElement("button");
-    btn.className   = "filtro-btn";
-    btn.textContent = `${iconoCategoria(cat)} ${capitalize(cat)}`;
-    btn.onclick     = () => filtrarCategoria(cat, btn);
-    container.appendChild(btn);
-  });
+function getCategorias() {
+  return [...new Set(todosProductos.map(p => p.categoria || "Otros"))];
 }
 
-function filtrarCategoria(categoria, btnEl) {
-  document.querySelectorAll(".filtro-btn").forEach(b => b.classList.remove("active"));
-  btnEl.classList.add("active");
+function renderCategorias() {
+  categoriaActual = null;
+  const container = document.getElementById("menu-container");
+  const termino = normalizarTexto(busquedaActual);
+  const categorias = getCategorias()
+    .map(cat => {
+      const productos = todosProductos.filter(p => (p.categoria || "Otros") === cat);
+      return { cat, productos };
+    })
+    .filter(grupo => {
+      if (!termino) return true;
+      return normalizarTexto(grupo.cat).includes(termino) ||
+        grupo.productos.some(p => normalizarTexto(`${p.nombre || ""} ${p.descripcion || ""}`).includes(termino));
+    });
+
+  renderFiltros();
+
+  if (categorias.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state menu-empty">
+        <div class="icon">Buscar</div>
+        <p>No encontramos categorias o productos con esa busqueda.</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <section class="menu-section-shell">
+      <div class="section-kicker">Categorias</div>
+      <h2 class="menu-section-title">Elegí por tipo de producto</h2>
+      <div class="categorias-grid">
+        ${categorias.map((grupo, i) => renderCategoriaCard(grupo.cat, grupo.productos, i)).join("")}
+      </div>
+    </section>`;
+}
+
+function renderCategoriaCard(categoria, productos, i) {
+  const destacado = productos.find(p => p.imagen_url) || productos[0] || {};
+  const imagen = destacado.imagen_url;
+  const descripcion = productos.length === 1 ? "1 producto disponible" : `${productos.length} productos disponibles`;
+  const inicial = categoria.slice(0, 2).toUpperCase();
+  return `
+    <button class="categoria-card" style="animation-delay:${i * 0.04}s" onclick="abrirCategoria('${escapeAttr(categoria)}')">
+      ${imagen
+        ? `<img class="categoria-img" src="${escapeHtml(imagen)}" alt="${escapeHtml(categoria)}" loading="lazy">`
+        : `<div class="categoria-img categoria-fallback">${escapeHtml(inicial)}</div>`
+      }
+      <span class="categoria-overlay"></span>
+      <span class="categoria-count">${descripcion}</span>
+      <span class="categoria-title">${escapeHtml(capitalize(categoria))}</span>
+      <span class="categoria-arrow">Ver productos</span>
+    </button>`;
+}
+
+function abrirCategoria(categoria) {
   categoriaActual = categoria;
+  busquedaActual = "";
+  const buscador = document.getElementById("buscador-productos");
+  if (buscador) buscador.value = "";
+  renderFiltros();
   aplicarFiltros();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function volverACategorias() {
+  busquedaActual = "";
+  const buscador = document.getElementById("buscador-productos");
+  if (buscador) buscador.value = "";
+  renderCategorias();
+}
+
+function renderFiltros() {
+  const container = document.getElementById("filtros-container");
+  if (!container) return;
+  const categorias = getCategorias();
+  container.innerHTML = `
+    <button class="filtro-btn ${categoriaActual ? "" : "active"}" onclick="volverACategorias()">Categorias</button>
+    ${categorias.map(cat => `
+      <button class="filtro-btn ${categoriaActual === cat ? "active" : ""}" onclick="abrirCategoria('${escapeAttr(cat)}')">
+        ${escapeHtml(capitalize(cat))}
+      </button>
+    `).join("")}`;
 }
 
 function aplicarFiltros() {
+  if (!categoriaActual) {
+    renderCategorias();
+    return;
+  }
+
   const termino = normalizarTexto(busquedaActual);
-
-  const porCategoria = categoriaActual === "todos"
-    ? todosProductos
-    : todosProductos.filter(p => p.categoria === categoriaActual);
-
+  const productos = todosProductos.filter(p => (p.categoria || "Otros") === categoriaActual);
   const filtrados = !termino
-    ? porCategoria
-    : porCategoria.filter(p => {
+    ? productos
+    : productos.filter(p => {
         const texto = normalizarTexto(`${p.nombre || ""} ${p.descripcion || ""} ${p.categoria || ""}`);
         return texto.includes(termino);
       });
@@ -109,39 +192,22 @@ function aplicarFiltros() {
   renderMenu(filtrados);
 }
 
-// ── RENDER DEL MENÚ ──────────────────────────────────────────
 function renderMenu(productos) {
   const container = document.getElementById("menu-container");
-
-  if (productos.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state" style="padding-top:60px;">
-        <div class="icon">🔍</div>
-        <p>No hay productos en esta categoría.</p>
-      </div>`;
-    return;
-  }
-
-  // Agrupar por categoría
-  const grupos = {};
-  productos.forEach(p => {
-    const cat = p.categoria || "otros";
-    if (!grupos[cat]) grupos[cat] = [];
-    grupos[cat].push(p);
-  });
-
-  let html = "";
-  Object.entries(grupos).forEach(([cat, items]) => {
-    html += `
-      <div class="seccion">
-        <div class="seccion-titulo">${iconoCategoria(cat)} ${capitalize(cat)}</div>
-        <div class="productos-grid">
-          ${items.map((p, i) => renderProductoCard(p, i)).join("")}
+  container.innerHTML = `
+    <section class="productos-view">
+      <div class="productos-view-header">
+        <button class="btn-volver-categorias" onclick="volverACategorias()">Volver</button>
+        <div>
+          <div class="section-kicker">Categoria</div>
+          <h2 class="menu-section-title">${escapeHtml(capitalize(categoriaActual || "Productos"))}</h2>
         </div>
-      </div>`;
-  });
-
-  container.innerHTML = html;
+      </div>
+      ${productos.length === 0
+        ? `<div class="empty-state menu-empty"><div class="icon">Buscar</div><p>No hay productos en esta categoria.</p></div>`
+        : `<div class="productos-list">${productos.map((p, i) => renderProductoCard(p, i)).join("")}</div>`
+      }
+    </section>`;
 }
 
 function renderProductoCard(p, i) {
@@ -150,15 +216,7 @@ function renderProductoCard(p, i) {
   const badges = obtenerBadgesProducto(p);
 
   return `
-    <div class="producto-card" style="animation-delay:${i * 0.04}s" id="card-${p.id_producto}">
-      ${p.imagen_url
-        ? `<img src="${escapeHtml(p.imagen_url)}" class="producto-img"
-                alt="${escapeHtml(p.nombre)}"
-                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">`
-        : ""
-      }
-      <div class="producto-img-placeholder" ${p.imagen_url ? 'style="display:none"' : ""}>🍔</div>
-
+    <div class="producto-card producto-row" style="animation-delay:${i * 0.04}s" id="card-${p.id_producto}">
       <div class="producto-info">
         <div class="producto-nombre">${escapeHtml(p.nombre)}</div>
         ${badges.length
@@ -167,23 +225,200 @@ function renderProductoCard(p, i) {
         }
         ${p.descripcion
           ? `<div class="producto-desc">${escapeHtml(p.descripcion)}</div>`
-          : ""
+          : `<div class="producto-desc muted">Sin descripcion disponible</div>`
         }
-        <div class="producto-precio">${formatPrecio(p.precio)}</div>
       </div>
 
-      <div class="cantidad-control" id="ctrl-${p.id_producto}">
-        ${cantidad === 0
-          ? `<button class="btn-cantidad" onclick="agregarAlCarrito(${p.id_producto})">+</button>`
-          : `<button class="btn-cantidad minus" onclick="quitarDelCarrito(${p.id_producto})">−</button>
-             <span class="cantidad-num">${cantidad}</span>
-             <button class="btn-cantidad" onclick="agregarAlCarrito(${p.id_producto})">+</button>`
-        }
+      <div class="producto-side">
+        <div class="producto-precio">${formatPrecio(p.precio)}</div>
+        <div class="cantidad-control" id="ctrl-${p.id_producto}">
+          ${cantidad === 0
+            ? `<button class="btn-cantidad" onclick="agregarAlCarrito(${p.id_producto})">+</button>`
+            : `<button class="btn-cantidad minus" onclick="quitarDelCarrito(${p.id_producto})">-</button>
+               <span class="cantidad-num">${cantidad}</span>
+               <button class="btn-cantidad" onclick="agregarAlCarrito(${p.id_producto})">+</button>`
+          }
+        </div>
       </div>
     </div>`;
 }
 
-// ── CARRITO: AGREGAR ─────────────────────────────────────────
+// ── RECOMENDACIONES INTELIGENTES ─────────────────────────────
+async function cargarInteligenciaMenu() {
+  const [populares, clima] = await Promise.all([
+    cargarPopularesHoy(),
+    obtenerClimaActual(),
+  ]);
+
+  idsPopularesHoy = new Set(populares.map(p => p.id_producto));
+  recomendacionesInteligentes = construirRecomendaciones(populares, clima);
+  contextoRecomendaciones = construirContextoRecomendaciones(clima);
+}
+
+async function cargarPopularesHoy() {
+  try {
+    const data = await fetchAPI("/productos/populares-hoy", "GET", null, false);
+    return Array.isArray(data.productos) ? data.productos : [];
+  } catch {
+    return [];
+  }
+}
+
+async function obtenerClimaActual() {
+  try {
+    if (navigator.geolocation) {
+      const posicion = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: false,
+          timeout: 3200,
+          maximumAge: 15 * 60 * 1000,
+        });
+      });
+      return consultarClimaOpenMeteo(posicion.coords.latitude, posicion.coords.longitude);
+    }
+  } catch {
+    // Si el celular no permite ubicacion por HTTP local, usamos Buenos Aires como fallback.
+  }
+
+  return consultarClimaOpenMeteo(-34.6037, -58.3816);
+}
+
+async function consultarClimaOpenMeteo(latitude, longitude) {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`;
+    const response = await fetch(url);
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    return data.current_weather || null;
+  } catch {
+    return null;
+  }
+}
+
+function construirRecomendaciones(populares, clima) {
+  const recomendaciones = [];
+  const usados = new Set();
+  const hora = new Date().getHours();
+
+  const agregar = (producto, motivo, badge, prioridad) => {
+    if (!producto || usados.has(producto.id_producto)) return;
+    usados.add(producto.id_producto);
+    recomendaciones.push({ producto, motivo, badge, prioridad });
+  };
+
+  const temp = clima && typeof clima.temperature === "number" ? clima.temperature : null;
+  if (temp !== null && temp >= 28) {
+    agregar(buscarProductoPorTexto(["bebida", "gaseosa", "agua", "limonada", "cerveza", "fria", "fría"]), `${Math.round(temp)}° ahora: ideal para algo bien frio.`, "Clima caluroso", 95);
+  } else if (temp !== null && temp <= 16) {
+    agregar(buscarProductoPorTexto(["cafe", "café", "chocolate", "caliente", "combo", "burger"]), `${Math.round(temp)}° ahora: conviene algo mas contundente.`, "Clima fresco", 95);
+  }
+
+  const promo = obtenerPromoHorario(hora);
+  promo.keywords.forEach((keywords, index) => {
+    agregar(buscarProductoPorTexto(keywords), promo.motivo, promo.badge, 86 - index);
+  });
+
+  populares.slice(0, 3).forEach((popular, index) => {
+    const producto = todosProductos.find(p => p.id_producto === popular.id_producto) || popular;
+    agregar(producto, `${popular.total_pedido || 1} pedidos hoy en Maven Burger.`, "Popular ahora", 90 - index);
+  });
+
+  if (recomendaciones.length < 4) {
+    getProductosDestacables().slice(0, 4).forEach((producto, index) => {
+      agregar(producto, "Buena opcion para completar el pedido de la mesa.", "Recomendacion para vos", 60 - index);
+    });
+  }
+
+  return recomendaciones
+    .sort((a, b) => b.prioridad - a.prioridad)
+    .slice(0, 5);
+}
+
+function renderRecomendacionesInteligentes() {
+  const section = document.getElementById("smart-recs");
+  const grid = document.getElementById("smart-recs-grid");
+  const context = document.getElementById("smart-recs-context");
+  if (!section || !grid || recomendacionesInteligentes.length === 0) return;
+
+  section.style.display = "block";
+  if (context) context.textContent = contextoRecomendaciones;
+  grid.innerHTML = recomendacionesInteligentes.map((rec, i) => renderRecomendacionCard(rec, i)).join("");
+}
+
+function renderRecomendacionCard(rec, i) {
+  const p = rec.producto;
+  const cantidad = carrito.find(c => c.id_producto === p.id_producto)?.cantidad || 0;
+  return `
+    <article class="smart-card" style="animation-delay:${i * 0.05}s">
+      <div class="smart-card-top">
+        <span class="smart-badge">${escapeHtml(rec.badge)}</span>
+        <span class="smart-price">${formatPrecio(p.precio)}</span>
+      </div>
+      <h3>${escapeHtml(p.nombre)}</h3>
+      <p>${escapeHtml(rec.motivo)}</p>
+      <div class="smart-card-actions">
+        <span>${escapeHtml(capitalize(p.categoria || "Menu"))}</span>
+        ${cantidad === 0
+          ? `<button type="button" onclick="agregarAlCarrito(${p.id_producto})">Agregar</button>`
+          : `<button type="button" onclick="agregarAlCarrito(${p.id_producto})">Sumar otro</button>`
+        }
+      </div>
+    </article>`;
+}
+
+function obtenerPromoHorario(hora) {
+  if (hora >= 8 && hora < 11) {
+    return {
+      badge: "Promo mañana",
+      motivo: "Franja desayuno: va perfecto con algo para arrancar liviano.",
+      keywords: [["cafe", "café", "bebida"], ["tostado", "postre", "combo"]],
+    };
+  }
+  if (hora >= 12 && hora < 16) {
+    return {
+      badge: "Promo almuerzo",
+      motivo: "Horario fuerte de almuerzo: comida y bebida rinden mejor juntas.",
+      keywords: [["combo"], ["hamburguesa", "burger"], ["bebida", "gaseosa"]],
+    };
+  }
+  if (hora >= 16 && hora < 20) {
+    return {
+      badge: "Promo tarde",
+      motivo: "Tarde de mesa: una bebida o algo dulce suma sin armar un pedido pesado.",
+      keywords: [["bebida", "limonada", "gaseosa"], ["postre", "helado"]],
+    };
+  }
+  return {
+    badge: "Promo noche",
+    motivo: "Noche Maven: combos y burgers salen rapido para compartir.",
+    keywords: [["combo"], ["hamburguesa", "burger"], ["papas", "acompanamiento"]],
+  };
+}
+
+function construirContextoRecomendaciones(clima) {
+  const hora = new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  if (clima && typeof clima.temperature === "number") {
+    return `${Math.round(clima.temperature)}° ahora · ${hora} · datos en vivo`;
+  }
+  return `${hora} · basado en horario, promos y pedidos de hoy`;
+}
+
+function buscarProductoPorTexto(keywords) {
+  return todosProductos.find(producto => {
+    const texto = normalizarTexto(`${producto.nombre || ""} ${producto.descripcion || ""} ${producto.categoria || ""}`);
+    return keywords.some(keyword => texto.includes(normalizarTexto(keyword)));
+  });
+}
+
+function getProductosDestacables() {
+  return [...todosProductos].sort((a, b) => {
+    const aScore = Number(idsPopularesHoy.has(a.id_producto)) + Number(/combo|burger|hamburguesa/i.test(`${a.nombre} ${a.categoria}`));
+    const bScore = Number(idsPopularesHoy.has(b.id_producto)) + Number(/combo|burger|hamburguesa/i.test(`${b.nombre} ${b.categoria}`));
+    return bScore - aScore;
+  });
+}
+
 function agregarAlCarrito(idProducto) {
   const producto = todosProductos.find(p => p.id_producto === idProducto);
   if (!producto) return;
@@ -271,6 +506,7 @@ function actualizarCarritoUI() {
 
   actualizarEstadoBotonConfirmar();
   actualizarEspacioCarrito();
+  renderRecomendacionesInteligentes();
 }
 
 // ── TOGGLE DEL CARRITO ───────────────────────────────────────
@@ -286,6 +522,11 @@ function confirmarPedido() {
 
   if (!mesaValida) {
     alert("No se detectó una mesa válida. Escaneá el QR de tu mesa.");
+    return;
+  }
+
+  if (mesaSocketListo && !soyAnfitrion) {
+    alert("Solo el anfitrion de la mesa puede confirmar el pedido final.");
     return;
   }
 
@@ -330,7 +571,7 @@ async function enviarPedidoConfirmado() {
   btnFinal.innerHTML = '<span class="spinner"></span> Enviando';
 
   // Body que espera el backend:
-  // { id_mesa: int, productos: [{ id_producto, cantidad }], observaciones?: str }
+  // { id_mesa: int, productos: [{ id_producto, cantidad }], observaciones-: str }
   const body = {
     id_mesa: mesaNumero,
     qr_token: qrToken,
@@ -338,7 +579,8 @@ async function enviarPedidoConfirmado() {
       id_producto: c.id_producto,
       cantidad:    c.cantidad
     })),
-    observaciones: obtenerObservaciones() || null
+    observaciones: obtenerObservaciones() || null,
+    client_id: mesaClientId
   };
 
   try {
@@ -346,6 +588,7 @@ async function enviarPedidoConfirmado() {
     await fetchAPI("/pedidos", "POST", body, false);
     cerrarConfirmacion();
     limpiarCarritoGuardado();
+    limpiarSesionMesa();
     mostrarExito();
   } catch (error) {
     alert("No se pudo enviar el pedido: " + error.message);
@@ -359,7 +602,7 @@ async function enviarPedidoConfirmado() {
 function mostrarExito() {
   document.getElementById("exito-msg").innerHTML =
     `Tu pedido fue enviado a cocina.<br>
-     <strong>Mesa ${mesaNumero}</strong> — En breve estará listo. 🍔`;
+     <strong>Mesa ${mesaNumero}</strong> — En breve estará listo. `;
   document.getElementById("exito-overlay").classList.add("visible");
 }
 
@@ -391,6 +634,173 @@ function vaciarCarrito() {
   cerrarConfirmacion();
   actualizarCarritoUI();
   todosProductos.forEach(p => actualizarControlCantidad(p.id_producto));
+  sincronizarCarritoMesa();
+}
+
+// ── SESION COLABORATIVA DE MESA ──────────────────────────────
+function inicializarSesionMesa() {
+  actualizarPanelSesion("Conectando con el pedido compartido...", "Conectando", 1);
+  if (!mesaValida) {
+    actualizarPanelSesion("Escanea el QR de tu mesa para compartir el pedido.", "Sin mesa", 1, true);
+    return;
+  }
+
+  const wsProtocol = API_URL.startsWith("https") ? "wss" : "ws";
+  const wsBase = API_URL.replace(/^https?:\/\//, "");
+  const url = `${wsProtocol}://${wsBase}/pedidos/ws/mesa?mesa=${mesaNumero}` +
+    `&token=${encodeURIComponent(qrToken || "")}` +
+    `&client_id=${encodeURIComponent(mesaClientId)}` +
+    `&nombre=${encodeURIComponent(mesaClientName)}`;
+
+  try {
+    mesaSocket = new WebSocket(url);
+  } catch {
+    actualizarPanelSesion("No se pudo iniciar el pedido colaborativo.", "Sin conexion", 1, true);
+    return;
+  }
+
+  mesaSocket.addEventListener("open", () => {
+    mesaSocketListo = true;
+  });
+
+  mesaSocket.addEventListener("message", (event) => {
+    try {
+      aplicarSnapshotMesa(JSON.parse(event.data));
+    } catch {
+      // Ignora mensajes que no tengan formato esperado.
+    }
+  });
+
+  mesaSocket.addEventListener("close", () => {
+    mesaSocketListo = false;
+    actualizarPanelSesion("Pedido colaborativo desconectado. Tu carrito queda en este celular.", "Sin conexion", participantesMesa.length || 1, true);
+  });
+}
+
+function aplicarSnapshotMesa(data) {
+  if (!data || !["snapshot", "carrito_actualizado", "participantes_actualizados", "pedido_confirmado"].includes(data.type)) {
+    return;
+  }
+
+  participantesMesa = Array.isArray(data.participantes) ? data.participantes : [];
+  soyAnfitrion = data.host_client_id === mesaClientId;
+
+  if (data.type === "snapshot" && soyAnfitrion && (!data.carrito || data.carrito.length === 0) && carrito.length > 0) {
+    sincronizarCarritoMesa();
+    actualizarPanelSesion("Sos anfitrion: podes confirmar el pedido final.", "Anfitrion", Math.max(participantesMesa.length, 1));
+    return;
+  }
+
+  if (data.type === "pedido_confirmado") {
+    aplicandoCarritoRemoto = true;
+    carrito = [];
+    setObservaciones("");
+    limpiarCarritoGuardado();
+    aplicandoCarritoRemoto = false;
+    actualizarCarritoUI();
+    todosProductos.forEach(p => actualizarControlCantidad(p.id_producto));
+    mostrarAvisoMesa("El pedido de la mesa ya fue enviado a cocina.");
+  } else if (Array.isArray(data.carrito)) {
+    aplicandoCarritoRemoto = true;
+    carrito = normalizarCarritoRemoto(data.carrito);
+    setObservaciones(data.observaciones || "");
+    aplicandoCarritoRemoto = false;
+    actualizarCarritoUI();
+    todosProductos.forEach(p => actualizarControlCantidad(p.id_producto));
+  }
+
+  const totalParticipantes = Math.max(participantesMesa.length, 1);
+  const titulo = soyAnfitrion
+    ? "Sos anfitrion: podes confirmar el pedido final."
+    : "Estas sumando productos al pedido de la mesa.";
+  actualizarPanelSesion(titulo, soyAnfitrion ? "Anfitrion" : "Invitado", totalParticipantes);
+}
+
+function normalizarCarritoRemoto(items) {
+  return items
+    .map(item => {
+      const producto = todosProductos.find(p => p.id_producto === item.id_producto);
+      if (!producto) return null;
+      return {
+        id_producto: producto.id_producto,
+        nombre: producto.nombre,
+        precio: Number(producto.precio),
+        cantidad: Math.max(1, Number(item.cantidad) || 1),
+      };
+    })
+    .filter(Boolean);
+}
+
+function sincronizarCarritoMesa() {
+  if (!mesaSocketListo || !mesaSocket || mesaSocket.readyState !== WebSocket.OPEN || aplicandoCarritoRemoto) {
+    return;
+  }
+
+  window.clearTimeout(syncMesaTimer);
+  syncMesaTimer = window.setTimeout(() => {
+    mesaSocket.send(JSON.stringify({
+      action: "sync_cart",
+      carrito: carrito.map(item => ({
+        id_producto: item.id_producto,
+        nombre: item.nombre,
+        precio: Number(item.precio),
+        cantidad: item.cantidad,
+      })),
+      observaciones: obtenerObservaciones(),
+    }));
+  }, 120);
+}
+
+function limpiarSesionMesa() {
+  if (mesaSocketListo && mesaSocket && mesaSocket.readyState === WebSocket.OPEN) {
+    mesaSocket.send(JSON.stringify({ action: "clear_cart" }));
+  }
+}
+
+function actualizarPanelSesion(titulo, rol, cantidad, offline = false) {
+  const titleEl = document.getElementById("session-title");
+  const roleEl = document.getElementById("session-role");
+  const countEl = document.getElementById("session-count");
+  if (!titleEl || !roleEl || !countEl) return;
+
+  titleEl.textContent = titulo;
+  roleEl.textContent = rol;
+  roleEl.className = offline ? "offline" : soyAnfitrion ? "host" : "";
+  countEl.textContent = cantidad === 1 ? "1 persona" : `${cantidad} personas`;
+}
+
+async function solicitarServicioMesa(tipo) {
+  if (!mesaValida) {
+    alert("Escanea el QR de tu mesa para usar esta opcion.");
+    return;
+  }
+
+  const texto = tipo === "cuenta" ? "pedir la cuenta" : "llamar al mozo";
+  try {
+    await fetchAPI("/pedidos/servicio", "POST", {
+      id_mesa: mesaNumero,
+      tipo,
+      qr_token: qrToken,
+    }, false);
+    mostrarAvisoMesa(`Solicitud enviada: ${texto}.`);
+  } catch (error) {
+    alert("No se pudo enviar la solicitud: " + error.message);
+  }
+}
+
+function mostrarAvisoMesa(mensaje) {
+  let aviso = document.getElementById("mesa-aviso");
+  if (!aviso) {
+    aviso = document.createElement("div");
+    aviso.id = "mesa-aviso";
+    aviso.className = "mesa-aviso";
+    document.body.appendChild(aviso);
+  }
+
+  aviso.textContent = mensaje;
+  aviso.classList.add("visible");
+  window.clearTimeout(aviso._timer);
+  aviso._timer = window.setTimeout(() => aviso.classList.remove("visible"), 3200);
 }
 
 // ── HELPERS ──────────────────────────────────────────────────
@@ -408,11 +818,16 @@ function actualizarEstadoBotonConfirmar() {
   const btn = document.getElementById("btn-confirmar");
   if (!btn) return;
 
-  btn.classList.toggle("invalid", !mesaValida);
-  btn.disabled = !mesaValida;
-  btn.innerHTML = mesaValida
-    ? "🛒 Confirmar pedido"
-    : "Escaneá el QR de tu mesa";
+  const bloqueadoPorRol = mesaSocketListo && !soyAnfitrion;
+  btn.classList.toggle("invalid", !mesaValida || bloqueadoPorRol);
+  btn.disabled = !mesaValida || bloqueadoPorRol;
+  if (!mesaValida) {
+    btn.innerHTML = "Escanea el QR de tu mesa";
+  } else if (bloqueadoPorRol) {
+    btn.innerHTML = "Esperando al anfitrion";
+  } else {
+    btn.innerHTML = "Confirmar pedido";
+  }
 }
 
 function actualizarEspacioCarrito() {
@@ -483,10 +898,12 @@ function guardarCarrito() {
 
   if (payload.carrito.length === 0 && !payload.observaciones) {
     limpiarCarritoGuardado();
+    sincronizarCarritoMesa();
     return;
   }
 
   localStorage.setItem(carritoStorageKey, JSON.stringify(payload));
+  sincronizarCarritoMesa();
 }
 
 function limpiarCarritoGuardado() {
@@ -505,6 +922,26 @@ function setObservaciones(valor) {
   if (el) el.value = valor;
 }
 
+function obtenerClientIdMesa() {
+  const key = "scanorder_mesa_client_id";
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = (crypto.randomUUID && crypto.randomUUID()) || `cliente_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
+
+function obtenerNombreClienteMesa() {
+  const key = "scanorder_mesa_client_name";
+  let nombre = localStorage.getItem(key);
+  if (!nombre) {
+    nombre = `Cliente ${mesaClientId.slice(-4).toUpperCase()}`;
+    localStorage.setItem(key, nombre);
+  }
+  return nombre;
+}
+
 function obtenerBadgesProducto(producto) {
   const texto = normalizarTexto(`${producto.nombre || ""} ${producto.descripcion || ""} ${producto.categoria || ""}`);
   const badges = [];
@@ -514,6 +951,9 @@ function obtenerBadgesProducto(producto) {
   }
   if (producto.mas_pedido || producto.destacado || /maven classic|double maven|bbq/.test(texto)) {
     badges.push({ texto: "Más pedido", tipo: "popular" });
+  }
+  if (idsPopularesHoy.has(producto.id_producto)) {
+    badges.push({ texto: "Popular ahora", tipo: "popular" });
   }
   if (producto.picante || /picante|jalapeno|jalapenos|jalapeño|jalapeños/.test(texto)) {
     badges.push({ texto: "Picante", tipo: "picante" });
@@ -527,12 +967,12 @@ function obtenerBadgesProducto(producto) {
 
 function iconoCategoria(categoria) {
   const cat = normalizarTexto(categoria);
-  if (cat.includes("hamburguesa") || cat.includes("burger")) return "🍔";
-  if (cat.includes("papa") || cat.includes("acompan")) return "🍟";
-  if (cat.includes("bebida")) return "🥤";
-  if (cat.includes("postre")) return "🍨";
-  if (cat.includes("combo")) return "📦";
-  return "🍽";
+  if (cat.includes("hamburguesa") || cat.includes("burger")) return "";
+  if (cat.includes("papa") || cat.includes("acompan")) return "";
+  if (cat.includes("bebida")) return "";
+  if (cat.includes("postre")) return "";
+  if (cat.includes("combo")) return "";
+  return "";
 }
 
 function formatPrecio(valor) {
@@ -554,4 +994,8 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function escapeAttr(str) {
+  return escapeHtml(str).replace(/`/g, "&#096;");
 }
