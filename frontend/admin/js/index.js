@@ -13,6 +13,7 @@
     document.getElementById("fecha-inicio").value = hoy;
     document.getElementById("fecha-fin").value    = hoy;
     cargarDashboard();
+    conectarNotificacionesAdmin();
 
     const formatterPrecio = new Intl.NumberFormat("es-AR", {
       style: "currency",
@@ -32,6 +33,53 @@
           data.producto_top?.cantidad ? `${data.producto_top.cantidad} vendidos hoy` : "Sin ventas hoy";
       } catch (error) {
         mostrarToast("No se pudieron cargar las métricas: " + error.message, "error");
+      }
+    }
+
+    function conectarNotificacionesAdmin() {
+      const token = getToken();
+      if (!token) return;
+
+      const wsProtocol = API_URL.startsWith("https") ? "wss" : "ws";
+      const wsBase = API_URL.replace(/^https?:\/\//, "");
+      const socket = new WebSocket(`${wsProtocol}://${wsBase}/pedidos/ws/cocina?token=${encodeURIComponent(token)}`);
+
+      socket.addEventListener("message", (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "servicio_mesa") {
+            mostrarToast(data.message || "Nueva solicitud de mesa", "success");
+            reproducirAvisoAdmin();
+            return;
+          }
+          if (data.type === "pedido_creado" || data.type === "pedido_actualizado") {
+            cargarDashboard();
+          }
+        } catch {
+          cargarDashboard();
+        }
+      });
+
+      socket.addEventListener("close", () => {
+        setTimeout(conectarNotificacionesAdmin, 4000);
+      });
+    }
+
+    function reproducirAvisoAdmin() {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioContext();
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.value = 740;
+        gain.gain.value = 0.04;
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.16);
+      } catch {
+        // El navegador puede bloquear audio si no hubo interaccion previa.
       }
     }
 

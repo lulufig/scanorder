@@ -18,6 +18,8 @@ router = APIRouter(
     tags=["Reportes"]
 )
 
+ESTADOS_VENTA_SQL = "'confirmado', 'en_preparacion', 'listo', 'entregado'"
+
 
 @router.get("/ventas")
 def reporte_ventas(
@@ -46,10 +48,10 @@ def reporte_ventas(
         cursor = connection.cursor(dictionary=True)
 
         cursor.execute(
-            """
+            f"""
             SELECT COUNT(*) AS cantidad_pedidos, COALESCE(SUM(total), 0) AS total_ventas
             FROM pedidos
-            WHERE estado IN ('listo', 'entregado')
+            WHERE estado IN ({ESTADOS_VENTA_SQL})
               AND DATE(created_at) BETWEEN %s AND %s
             """,
             (fecha_inicio, fecha_fin)
@@ -57,14 +59,14 @@ def reporte_ventas(
         resumen = cursor.fetchone()
 
         cursor.execute(
-            """
+            f"""
             SELECT p.nombre,
                    SUM(dp.cantidad)  AS total_vendido,
                    SUM(dp.subtotal)  AS total_ingresos
             FROM detalle_pedidos dp
             JOIN productos p  ON dp.id_producto = p.id_producto
             JOIN pedidos    pe ON dp.id_pedido   = pe.id_pedido
-            WHERE pe.estado IN ('listo', 'entregado')
+            WHERE pe.estado IN ({ESTADOS_VENTA_SQL})
               AND DATE(pe.created_at) BETWEEN %s AND %s
             GROUP BY p.id_producto, p.nombre
             ORDER BY total_vendido DESC
@@ -73,6 +75,18 @@ def reporte_ventas(
             (fecha_inicio, fecha_fin)
         )
         productos = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT estado, COUNT(*) AS cantidad, COALESCE(SUM(total), 0) AS total
+            FROM pedidos
+            WHERE DATE(created_at) BETWEEN %s AND %s
+            GROUP BY estado
+            ORDER BY FIELD(estado, 'pendiente', 'confirmado', 'en_preparacion', 'listo', 'entregado', 'cancelado')
+            """,
+            (fecha_inicio, fecha_fin)
+        )
+        estados = cursor.fetchall()
 
         # ── Generar PDF ──────────────────────────────────────────────
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
@@ -94,7 +108,8 @@ def reporte_ventas(
         resumen_data = [
             ["Métrica", "Valor"],
             ["Total de ventas", f"${float(resumen['total_ventas']):.2f}"],
-            ["Cantidad de pedidos", str(resumen["cantidad_pedidos"])],
+            ["Pedidos contabilizados", str(resumen["cantidad_pedidos"])],
+            ["Estados de venta", "confirmado, en_preparacion, listo, entregado"],
         ]
         tabla_resumen = Table(resumen_data, colWidths=[280, 180])
         tabla_resumen.setStyle(TableStyle([
@@ -108,6 +123,26 @@ def reporte_ventas(
         elements.append(Spacer(1, 24))
 
         # Productos más vendidos
+        if estados:
+            elements.append(Paragraph("Pedidos por estado", styles["Heading2"]))
+            estados_data = [["Estado", "Cantidad", "Total"]]
+            for row in estados:
+                estados_data.append([
+                    row["estado"] or "sin_estado",
+                    str(row["cantidad"]),
+                    f"${float(row['total']):.2f}",
+                ])
+            tabla_estados = Table(estados_data, colWidths=[190, 90, 180])
+            tabla_estados.setStyle(TableStyle([
+                ("BACKGROUND",     (0, 0), (-1, 0),  colors.HexColor("#21130F")),
+                ("TEXTCOLOR",      (0, 0), (-1, 0),  colors.white),
+                ("FONTNAME",       (0, 0), (-1, 0),  "Helvetica-Bold"),
+                ("GRID",           (0, 0), (-1, -1), 0.5, colors.grey),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+            ]))
+            elements.append(tabla_estados)
+            elements.append(Spacer(1, 24))
+
         if productos:
             elements.append(Paragraph("Productos más vendidos", styles["Heading2"]))
             prod_data = [["Producto", "Cantidad", "Ingresos"]]
@@ -169,11 +204,11 @@ def dashboard_metricas(current_user: dict = Depends(require_role("admin"))):
         cursor = connection.cursor(dictionary=True)
 
         cursor.execute(
-            """
+            f"""
             SELECT
                 COUNT(*) AS pedidos_hoy,
-                COALESCE(SUM(CASE WHEN estado IN ('listo', 'entregado') THEN total ELSE 0 END), 0) AS ventas_hoy,
-                COALESCE(AVG(CASE WHEN estado IN ('listo', 'entregado') THEN total ELSE NULL END), 0) AS ticket_promedio
+                COALESCE(SUM(CASE WHEN estado IN ({ESTADOS_VENTA_SQL}) THEN total ELSE 0 END), 0) AS ventas_hoy,
+                COALESCE(AVG(CASE WHEN estado IN ({ESTADOS_VENTA_SQL}) THEN total ELSE NULL END), 0) AS ticket_promedio
             FROM pedidos
             WHERE DATE(created_at) = CURDATE()
             """

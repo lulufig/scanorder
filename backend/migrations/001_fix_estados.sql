@@ -1,20 +1,20 @@
--- Migración 001: Corregir columna estado en pedidos
+-- Migracion 001: corregir columna estado en pedidos
 --
--- PROBLEMA: Si la columna estado es ENUM('pendiente','en_preparacion','listo'),
--- los valores 'confirmado' y 'entregado' no se guardan correctamente en MySQL
--- (modo no-estricto los convierte a cadena vacía), haciendo que los pedidos
--- desaparezcan del panel de cocina al confirmarlos.
+-- PROBLEMA: si la columna estado es ENUM y no incluye 'confirmado',
+-- MySQL puede guardar ese valor como cadena vacia. En cocina el pedido
+-- parece desaparecer porque no entra en ninguna columna.
 --
--- SOLUCIÓN: Convertir la columna a VARCHAR(20) para admitir todos los estados.
---
--- Ejecutar en phpMyAdmin > pestaña SQL, o en MySQL CLI:
---   USE scanorder_db;
---   source /ruta/a/este/archivo.sql;
+-- SOLUCION: convertir la columna a VARCHAR(20) y reparar pedidos vacios.
 
 USE scanorder_db;
 
 ALTER TABLE pedidos
   MODIFY COLUMN estado VARCHAR(20) NOT NULL DEFAULT 'pendiente';
 
--- Verificación: debe mostrar la columna estado como varchar(20)
+UPDATE pedidos
+SET estado = 'confirmado'
+WHERE estado = '';
+
+-- Verificacion:
 -- SHOW COLUMNS FROM pedidos LIKE 'estado';
+-- SELECT estado, COUNT(*) FROM pedidos GROUP BY estado;

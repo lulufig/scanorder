@@ -71,7 +71,7 @@
       const cards = mesas.map((mesa, i) => {
         // La URL del QR la arma el backend como: /mesas/{id}/qr
         const qrEndpoint = `/mesas/${mesa.id_mesa}/qr`;
-        const qrSrc      = `${API_URL}${qrEndpoint}`;
+        const qrSrc      = `${API_URL}${qrEndpoint}?v=${Date.now()}`;
 
         return `
           <div class="mesa-card" style="animation-delay: ${i * 0.05}s">
