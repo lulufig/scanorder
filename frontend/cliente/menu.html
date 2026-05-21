@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>Maven Burger — Menú</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
 
   <link rel="stylesheet" href="./menu.css" />
@@ -16,18 +16,48 @@
   <!-- ===== HEADER ===== -->
   <header class="header">
     <div class="header-logo">Maven<span>Burger</span></div>
-    <div class="header-mesa" id="header-mesa"> Mesa —</div>
+    <div class="header-actions">
+      <div class="header-mesa" id="header-mesa"> Mesa —</div>
+      <button class="header-menu-btn" id="header-menu-btn" type="button" aria-label="Abrir menu" aria-expanded="false" onclick="toggleHeaderMenu()">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
   </header>
 
+  <div class="header-menu-panel" id="header-menu-panel" aria-hidden="true">
+    <div class="header-menu-section">
+      <span>Navegacion</span>
+      <button type="button" data-menu-scroll="hero">Inicio</button>
+      <button type="button" data-menu-categorias="true">Menu</button>
+      <button type="button" data-menu-scroll="smart-recs">Recomendados</button>
+      <button type="button" data-menu-scroll="mesa-actions">Mesa</button>
+      <button type="button" data-menu-scroll="footer">Contacto</button>
+    </div>
+    <div class="header-menu-section header-menu-categorias-section" id="header-menu-categorias-section">
+      <span>Categorias</span>
+      <div class="header-menu-cats" id="header-menu-cats"></div>
+    </div>
+  </div>
+
+  <nav class="cliente-nav" aria-label="Navegacion principal">
+    <a href="#hero" data-scroll-target="hero">Inicio</a>
+    <a href="#menu-container" data-scroll-target="menu-container">Menu</a>
+    <a href="#smart-recs" data-scroll-target="smart-recs">Recomendados</a>
+    <a href="#mesa-actions" data-scroll-target="mesa-actions">Mesa</a>
+    <a href="#footer" data-scroll-target="footer">Contacto</a>
+  </nav>
+
   <!-- ===== HERO ===== -->
-  <div class="hero">
+  <div class="hero" id="hero">
     <div class="hero-tag">Pedí desde tu mesa</div>
     <h1 class="hero-title">Maven <span>Burger</span></h1>
     <p class="hero-sub" id="hero-sub">Elegí lo que querés y confirmá tu pedido</p>
   </div>
 
   <!-- ===== ACCIONES DE MESA ===== -->
-  <section class="mesa-actions-panel">
+  <section class="mesa-actions-panel" id="mesa-actions">
     <button class="mesa-action-btn" type="button" onclick="solicitarServicioMesa('mozo')">
       Llamar mozo
     </button>
@@ -48,13 +78,13 @@
   </section>
 
   <!-- ===== BUSCADOR ===== -->
-  <div class="menu-tools">
+  <div class="menu-tools" id="menu-tools">
     <label class="buscador" for="buscador-productos">
       <span class="buscador-icon"></span>
       <input
         id="buscador-productos"
         type="search"
-        placeholder="Buscar burger, papas, bebida..."
+        placeholder="¿Que querés comer hoy?"
         autocomplete="off"
       />
     </label>
@@ -71,7 +101,7 @@
   <section class="smart-recs" id="smart-recs" style="display:none;">
     <div class="smart-recs-head">
       <div>
-        <div class="section-kicker">Recomendaciones inteligentes</div>
+        <div class="section-kicker">Recomendaciones del dia</div>
         <h2 class="smart-recs-title">Elegido para este momento</h2>
       </div>
       <div class="smart-recs-context" id="smart-recs-context">Analizando clima y horario</div>
@@ -86,6 +116,69 @@
       <p>Cargando el menú...</p>
     </div>
   </div>
+
+  <footer class="cliente-footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <strong>Maven Burger</strong>
+        <p>Seguinos o escribinos para reservas, consultas y novedades del local.</p>
+        <div class="footer-socials" aria-label="Redes sociales">
+          <a href="https://www.instagram.com/" target="_blank" rel="noopener" aria-label="Instagram">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4" y="4" width="16" height="16" rx="5"></rect>
+              <circle cx="12" cy="12" r="3.2"></circle>
+              <circle cx="17" cy="7" r="1"></circle>
+            </svg>
+          </a>
+          <a href="https://wa.me/5491100000000" target="_blank" rel="noopener" aria-label="WhatsApp">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5.4 19.1l1-3.3A7.5 7.5 0 1 1 9 18.3l-3.6.8z"></path>
+              <path d="M9.3 8.6c.2-.5.4-.5.7-.5h.5c.2 0 .4.1.5.4l.7 1.6c.1.2.1.4-.1.6l-.4.5c-.1.1-.2.3 0 .5.4.8 1.2 1.7 2.2 2.2.2.1.4.1.5-.1l.6-.7c.1-.2.4-.2.6-.1l1.6.8c.3.1.4.3.4.6-.1.8-.7 1.6-1.5 1.6-1.1 0-2.8-.6-4.3-1.9-1.5-1.3-2.6-3.1-2.7-4.2 0-.5.2-.9.3-1.3z"></path>
+            </svg>
+          </a>
+          <a href="https://www.facebook.com/" target="_blank" rel="noopener" aria-label="Facebook">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M14 8h2V5h-2c-2.3 0-4 1.5-4 4v2H8v3h2v6h3v-6h2.4l.6-3h-3V9c0-.6.4-1 1-1z"></path>
+            </svg>
+          </a>
+        </div>
+      </div>
+
+      <div class="footer-info">
+        <div class="footer-details">
+          <div class="footer-detail">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 21s7-5.4 7-12a7 7 0 0 0-14 0c0 6.6 7 12 7 12z"></path>
+              <circle cx="12" cy="9" r="2.4"></circle>
+            </svg>
+            <div>
+              <span>Ubicacion</span>
+              <strong>Av. San Martin 1842, Palermo</strong>
+            </div>
+          </div>
+          <div class="footer-detail">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8"></circle>
+              <path d="M12 7v5l3.2 2"></path>
+            </svg>
+            <div>
+              <span>Horario</span>
+              <strong>Lun a dom: 12:00 a 00:30</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer-map" aria-label="Mapa de ubicacion">
+          <iframe
+            title="Mapa Maven Burger"
+            src="https://www.google.com/maps?q=Av.%20San%20Martin%201842%20Palermo%20Buenos%20Aires&output=embed"
+            loading="lazy"
+            referrerpolicy="no-referrer-when-downgrade">
+          </iframe>
+        </div>
+      </div>
+    </div>
+  </footer>
 
   <!-- ===== CARRITO ===== -->
   <div class="carrito-bar" id="carrito-bar">
@@ -153,9 +246,34 @@
   </div>
 
   <!-- Scripts — config y api en orden. Esta página pública no requiere auth.js. -->
+  <!-- ===== PROMO EFECTIVO ===== -->
+  <div class="promo-overlay" id="promo-overlay" aria-hidden="true">
+    <div class="promo-card" role="dialog" aria-modal="true" aria-labelledby="promo-title">
+      <button class="promo-close" type="button" onclick="cerrarPromoEfectivo()" aria-label="Cerrar promocion">x</button>
+      <div class="promo-card-head">
+        <div class="promo-percent" id="promo-title">
+          <span>10</span><sup>%</sup><em>OFF</em>
+        </div>
+        <div class="promo-subtitle">Pagando en <strong>efectivo</strong></div>
+        
+      </div>
+      <div class="promo-card-body">
+        <div class="promo-info">
+          <span class="promo-info-icon">i</span>
+          <p>
+            Promocion valida para pedidos realizados desde el menu QR.
+            El descuento se aplica al abonar en caja o con el mozo.
+          </p>
+        </div>
+        <button class="promo-cta" type="button" onclick="cerrarPromoEfectivo()">Entendido, a disfrutar</button>
+      </div>
+    </div>
+  </div>
+
   <script src="../assets/js/config.js"></script>
   <script src="../assets/js/api.js"></script>
 
   <script src="./menu.js"></script>
+  
 </body>
 </html>

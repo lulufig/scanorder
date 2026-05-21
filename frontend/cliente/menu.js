@@ -44,12 +44,45 @@ const formatterPrecio = new Intl.NumberFormat("es-AR", {
   maximumFractionDigits: 0,
 });
 const carritoStorageKey = mesaValida ? `scanorder_carrito_mesa_${mesaNumero}` : null;
+const categoriasMenu = [
+  {
+    nombre: "Comidas",
+    descripcion: "Hamburguesas, combos y principales",
+    imagen: "../assets/img/burguer.jpg",
+    keywords: ["comida", "hamburguesa", "hamburguesas", "burger", "combo", "sandwich", "sanguche", "papas", "papa", "milanesa", "pizza", "empanada"],
+    excludes: ["cerveza", "birra", "postre", "helado", "torta"],
+  },
+  {
+    nombre: "Cervezas",
+    descripcion: "Rubias, rojas, negras y tiradas",
+    imagen: "../assets/img/Beer_Drink.jpg",
+    keywords: ["cerveza", "cervezas", "pinta", "birra", "ipa", "lager", "stout", "rubia", "roja", "negra", "heineken", "quilmes", "corona", "stella", "andes", "patagonia", "brahma"],
+    excludes: ["gaseosa", "limonada", "jugo", "agua", "postre"],
+  },
+  {
+    nombre: "Coctelería",
+    descripcion: "Tragos, aperitivos y bebidas de autor",
+    imagen: "../assets/img/cocteleria.jpg",
+    keywords: ["coctel", "cocteleria", "cocktail", "trago", "tragos", "gin", "vermut", "fernet", "aperol", "mojito", "limonada", "gaseosa", "jugo", "agua", "soda"],
+    excludes: ["cerveza", "birra", "pinta", "ipa", "lager", "stout", "heineken", "quilmes", "corona"],
+  },
+  {
+    nombre: "Postres",
+    descripcion: "Opciones dulces para cerrar la mesa",
+    imagen: "../assets/img/postres.jpg",
+    keywords: ["postre", "postres", "dulce", "helado", "torta", "brownie", "flan", "panqueque"],
+  },
+];
 
 // ── CARGAR MENÚ ─────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", cargarMenu);
 document.addEventListener("DOMContentLoaded", actualizarEspacioCarrito);
 document.addEventListener("DOMContentLoaded", inicializarControlesPedido);
+document.addEventListener("DOMContentLoaded", mostrarPromoEfectivo);
+document.addEventListener("DOMContentLoaded", inicializarNavegacionCliente);
+document.addEventListener("DOMContentLoaded", inicializarHeaderMenu);
 window.addEventListener("resize", actualizarEspacioCarrito);
+window.addEventListener("scroll", actualizarModoNavCompacta, { passive: true });
 
 async function cargarMenu() {
   try {
@@ -87,25 +120,45 @@ async function cargarMenu() {
 
 // ── FILTROS POR CATEGORÍA ────────────────────────────────────
 function getCategorias() {
-  return [...new Set(todosProductos.map(p => p.categoria || "Otros"))];
+  return categoriasMenu.map(categoria => categoria.nombre);
+}
+
+function getCategoriaConfig(nombre) {
+  return categoriasMenu.find(categoria => categoria.nombre === nombre) || {
+    nombre,
+    descripcion: "Productos disponibles",
+    keywords: [nombre],
+  };
+}
+
+function getProductosPorCategoriaVisual(nombre) {
+  const config = getCategoriaConfig(nombre);
+  return todosProductos.filter(producto => {
+    const texto = normalizarTexto(`${producto.categoria || ""} ${producto.nombre || ""} ${producto.descripcion || ""}`);
+    const coincide = config.keywords.some(keyword => texto.includes(normalizarTexto(keyword)));
+    const excluido = (config.excludes || []).some(keyword => texto.includes(normalizarTexto(keyword)));
+    return coincide && !excluido;
+  });
 }
 
 function renderCategorias() {
   categoriaActual = null;
+  actualizarVistaCategoria(false);
   const container = document.getElementById("menu-container");
   const termino = normalizarTexto(busquedaActual);
   const categorias = getCategorias()
     .map(cat => {
-      const productos = todosProductos.filter(p => (p.categoria || "Otros") === cat);
-      return { cat, productos };
+      const productos = getProductosPorCategoriaVisual(cat);
+      return { cat, productos, config: getCategoriaConfig(cat) };
     })
     .filter(grupo => {
       if (!termino) return true;
-      return normalizarTexto(grupo.cat).includes(termino) ||
+      return normalizarTexto(`${grupo.cat} ${grupo.config.descripcion}`).includes(termino) ||
         grupo.productos.some(p => normalizarTexto(`${p.nombre || ""} ${p.descripcion || ""}`).includes(termino));
     });
 
   renderFiltros();
+  renderHeaderMenuCategorias();
 
   if (categorias.length === 0) {
     container.innerHTML = `
@@ -119,28 +172,33 @@ function renderCategorias() {
   container.innerHTML = `
     <section class="menu-section-shell">
       <div class="section-kicker">Categorias</div>
-      <h2 class="menu-section-title">Elegí por tipo de producto</h2>
+      
       <div class="categorias-grid">
-        ${categorias.map((grupo, i) => renderCategoriaCard(grupo.cat, grupo.productos, i)).join("")}
+        ${categorias.map((grupo, i) => renderCategoriaCard(grupo.cat, grupo.productos, i, grupo.config)).join("")}
       </div>
     </section>`;
 }
 
-function renderCategoriaCard(categoria, productos, i) {
+function renderCategoriaCard(categoria, productos, i, config = getCategoriaConfig(categoria)) {
   const destacado = productos.find(p => p.imagen_url) || productos[0] || {};
-  const imagen = destacado.imagen_url;
-  const descripcion = productos.length === 1 ? "1 producto disponible" : `${productos.length} productos disponibles`;
+  const imagen = config.imagen || destacado.imagen_url;
+  const descripcion = productos.length === 0
+    ? "Pronto vas a poder ver esta seleccion"
+    : productos.length === 1
+      ? "1 producto disponible"
+      : `${productos.length} productos disponibles`;
   const inicial = categoria.slice(0, 2).toUpperCase();
   return `
-    <button class="categoria-card" style="animation-delay:${i * 0.04}s" onclick="abrirCategoria('${escapeAttr(categoria)}')">
+    <button class="categoria-card categoria-${normalizarTexto(categoria)}" style="animation-delay:${i * 0.04}s" onclick="abrirCategoria('${escapeAttr(categoria)}')">
       ${imagen
         ? `<img class="categoria-img" src="${escapeHtml(imagen)}" alt="${escapeHtml(categoria)}" loading="lazy">`
         : `<div class="categoria-img categoria-fallback">${escapeHtml(inicial)}</div>`
       }
       <span class="categoria-overlay"></span>
       <span class="categoria-count">${descripcion}</span>
-      <span class="categoria-title">${escapeHtml(capitalize(categoria))}</span>
-      <span class="categoria-arrow">Ver productos</span>
+      <span class="categoria-title">${escapeHtml(categoria)}</span>
+      <span class="categoria-desc">${escapeHtml(config.descripcion)}</span>
+      <span class="categoria-arrow">Explorar</span>
     </button>`;
 }
 
@@ -149,16 +207,21 @@ function abrirCategoria(categoria) {
   busquedaActual = "";
   const buscador = document.getElementById("buscador-productos");
   if (buscador) buscador.value = "";
+  actualizarVistaCategoria(true);
   renderFiltros();
+  renderHeaderMenuCategorias();
   aplicarFiltros();
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  scrollAElemento("menu-container");
 }
 
 function volverACategorias() {
   busquedaActual = "";
   const buscador = document.getElementById("buscador-productos");
   if (buscador) buscador.value = "";
+  actualizarVistaCategoria(false);
   renderCategorias();
+  renderHeaderMenuCategorias();
+  scrollAElemento("menu-container");
 }
 
 function renderFiltros() {
@@ -169,7 +232,7 @@ function renderFiltros() {
     <button class="filtro-btn ${categoriaActual ? "" : "active"}" onclick="volverACategorias()">Categorias</button>
     ${categorias.map(cat => `
       <button class="filtro-btn ${categoriaActual === cat ? "active" : ""}" onclick="abrirCategoria('${escapeAttr(cat)}')">
-        ${escapeHtml(capitalize(cat))}
+        ${escapeHtml(cat)}
       </button>
     `).join("")}`;
 }
@@ -181,7 +244,7 @@ function aplicarFiltros() {
   }
 
   const termino = normalizarTexto(busquedaActual);
-  const productos = todosProductos.filter(p => (p.categoria || "Otros") === categoriaActual);
+  const productos = getProductosPorCategoriaVisual(categoriaActual);
   const filtrados = !termino
     ? productos
     : productos.filter(p => {
@@ -208,6 +271,137 @@ function renderMenu(productos) {
         : `<div class="productos-list">${productos.map((p, i) => renderProductoCard(p, i)).join("")}</div>`
       }
     </section>`;
+}
+
+function actualizarVistaCategoria(enCategoria) {
+  document.body.classList.toggle("categoria-activa", enCategoria);
+
+  [
+    "mesa-actions",
+    "mesa-session-panel",
+    "menu-tools",
+    "smart-recs",
+    "filtros-wrapper",
+  ].forEach(id => {
+    const elemento = document.getElementById(id);
+    if (!elemento) return;
+    elemento.classList.toggle("vista-oculta", enCategoria);
+  });
+  cerrarHeaderMenu();
+}
+
+function inicializarNavegacionCliente() {
+  document.querySelectorAll("[data-scroll-target]").forEach(link => {
+    link.addEventListener("click", event => {
+      const target = link.getAttribute("data-scroll-target");
+      if (!target) return;
+      event.preventDefault();
+      if (target === "menu-container" && categoriaActual) {
+        volverACategorias();
+        return;
+      }
+      if (target !== "menu-container" && categoriaActual) {
+        volverACategorias();
+        window.setTimeout(() => scrollAElemento(target), 80);
+        return;
+      }
+      scrollAElemento(target);
+    });
+  });
+}
+
+function inicializarHeaderMenu() {
+  renderHeaderMenuCategorias();
+
+  document.querySelectorAll("[data-menu-categorias]").forEach(button => {
+    button.addEventListener("click", () => {
+      document.body.classList.toggle("header-categorias-open");
+    });
+  });
+
+  document.querySelectorAll("[data-menu-scroll]").forEach(button => {
+    button.addEventListener("click", () => {
+      const target = button.getAttribute("data-menu-scroll");
+      cerrarHeaderMenu();
+      if (!target) return;
+
+      if (target === "menu-container" && categoriaActual) {
+        volverACategorias();
+        return;
+      }
+
+      if (target !== "menu-container" && categoriaActual) {
+        volverACategorias();
+        window.setTimeout(() => scrollAElemento(target), 80);
+        return;
+      }
+
+      scrollAElemento(target);
+    });
+  });
+
+  document.addEventListener("click", event => {
+    const panel = document.getElementById("header-menu-panel");
+    const button = document.getElementById("header-menu-btn");
+    if (!panel || !button || !document.body.classList.contains("header-menu-open")) return;
+    if (panel.contains(event.target) || button.contains(event.target)) return;
+    cerrarHeaderMenu();
+  });
+
+  actualizarModoNavCompacta();
+}
+
+function renderHeaderMenuCategorias() {
+  const container = document.getElementById("header-menu-cats");
+  if (!container) return;
+
+  container.innerHTML = `
+    <button type="button" onclick="volverACategorias(); cerrarHeaderMenu();">ver todas</button>
+    ${getCategorias().map(cat => `
+      <button type="button" class="${categoriaActual === cat ? "active" : ""}" onclick="abrirCategoria('${escapeAttr(cat)}'); cerrarHeaderMenu();">
+        ${escapeHtml(cat.toLowerCase())}
+      </button>
+    `).join("")}
+  `;
+}
+
+function toggleHeaderMenu() {
+  const abierto = !document.body.classList.contains("header-menu-open");
+  document.body.classList.toggle("header-menu-open", abierto);
+  const panel = document.getElementById("header-menu-panel");
+  const button = document.getElementById("header-menu-btn");
+  if (panel) panel.setAttribute("aria-hidden", abierto ? "false" : "true");
+  if (button) button.setAttribute("aria-expanded", abierto ? "true" : "false");
+}
+
+function cerrarHeaderMenu() {
+  document.body.classList.remove("header-menu-open");
+  document.body.classList.remove("header-categorias-open");
+  const panel = document.getElementById("header-menu-panel");
+  const button = document.getElementById("header-menu-btn");
+  if (panel) panel.setAttribute("aria-hidden", "true");
+  if (button) button.setAttribute("aria-expanded", "false");
+}
+
+function actualizarModoNavCompacta() {
+  document.body.classList.toggle("nav-compacta", window.scrollY > 120);
+}
+
+function scrollAElemento(id) {
+  const elemento = document.getElementById(id);
+  if (!elemento) return;
+
+  const header = document.querySelector(".header")?.offsetHeight || 0;
+  const nav = document.querySelector(".cliente-nav:not(.vista-oculta)")?.offsetHeight || 0;
+  const filtrosEl = document.getElementById("filtros-wrapper");
+  const filtros = filtrosEl && !filtrosEl.classList.contains("vista-oculta") ? filtrosEl.offsetHeight : 0;
+  const offset = header + nav + filtros + 14;
+  const top = elemento.getBoundingClientRect().top + window.scrollY - offset;
+
+  window.scrollTo({
+    top: Math.max(0, top),
+    behavior: "smooth",
+  });
 }
 
 function renderProductoCard(p, i) {
@@ -804,6 +998,29 @@ function mostrarAvisoMesa(mensaje) {
 }
 
 // ── HELPERS ──────────────────────────────────────────────────
+function mostrarPromoEfectivo() {
+  const overlay = document.getElementById("promo-overlay");
+  if (!overlay) return;
+
+  const storageKey = mesaValida ? `scanorder_promo_efectivo_mesa_${mesaNumero}` : "scanorder_promo_efectivo";
+  if (sessionStorage.getItem(storageKey) === "vista") return;
+
+  window.setTimeout(() => {
+    overlay.classList.add("visible");
+    overlay.setAttribute("aria-hidden", "false");
+  }, 350);
+}
+
+function cerrarPromoEfectivo() {
+  const overlay = document.getElementById("promo-overlay");
+  if (!overlay) return;
+
+  const storageKey = mesaValida ? `scanorder_promo_efectivo_mesa_${mesaNumero}` : "scanorder_promo_efectivo";
+  sessionStorage.setItem(storageKey, "vista");
+  overlay.classList.remove("visible");
+  overlay.setAttribute("aria-hidden", "true");
+}
+
 function capitalize(str) {
   if (!str) return "";
   return str.charAt(0).toUpperCase() + str.slice(1);
