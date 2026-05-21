@@ -73,8 +73,71 @@ const categoriasMenu = [
     keywords: ["postre", "postres", "dulce", "helado", "torta", "brownie", "flan", "panqueque"],
   },
 ];
+const subcategoriasMenu = {
+  Cocteleria: [
+    {
+      nombre: "Cocteleria tradicional",
+      keywords: ["fernet", "aperol", "vermut", "campari", "mojito", "caipirinha", "negroni", "spritz", "trago", "clasico", "clásico"],
+    },
+    {
+      nombre: "Sin alcohol",
+      keywords: ["agua", "gaseosa", "coca", "sprite", "limonada", "jugo", "soda", "tonica", "tónica", "sin alcohol"],
+    },
+    {
+      nombre: "Cocktails sin alcohol",
+      keywords: ["mocktail", "cocktail sin alcohol", "coctel sin alcohol", "pomelada", "naranjada", "limonada de menta", "virgin"],
+    },
+    {
+      nombre: "Cervezas",
+      keywords: ["cerveza", "cervezas", "pinta", "birra", "ipa", "lager", "stout", "rubia", "roja", "negra"],
+    },
+    {
+      nombre: "Whisky",
+      keywords: ["whisky", "whiskey", "bourbon", "scotch"],
+    },
+    {
+      nombre: "Champagne",
+      keywords: ["champagne", "espumante", "prosecco"],
+    },
+  ],
+};
 
 // ── CARGAR MENÚ ─────────────────────────────────────────────
+const subcategoriasMenuNuevo = {
+  comidas: [
+    {
+      nombre: "Hamburguesas",
+      keywords: ["hamburguesa", "hamburguesas", "burger", "maven classic", "maven doble", "maven bbq", "veggie", "spicy"],
+    },
+    {
+      nombre: "Papas Fritas",
+      keywords: ["papa", "papas", "frita", "fritas", "cheddar", "bacon"],
+    },
+    {
+      nombre: "Entraditas",
+      keywords: ["entrada", "entradita", "aros", "cebolla", "empanada", "bastones", "nuggets", "rabas"],
+    },
+    {
+      nombre: "Pizzas",
+      keywords: ["pizza", "pizzas", "muzza", "muzzarella", "napolitana", "fugazzeta"],
+    },
+  ],
+  cocteleria: [
+    {
+      nombre: "Bebida sin alcohol",
+      keywords: ["agua", "gaseosa", "coca", "sprite", "limonada", "jugo", "soda", "tonica", "tónica", "sin alcohol"],
+    },
+    {
+      nombre: "Gin Tonic",
+      keywords: ["gin", "tonic", "tonica", "tónica", "gin tonic"],
+    },
+    {
+      nombre: "Super Clasicos",
+      keywords: ["fernet", "aperol", "vermut", "campari", "mojito", "caipirinha", "negroni", "spritz", "cuba libre", "gancia", "clasico", "clásico"],
+    },
+  ],
+};
+
 document.addEventListener("DOMContentLoaded", cargarMenu);
 document.addEventListener("DOMContentLoaded", actualizarEspacioCarrito);
 document.addEventListener("DOMContentLoaded", inicializarControlesPedido);
@@ -266,11 +329,72 @@ function renderMenu(productos) {
           <h2 class="menu-section-title">${escapeHtml(capitalize(categoriaActual || "Productos"))}</h2>
         </div>
       </div>
-      ${productos.length === 0
-        ? `<div class="empty-state menu-empty"><div class="icon">Buscar</div><p>No hay productos en esta categoria.</p></div>`
-        : `<div class="productos-list">${productos.map((p, i) => renderProductoCard(p, i)).join("")}</div>`
-      }
+      ${renderProductosCategoria(productos)}
     </section>`;
+}
+
+function renderProductosCategoria(productos) {
+  if (productos.length === 0) {
+    return `<div class="empty-state menu-empty"><div class="icon">Buscar</div><p>No hay productos en esta categoria.</p></div>`;
+  }
+
+  const subcategorias = getSubcategoriasCategoria(categoriaActual);
+  if (!subcategorias) {
+    return `<div class="productos-list">${productos.map((p, i) => renderProductoCard(p, i)).join("")}</div>`;
+  }
+
+  const grupos = agruparProductosPorSubcategoria(productos, subcategorias);
+  return `
+    <div class="subcategoria-list">
+      <div class="subcategoria-tabs">
+        ${grupos.map(grupo => `
+          <a href="#subcat-${slugify(grupo.nombre)}">${escapeHtml(grupo.nombre)}</a>
+        `).join("")}
+      </div>
+      ${grupos.map(grupo => `
+        <section class="subcategoria-section" id="subcat-${slugify(grupo.nombre)}">
+          <div class="subcategoria-header">
+            <h3>${escapeHtml(grupo.nombre)}</h3>
+          </div>
+          <div class="productos-list">
+            ${grupo.productos.length
+              ? grupo.productos.map((p, i) => renderProductoCard(p, i)).join("")
+              : `<div class="subcategoria-empty">Todavia no hay productos cargados en esta seccion.</div>`
+            }
+          </div>
+        </section>
+      `).join("")}
+    </div>
+  `;
+}
+
+function getSubcategoriasCategoria(categoria) {
+  const clave = normalizarTexto(categoria);
+  if (clave.includes("comida")) return subcategoriasMenuNuevo.comidas;
+  if (clave.includes("cocteler") || clave.includes("cocktail")) return subcategoriasMenuNuevo.cocteleria;
+  return subcategoriasMenuNuevo[clave] || subcategoriasMenu[clave] || subcategoriasMenu[categoria] || null;
+}
+
+function agruparProductosPorSubcategoria(productos, subcategorias) {
+  const usados = new Set();
+  const grupos = subcategorias
+    .map(subcategoria => {
+      const items = productos.filter(producto => {
+        if (usados.has(producto.id_producto)) return false;
+        const texto = normalizarTexto(`${producto.nombre || ""} ${producto.descripcion || ""} ${producto.categoria || ""}`);
+        const coincide = subcategoria.keywords.some(keyword => texto.includes(normalizarTexto(keyword)));
+        if (coincide) usados.add(producto.id_producto);
+        return coincide;
+      });
+      return { nombre: subcategoria.nombre, productos: items };
+    });
+
+  const otros = productos.filter(producto => !usados.has(producto.id_producto));
+  if (otros.length > 0) {
+    grupos.push({ nombre: "Otros", productos: otros });
+  }
+
+  return grupos;
 }
 
 function actualizarVistaCategoria(enCategoria) {
@@ -1201,6 +1325,12 @@ function normalizarTexto(valor) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+}
+
+function slugify(valor) {
+  return normalizarTexto(valor)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function escapeHtml(str) {

@@ -2953,3 +2953,116 @@ body.categoria-activa .filtros-wrapper {
     margin-top: 14px;
   }
 }
+
+/* ===== SUBCATEGORIAS DENTRO DEL MENU ===== */
+.subcategoria-list {
+  max-width: 960px;
+  margin: 0 auto;
+  display: grid;
+  gap: 34px;
+}
+
+.subcategoria-tabs {
+  position: sticky;
+  top: 76px;
+  z-index: 8;
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 12px 0 14px;
+  background: rgba(247,243,236,0.94);
+  scrollbar-width: none;
+}
+
+.subcategoria-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.subcategoria-tabs a {
+  flex: 0 0 auto;
+  padding: 10px 16px;
+  border: 1px solid rgba(36,52,71,0.12);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #243447;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.subcategoria-section {
+  display: grid;
+  gap: 8px;
+  scroll-margin-top: 140px;
+}
+
+.subcategoria-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid rgba(36,52,71,0.10);
+}
+
+.subcategoria-header h3 {
+  margin: 0;
+  font-family: var(--body-font);
+  color: #2f6654;
+  font-size: clamp(1.08rem, 3vw, 1.28rem);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.subcategoria-header span {
+  color: #8a7350;
+  font-size: 0.74rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.subcategoria-section .productos-list {
+  max-width: none;
+  margin: 0;
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.subcategoria-section .producto-card.producto-row {
+  background: transparent;
+  padding: 16px 0;
+  border-bottom: 1px solid rgba(36,52,71,0.10);
+}
+
+.subcategoria-section .producto-nombre {
+  font-family: var(--body-font);
+  font-size: 0.98rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.subcategoria-section .producto-precio {
+  color: #2f6654;
+}
+
+.subcategoria-empty {
+  padding: 16px 0;
+  color: #8a7350;
+  font-size: 0.88rem;
+  border-bottom: 1px solid rgba(36,52,71,0.10);
+}
+
+@media (max-width: 620px) {
+  .subcategoria-tabs {
+    top: 64px;
+  }
+
+  .subcategoria-section {
+    scroll-margin-top: 118px;
+  }
+}

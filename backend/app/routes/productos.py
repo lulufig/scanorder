@@ -36,6 +36,27 @@ def resolver_id_categoria(cursor, id_categoria=None, categoria=None):
             "combos": "Combos",
             "otros": "Otros",
         }
+        aliases.update({
+            "hamburguesa": "Comidas",
+            "hamburguesas": "Comidas",
+            "comida": "Comidas",
+            "comidas": "Comidas",
+            "papas": "Comidas",
+            "acompanamientos": "Comidas",
+            "combos": "Comidas",
+            "cerveza": "Cervezas",
+            "cervezas": "Cervezas",
+            "birra": "Cervezas",
+            "birras": "Cervezas",
+            "bebida": "Cocteleria",
+            "bebidas": "Cocteleria",
+            "coctel": "Cocteleria",
+            "cocteles": "Cocteleria",
+            "cocteleria": "Cocteleria",
+            "tragos": "Cocteleria",
+            "postre": "Postres",
+            "postres": "Postres",
+        })
         categoria_busqueda = aliases.get(categoria.lower(), categoria)
         cursor.execute(
             "SELECT id_categoria FROM categorias WHERE LOWER(nombre) = LOWER(%s) AND activa = TRUE",
