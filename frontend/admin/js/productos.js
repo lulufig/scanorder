@@ -14,6 +14,10 @@
     let modoEdicion       = false;
     let idEditando        = null;
     let idAEliminar       = null;
+    const subcategoriasPorCategoria = {
+      Comidas: ["Hamburguesas", "Papas Fritas", "Entraditas", "Pizzas"],
+      Cocteleria: ["Bebida sin alcohol", "Gin Tonic", "Super Clasicos"],
+    };
 
     // ── INICIALIZACIÓN ──────────────────────────────────────────
     document.addEventListener("DOMContentLoaded", cargarProductos);
@@ -69,7 +73,10 @@
             <div class="product-name">${escapeHtml(p.nombre)}</div>
             <div class="product-desc">${escapeHtml(p.descripcion || '—')}</div>
           </td>
-          <td><span class="badge badge-cat">${escapeHtml(p.categoria || '—')}</span></td>
+          <td>
+            <span class="badge badge-cat">${escapeHtml(p.categoria || '—')}</span>
+            ${p.subcategoria ? `<div class="product-desc">${escapeHtml(p.subcategoria)}</div>` : ""}
+          </td>
           <td class="price-cell">$${Number(p.precio).toFixed(2)}</td>
           <td>
             ${p.disponible
@@ -108,7 +115,8 @@
       const filtrados = todosLosProductos.filter(p =>
         p.nombre.toLowerCase().includes(q) ||
         (p.descripcion || "").toLowerCase().includes(q) ||
-        (p.categoria   || "").toLowerCase().includes(q)
+        (p.categoria   || "").toLowerCase().includes(q) ||
+        (p.subcategoria || "").toLowerCase().includes(q)
       );
       renderTabla(filtrados);
     }
@@ -139,6 +147,7 @@
       document.getElementById("f-descripcion").value = producto.descripcion  || "";
       document.getElementById("f-precio").value      = producto.precio       || "";
       document.getElementById("f-categoria").value   = producto.categoria    || "";
+      actualizarSubcategoriasAdmin(producto.subcategoria || "");
       document.getElementById("f-imagen").value      = producto.imagen_url   || "";
       document.getElementById("f-disponible").checked = !!producto.disponible;
 
@@ -151,6 +160,7 @@
       const descripcion = document.getElementById("f-descripcion").value.trim();
       const precio     = parseFloat(document.getElementById("f-precio").value);
       const categoria  = document.getElementById("f-categoria").value;
+      const subcategoria = document.getElementById("f-subcategoria").value || null;
       const imagen_url = document.getElementById("f-imagen").value.trim();
       const disponible = document.getElementById("f-disponible").checked;
 
@@ -159,7 +169,7 @@
       if (isNaN(precio) || precio < 0) { mostrarToast("Ingresá un precio válido.", "error"); return; }
       if (!categoria) { mostrarToast("Seleccioná una categoría.", "error"); return; }
 
-      const body = { nombre, descripcion, precio, categoria, imagen_url, disponible };
+      const body = { nombre, descripcion, precio, categoria, subcategoria, imagen_url, disponible };
 
       const btn = document.getElementById("btn-guardar");
       btn.disabled = true;
@@ -240,6 +250,7 @@
       document.getElementById("f-descripcion").value = "";
       document.getElementById("f-precio").value      = "";
       document.getElementById("f-categoria").value   = "";
+      actualizarSubcategoriasAdmin("");
       document.getElementById("f-imagen").value      = "";
       document.getElementById("f-disponible").checked = true;
     }
@@ -270,6 +281,27 @@
       toastTimer = setTimeout(() => toast.classList.remove("show"), 3500);
     }
 
+    function actualizarSubcategoriasAdmin(valorSeleccionado = "") {
+      const categoria = document.getElementById("f-categoria")?.value || "";
+      const select = document.getElementById("f-subcategoria");
+      if (!select) return;
+
+      const opciones = subcategoriasPorCategoria[categoria] || [];
+      select.innerHTML = `
+        <option value="">Sin subcategoria</option>
+        ${opciones.map(opcion => `<option value="${escapeHtml(opcion)}">${escapeHtml(opcion)}</option>`).join("")}
+      `;
+      select.value = valorSeleccionado;
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const categoriaSelect = document.getElementById("f-categoria");
+      if (categoriaSelect) {
+        categoriaSelect.addEventListener("change", () => actualizarSubcategoriasAdmin(""));
+      }
+      actualizarSubcategoriasAdmin("");
+    });
+
     // Previene XSS al insertar texto en el HTML
     function escapeHtml(str) {
       if (!str) return "";
@@ -288,4 +320,3 @@
         cerrarConfirm();
       }
     });
-  

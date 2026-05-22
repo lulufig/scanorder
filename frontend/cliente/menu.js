@@ -129,7 +129,7 @@ const subcategoriasMenuNuevo = {
     },
     {
       nombre: "Gin Tonic",
-      keywords: ["gin", "tonic", "tonica", "tónica", "gin tonic"],
+      keywords: ["gin", "tonic", "tonica", "tónica", "gin tonic" ]
     },
     {
       nombre: "Super Clasicos",
@@ -234,7 +234,7 @@ function renderCategorias() {
 
   container.innerHTML = `
     <section class="menu-section-shell">
-      <div class="section-kicker">Categorias</div>
+      <div class="section-kicker">— Categorias</div>
       
       <div class="categorias-grid">
         ${categorias.map((grupo, i) => renderCategoriaCard(grupo.cat, grupo.productos, i, grupo.config)).join("")}
@@ -381,6 +381,12 @@ function agruparProductosPorSubcategoria(productos, subcategorias) {
     .map(subcategoria => {
       const items = productos.filter(producto => {
         if (usados.has(producto.id_producto)) return false;
+        const subcategoriaManual = normalizarTexto(producto.subcategoria);
+        if (subcategoriaManual) {
+          const coincideManual = subcategoriaManual === normalizarTexto(subcategoria.nombre);
+          if (coincideManual) usados.add(producto.id_producto);
+          return coincideManual;
+        }
         const texto = normalizarTexto(`${producto.nombre || ""} ${producto.descripcion || ""} ${producto.categoria || ""}`);
         const coincide = subcategoria.keywords.some(keyword => texto.includes(normalizarTexto(keyword)));
         if (coincide) usados.add(producto.id_producto);

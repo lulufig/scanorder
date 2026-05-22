@@ -9,6 +9,7 @@ class ProductoCreate(BaseModel):
     precio: float = Field(gt=0)
     id_categoria: Optional[int] = None
     categoria: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    subcategoria: Optional[str] = Field(default=None, min_length=1, max_length=100)
     imagen_url: Optional[str] = None
     disponible: bool = True
 
@@ -20,6 +21,7 @@ class ProductoUpdate(BaseModel):
     precio: Optional[float] = Field(default=None, gt=0)
     id_categoria: Optional[int] = None
     categoria: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    subcategoria: Optional[str] = Field(default=None, min_length=1, max_length=100)
     imagen_url: Optional[str] = None
     disponible: Optional[bool] = None
 
@@ -31,6 +33,7 @@ class ProductoResponse(BaseModel):
     descripcion: Optional[str]
     precio: float
     id_categoria: int
+    subcategoria: Optional[str] = None
     imagen_url: Optional[str]
     disponible: bool
     categoria: Optional[str] = None

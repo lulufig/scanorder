@@ -129,6 +129,7 @@ def productos_populares_hoy():
                 p.descripcion,
                 p.precio,
                 p.imagen_url,
+                p.subcategoria,
                 p.disponible,
                 c.nombre AS categoria,
                 SUM(dp.cantidad) AS total_pedido
@@ -138,7 +139,7 @@ def productos_populares_hoy():
             LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
             WHERE DATE(pe.created_at) = CURDATE()
               AND p.disponible = TRUE
-            GROUP BY p.id_producto, p.nombre, p.descripcion, p.precio, p.imagen_url, p.disponible, c.nombre
+            GROUP BY p.id_producto, p.nombre, p.descripcion, p.precio, p.imagen_url, p.subcategoria, p.disponible, c.nombre
             ORDER BY total_pedido DESC
             LIMIT 6
             """
@@ -219,14 +220,15 @@ def create_producto(
             categoria=producto.categoria
         )
         query = """
-            INSERT INTO productos (nombre, descripcion, precio, id_categoria, imagen_url, disponible)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO productos (nombre, descripcion, precio, id_categoria, subcategoria, imagen_url, disponible)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         cursor.execute(query, (
             producto.nombre,
             producto.descripcion,
             producto.precio,
             id_categoria,
+            producto.subcategoria,
             producto.imagen_url,
             producto.disponible
         ))
@@ -292,7 +294,10 @@ def update_producto(
                 categoria=producto.categoria
             )
 
-        # COALESCE preserva el valor actual cuando el campo llega como NULL
+        campos_enviados = getattr(producto, "model_fields_set", getattr(producto, "__fields_set__", set()))
+        subcategoria = producto.subcategoria if "subcategoria" in campos_enviados else existing.get("subcategoria")
+
+        # COALESCE preserva campos no enviados; subcategoria se maneja aparte para permitir limpiarla.
         query = """
             UPDATE productos
             SET
@@ -300,6 +305,7 @@ def update_producto(
                 descripcion  = COALESCE(%s, descripcion),
                 precio       = COALESCE(%s, precio),
                 id_categoria = COALESCE(%s, id_categoria),
+                subcategoria = %s,
                 imagen_url   = COALESCE(%s, imagen_url),
                 disponible   = COALESCE(%s, disponible)
             WHERE id_producto = %s
@@ -309,6 +315,7 @@ def update_producto(
             producto.descripcion,
             producto.precio,
             id_categoria,
+            subcategoria,
             producto.imagen_url,
             producto.disponible,
             id_producto
