@@ -35,6 +35,8 @@ let syncMesaTimer = null;
 let recomendacionesInteligentes = [];
 let idsPopularesHoy = new Set();
 let contextoRecomendaciones = "";
+let navCompactaActiva = false;
+let scrollNavPendiente = false;
 const mesaClientId = obtenerClientIdMesa();
 const mesaClientName = obtenerNombreClienteMesa();
 
@@ -145,7 +147,7 @@ document.addEventListener("DOMContentLoaded", mostrarPromoEfectivo);
 document.addEventListener("DOMContentLoaded", inicializarNavegacionCliente);
 document.addEventListener("DOMContentLoaded", inicializarHeaderMenu);
 window.addEventListener("resize", actualizarEspacioCarrito);
-window.addEventListener("scroll", actualizarModoNavCompacta, { passive: true });
+window.addEventListener("scroll", programarActualizacionNavCompacta, { passive: true });
 
 async function cargarMenu() {
   try {
@@ -254,7 +256,7 @@ function renderCategoriaCard(categoria, productos, i, config = getCategoriaConfi
   return `
     <button class="categoria-card categoria-${normalizarTexto(categoria)}" style="animation-delay:${i * 0.04}s" onclick="abrirCategoria('${escapeAttr(categoria)}')">
       ${imagen
-        ? `<img class="categoria-img" src="${escapeHtml(imagen)}" alt="${escapeHtml(categoria)}" loading="lazy">`
+        ? `<img class="categoria-img" src="${escapeHtml(imagen)}" alt="${escapeHtml(categoria)}" loading="eager" decoding="async" fetchpriority="${i < 2 ? "high" : "auto"}">`
         : `<div class="categoria-img categoria-fallback">${escapeHtml(inicial)}</div>`
       }
       <span class="categoria-overlay"></span>
@@ -306,31 +308,70 @@ function aplicarFiltros() {
     return;
   }
 
-  const termino = normalizarTexto(busquedaActual);
-  const productos = getProductosPorCategoriaVisual(categoriaActual);
-  const filtrados = !termino
-    ? productos
-    : productos.filter(p => {
-        const texto = normalizarTexto(`${p.nombre || ""} ${p.descripcion || ""} ${p.categoria || ""}`);
-        return texto.includes(termino);
-      });
-
-  renderMenu(filtrados);
+  renderMenu(getProductosFiltradosCategoriaActual());
 }
 
 function renderMenu(productos) {
   const container = document.getElementById("menu-container");
+  const categoria = categoriaActual || "Productos";
+  const config = getCategoriaConfig(categoria);
+  const imagenHero = config.imagen || productos.find(p => p.imagen_url)?.imagen_url || "../assets/img/local-maveburguer-optimized.jpg";
   container.innerHTML = `
-    <section class="productos-view">
-      <div class="productos-view-header">
-        <button class="btn-volver-categorias" onclick="volverACategorias()">Volver</button>
-        <div>
-          <div class="section-kicker">Categoria</div>
-          <h2 class="menu-section-title">${escapeHtml(capitalize(categoriaActual || "Productos"))}</h2>
-        </div>
+    <section class="productos-view categoria-menu-view">
+      <div class="categoria-menu-topbar">
+        <button class="categoria-back-btn" type="button" onclick="volverACategorias()" aria-label="Volver a categorias">
+          <span aria-hidden="true">‹</span>
+          Volver
+        </button>
+        <div class="categoria-menu-brand">Maven<span>Burger</span></div>
+        <button class="categoria-search-btn" type="button" onclick="toggleCategoriaSearch()" aria-label="Buscar en esta categoria">
+          <span aria-hidden="true"></span>
+        </button>
       </div>
-      ${renderProductosCategoria(productos)}
+      <div class="categoria-searchbar" id="categoria-searchbar">
+        <input id="categoria-search-input" type="search" placeholder="Buscar en ${escapeAttr(categoria)}" value="${escapeAttr(busquedaActual)}" oninput="buscarEnCategoria(this.value)">
+      </div>
+      <div class="categoria-menu-hero">
+        <img src="${escapeHtml(imagenHero)}" alt="${escapeHtml(categoria)}" loading="eager" decoding="async" fetchpriority="high">
+        <span class="categoria-menu-hero-overlay"></span>
+        <h2>${escapeHtml(capitalize(categoria))}</h2>
+      </div>
+      <div id="categoria-products-region">
+        ${renderProductosCategoria(productos)}
+      </div>
+      <div class="categoria-menu-footer">Maven<span>Burger</span></div>
     </section>`;
+}
+
+function toggleCategoriaSearch() {
+  const searchbar = document.getElementById("categoria-searchbar");
+  const input = document.getElementById("categoria-search-input");
+  if (!searchbar) return;
+  const abierta = searchbar.classList.toggle("visible");
+  if (abierta && input) input.focus();
+}
+
+function buscarEnCategoria(valor) {
+  busquedaActual = valor || "";
+  const productos = getProductosFiltradosCategoriaActual();
+  const region = document.getElementById("categoria-products-region");
+  if (region) {
+    region.innerHTML = renderProductosCategoria(productos);
+  } else {
+    aplicarFiltros();
+  }
+  const searchbar = document.getElementById("categoria-searchbar");
+  if (searchbar && busquedaActual) searchbar.classList.add("visible");
+}
+
+function getProductosFiltradosCategoriaActual() {
+  const termino = normalizarTexto(busquedaActual);
+  const productos = getProductosPorCategoriaVisual(categoriaActual);
+  if (!termino) return productos;
+  return productos.filter(p => {
+    const texto = normalizarTexto(`${p.nombre || ""} ${p.descripcion || ""} ${p.categoria || ""} ${p.subcategoria || ""}`);
+    return texto.includes(termino);
+  });
 }
 
 function renderProductosCategoria(productos) {
@@ -340,7 +381,14 @@ function renderProductosCategoria(productos) {
 
   const subcategorias = getSubcategoriasCategoria(categoriaActual);
   if (!subcategorias) {
-    return `<div class="productos-list">${productos.map((p, i) => renderProductoCard(p, i)).join("")}</div>`;
+    return `
+      <div class="subcategoria-list categoria-simple-list">
+        <section class="subcategoria-section">
+          <div class="productos-list">
+            ${productos.map((p, i) => renderProductoCard(p, i)).join("")}
+          </div>
+        </section>
+      </div>`;
   }
 
   const grupos = agruparProductosPorSubcategoria(productos, subcategorias);
@@ -513,8 +561,26 @@ function cerrarHeaderMenu() {
   if (button) button.setAttribute("aria-expanded", "false");
 }
 
+function programarActualizacionNavCompacta() {
+  if (scrollNavPendiente) return;
+  scrollNavPendiente = true;
+  window.requestAnimationFrame(() => {
+    scrollNavPendiente = false;
+    actualizarModoNavCompacta();
+  });
+}
+
 function actualizarModoNavCompacta() {
-  document.body.classList.toggle("nav-compacta", window.scrollY > 120);
+  const y = window.scrollY || document.documentElement.scrollTop || 0;
+  const debeActivarse = navCompactaActiva ? y > 80 : y > 160;
+  if (debeActivarse === navCompactaActiva) return;
+
+  navCompactaActiva = debeActivarse;
+  document.body.classList.toggle("nav-compacta", navCompactaActiva);
+
+  if (!navCompactaActiva) {
+    cerrarHeaderMenu();
+  }
 }
 
 function scrollAElemento(id) {
