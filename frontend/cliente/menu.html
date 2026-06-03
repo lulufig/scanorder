@@ -35,7 +35,7 @@
     <div class="header-menu-section">
       <span>Navegacion</span>
       <button type="button" data-menu-scroll="hero">Inicio</button>
-      <button type="button" data-menu-categorias="true">Menu</button>
+      <button class="header-menu-trigger" type="button" data-menu-categorias="true">Menu</button>
       <button type="button" data-menu-scroll="smart-recs">Recomendados</button>
       <button type="button" data-menu-scroll="mesa-actions">Mesa</button>
       <button type="button" data-menu-scroll="footer">Contacto</button>
@@ -172,15 +172,6 @@
             </div>
           </div>
         </div>
-
-        <div class="footer-map" aria-label="Mapa de ubicacion">
-          <iframe
-            title="Mapa Maven Burger"
-            src="https://www.google.com/maps?q=Av.%20San%20Martin%201842%20Palermo%20Buenos%20Aires&output=embed"
-            loading="lazy"
-            referrerpolicy="no-referrer-when-downgrade">
-          </iframe>
-        </div>
       </div>
     </div>
   </footer>
@@ -192,7 +183,7 @@
         <div class="carrito-badge" id="carrito-badge">0</div>
         <div>
           <div class="carrito-label">Tu pedido</div>
-          <div style="font-size:0.75rem; color:rgba(255,240,208,0.72);" id="carrito-items-label">0 productos</div>
+          <div class="carrito-items-label" id="carrito-items-label">0 productos</div>
         </div>
       </div>
       <div class="carrito-total-mini" id="carrito-total-mini">$0.00</div>

@@ -146,6 +146,7 @@ document.addEventListener("DOMContentLoaded", inicializarControlesPedido);
 document.addEventListener("DOMContentLoaded", mostrarPromoEfectivo);
 document.addEventListener("DOMContentLoaded", inicializarNavegacionCliente);
 document.addEventListener("DOMContentLoaded", inicializarHeaderMenu);
+document.addEventListener("DOMContentLoaded", inicializarScrollCategorias);
 window.addEventListener("resize", actualizarEspacioCarrito);
 window.addEventListener("scroll", programarActualizacionNavCompacta, { passive: true });
 
@@ -208,7 +209,12 @@ function getProductosPorCategoriaVisual(nombre) {
 
 function renderCategorias() {
   categoriaActual = null;
+  document.body.classList.remove("busqueda-activa");
   actualizarVistaCategoria(false);
+  const recomendaciones = document.getElementById("smart-recs");
+  if (recomendaciones && recomendacionesInteligentes.length > 0) {
+    recomendaciones.style.display = "block";
+  }
   const container = document.getElementById("menu-container");
   const termino = normalizarTexto(busquedaActual);
   const categorias = getCategorias()
@@ -263,7 +269,7 @@ function renderCategoriaCard(categoria, productos, i, config = getCategoriaConfi
       <span class="categoria-count">${descripcion}</span>
       <span class="categoria-title">${escapeHtml(categoria)}</span>
       <span class="categoria-desc">${escapeHtml(config.descripcion)}</span>
-      <span class="categoria-arrow">Explorar</span>
+      <span class="categoria-arrow" aria-hidden="true">→</span>
     </button>`;
 }
 
@@ -302,13 +308,163 @@ function renderFiltros() {
     `).join("")}`;
 }
 
+function inicializarScrollCategorias() {
+  const wrapper = document.getElementById("filtros-wrapper");
+  if (!wrapper || wrapper.dataset.dragReady === "true") return;
+
+  wrapper.dataset.dragReady = "true";
+  let arrastrando = false;
+  let seMovio = false;
+  let inicioX = 0;
+  let scrollInicial = 0;
+
+  wrapper.addEventListener("pointerdown", (event) => {
+    if (window.innerWidth > 620) return;
+    arrastrando = true;
+    seMovio = false;
+    inicioX = event.clientX;
+    scrollInicial = wrapper.scrollLeft;
+    wrapper.classList.add("dragging");
+  });
+
+  wrapper.addEventListener("pointermove", (event) => {
+    if (!arrastrando) return;
+    const distancia = event.clientX - inicioX;
+    if (Math.abs(distancia) > 4) {
+      seMovio = true;
+      wrapper.scrollLeft = scrollInicial - distancia;
+      event.preventDefault();
+    }
+  }, { passive: false });
+
+  const terminarArrastre = () => {
+    arrastrando = false;
+    wrapper.classList.remove("dragging");
+  };
+
+  wrapper.addEventListener("pointerup", terminarArrastre);
+  wrapper.addEventListener("pointercancel", terminarArrastre);
+  wrapper.addEventListener("pointerleave", terminarArrastre);
+
+  wrapper.addEventListener("click", (event) => {
+    if (!seMovio) return;
+    event.preventDefault();
+    event.stopPropagation();
+    seMovio = false;
+  }, true);
+}
+
 function aplicarFiltros() {
   if (!categoriaActual) {
+    if (busquedaActual.trim()) {
+      renderResultadosBusquedaGlobal();
+      return;
+    }
     renderCategorias();
     return;
   }
 
   renderMenu(getProductosFiltradosCategoriaActual());
+}
+
+function getProductosBusquedaGlobal() {
+  const termino = normalizarTexto(busquedaActual);
+  if (!termino) return [];
+
+  return todosProductos.filter(producto => {
+    const texto = normalizarTexto(`${producto.nombre || ""} ${producto.descripcion || ""} ${producto.categoria || ""} ${producto.subcategoria || ""}`);
+    return texto.includes(termino);
+  });
+}
+
+function renderResultadosBusquedaGlobal() {
+  const container = document.getElementById("menu-container");
+  const recomendaciones = document.getElementById("smart-recs");
+  document.body.classList.add("busqueda-activa");
+  if (recomendaciones) recomendaciones.style.display = "none";
+  const termino = busquedaActual.trim();
+  const productos = getProductosBusquedaGlobal();
+  renderFiltros();
+
+  if (productos.length === 0) {
+    container.innerHTML = `
+      <section class="search-results-view">
+        ${renderSearchHero()}
+        <div class="search-results-head">
+          <span class="search-results-kicker">Resultados para</span>
+          <h2>${escapeHtml(termino)}</h2>
+        </div>
+        <div class="subcategoria-empty">No hay productos cargados con esa busqueda.</div>
+      </section>`;
+    return;
+  }
+
+  const grupos = getCategorias()
+    .map(categoria => ({
+      categoria,
+      productos: productos.filter(producto => getProductosPorCategoriaVisual(categoria).some(item => item.id_producto === producto.id_producto)),
+    }))
+    .filter(grupo => grupo.productos.length > 0);
+
+  const productosSinGrupo = productos.filter(producto =>
+    !grupos.some(grupo => grupo.productos.some(item => item.id_producto === producto.id_producto))
+  );
+
+  container.innerHTML = `
+    <section class="search-results-view">
+      ${renderSearchHero()}
+      <div class="search-results-head">
+        <span class="search-results-kicker">Resultados para</span>
+        <h2>${escapeHtml(termino)}</h2>
+      </div>
+      <div class="search-results-list">
+        ${grupos.map(grupo => `
+          <section class="subcategoria-section search-result-group">
+            <div class="subcategoria-header">
+              <h3>${escapeHtml(grupo.categoria)}</h3>
+            </div>
+            <div class="productos-list">
+              ${grupo.productos.map((p, i) => renderProductoCard(p, i)).join("")}
+            </div>
+          </section>
+        `).join("")}
+        ${productosSinGrupo.length
+          ? `<section class="subcategoria-section search-result-group">
+              <div class="subcategoria-header"><h3>Otros</h3></div>
+              <div class="productos-list">
+                ${productosSinGrupo.map((p, i) => renderProductoCard(p, i)).join("")}
+              </div>
+            </section>`
+          : ""
+        }
+      </div>
+    </section>`;
+}
+
+function renderSearchHero() {
+  return `
+    <div class="search-menu-topbar">
+      <button class="search-back-btn" type="button" onclick="limpiarBusquedaGlobal()">
+        <span aria-hidden="true">‹</span>
+        Volver
+      </button>
+      <div class="search-menu-brand">Maven<span>Burger</span></div>
+      <span></span>
+    </div>
+    <div class="search-menu-hero">
+      <img src="../assets/img/local-maveburguer-optimized.jpg" alt="Maven Burger" loading="eager" decoding="async">
+      <span class="search-menu-hero-overlay"></span>
+      <h2>Maven <span>Burger</span></h2>
+    </div>`;
+}
+
+function limpiarBusquedaGlobal() {
+  busquedaActual = "";
+  document.body.classList.remove("busqueda-activa");
+  const buscador = document.getElementById("buscador-productos");
+  if (buscador) buscador.value = "";
+  renderCategorias();
+  scrollAElemento("menu-container");
 }
 
 function renderMenu(productos) {
@@ -534,10 +690,10 @@ function renderHeaderMenuCategorias() {
   if (!container) return;
 
   container.innerHTML = `
-    <button type="button" onclick="volverACategorias(); cerrarHeaderMenu();">ver todas</button>
+    <button type="button" onclick="volverACategorias(); cerrarHeaderMenu();">Ver todas</button>
     ${getCategorias().map(cat => `
       <button type="button" class="${categoriaActual === cat ? "active" : ""}" onclick="abrirCategoria('${escapeAttr(cat)}'); cerrarHeaderMenu();">
-        ${escapeHtml(cat.toLowerCase())}
+        ${escapeHtml(capitalize(cat))}
       </button>
     `).join("")}
   `;
@@ -870,7 +1026,7 @@ function actualizarCarritoUI() {
   if (cantidad > 0) {
     bar.classList.add("visible");
   } else {
-    bar.classList.remove("visible");
+    bar.classList.remove("visible", "expanded");
     carritoAbierto = false;
     document.getElementById("carrito-detalle").classList.remove("open");
   }
@@ -902,6 +1058,8 @@ function actualizarCarritoUI() {
 // ── TOGGLE DEL CARRITO ───────────────────────────────────────
 function toggleCarrito() {
   carritoAbierto = !carritoAbierto;
+  const bar = document.getElementById("carrito-bar");
+  if (bar) bar.classList.toggle("expanded", carritoAbierto);
   document.getElementById("carrito-detalle").classList.toggle("open", carritoAbierto);
   actualizarEspacioCarrito();
 }
@@ -1247,7 +1405,9 @@ function actualizarEspacioCarrito() {
   const bar = document.getElementById("carrito-bar");
   if (!bar) return;
 
-  const altura = bar.classList.contains("visible") ? bar.offsetHeight : 0;
+  const altura = bar.classList.contains("visible") && bar.classList.contains("expanded")
+    ? bar.offsetHeight
+    : 0;
   document.documentElement.style.setProperty("--cart-h", `${altura}px`);
 
   if (carritoAbierto) {
