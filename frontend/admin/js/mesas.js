@@ -9,10 +9,19 @@
 
     // ── ESTADO LOCAL ────────────────────────────────────────────
     let todasLasMesas   = [];
+    let mapaMesas       = [];
     let mesaQRActual    = null;  // mesa abierta en el modal
+    let mesaOperacionActual = null;
+    let mapaTimer       = null;
+    let mapaSignature   = "";
+    let socketMesas     = null;
 
     // ── INICIALIZACIÓN ──────────────────────────────────────────
-    document.addEventListener("DOMContentLoaded", cargarMesas);
+    document.addEventListener("DOMContentLoaded", () => {
+      cargarMesas();
+      conectarTiempoRealMesas();
+      mapaTimer = setInterval(cargarMapaMesas, 8000);
+    });
 
     // Permitir crear con Enter
     document.getElementById("input-numero").addEventListener("keydown", e => {
@@ -27,6 +36,7 @@
         todasLasMesas = Array.isArray(data) ? data : [];
         actualizarStats(todasLasMesas);
         renderMesas(todasLasMesas);
+        await cargarMapaMesas();
       } catch (error) {
         document.getElementById("mesas-grid-container").innerHTML = `
           <div class="mesas-grid">
@@ -39,6 +49,23 @@
       }
     }
 
+    async function cargarMapaMesas() {
+      try {
+        const data = await fetchAPI("/mesas/mapa");
+        mapaMesas = Array.isArray(data) ? data : [];
+        renderMapaSalon(mapaMesas);
+      } catch (error) {
+        const floor = document.getElementById("salon-floor");
+        if (floor) {
+          floor.innerHTML = `
+            <div class="empty-state">
+              <div class="icon">Mapa</div>
+              <p>No se pudo cargar el mapa: ${escapeHtml(error.message)}</p>
+            </div>`;
+        }
+      }
+    }
+
     // ── STATS ───────────────────────────────────────────────────
     function actualizarStats(mesas) {
       document.getElementById("stat-total").textContent = mesas.length;
@@ -48,6 +75,272 @@
       } else {
         document.getElementById("stat-ultima").textContent = "—";
       }
+    }
+
+    function renderMapaSalon(mesas) {
+      const floor = document.getElementById("salon-floor");
+      const updated = document.getElementById("salon-updated");
+      const summary = document.getElementById("salon-summary");
+      if (!floor) return;
+
+      if (updated) {
+        updated.textContent = `Actualizado ${new Date().toLocaleTimeString("es-AR", {
+          hour: "2-digit",
+          minute: "2-digit"
+        })}`;
+      }
+
+      if (!mesas.length) {
+        floor.innerHTML = `
+          <div class="empty-state">
+            <div class="icon">Mapa</div>
+            <p>No hay mesas activas para mostrar.</p>
+          </div>`;
+        if (summary) summary.innerHTML = renderSalonSummary(0, 0, 0);
+        return;
+      }
+
+      const activas = mesas.filter(m => m.estado_salon !== "libre").length;
+      const esperando = mesas.filter(m => m.estado_salon === "esperando" || m.estado_salon === "pedido_activo" || m.estado_salon === "cuenta").length;
+      const alertas = mesas.filter(m => m.estado_salon === "abandonada" || m.estado_salon === "esperando" || m.cuenta_solicitada || m.mozo_solicitado).length;
+      if (summary) summary.innerHTML = renderSalonSummary(activas, esperando, alertas);
+
+      const mesasOrdenadas = [...mesas].sort((a, b) => a.numero - b.numero);
+      const maxPedidosHoy = Math.max(1, ...mesasOrdenadas.map(m => Number(m.pedidos_hoy) || 0));
+      const nextSignature = JSON.stringify(mesasOrdenadas.map(m => [
+        m.id_mesa,
+        m.estado_salon,
+        m.pedidos_activos,
+        m.pendientes,
+        m.confirmados,
+        m.en_preparacion,
+        m.listos,
+        m.items_carrito,
+        m.participantes,
+        m.cuenta_solicitada,
+        m.mozo_solicitado,
+        m.minutos_espera,
+      ]));
+
+      if (nextSignature === mapaSignature && floor.querySelector(".salon-tables")) {
+        return;
+      }
+      mapaSignature = nextSignature;
+
+      floor.innerHTML = `
+        <div class="salon-zone salon-zone-bar">Barra</div>
+        <div class="salon-zone salon-zone-kitchen">Cocina</div>
+        <div class="salon-zone salon-zone-entry">Entrada</div>
+        <div class="salon-tables">
+          ${mesasOrdenadas.map((mesa, index) => renderMesaPlano(mesa, index, maxPedidosHoy)).join("")}
+        </div>`;
+    }
+
+    function renderSalonSummary(activas, esperando, alertas) {
+      return `
+        <div class="salon-summary-item">
+          <span>Activas</span>
+          <strong>${activas}</strong>
+        </div>
+        <div class="salon-summary-item">
+          <span>Esperando</span>
+          <strong>${esperando}</strong>
+        </div>
+        <div class="salon-summary-item ${alertas > 0 ? "alert" : ""}">
+          <span>Alertas</span>
+          <strong>${alertas}</strong>
+        </div>`;
+    }
+
+    function renderMesaPlano(mesa, index, maxPedidosHoy) {
+      const estado = mesa.estado_salon || "libre";
+      const heat = Math.min(1, (Number(mesa.pedidos_hoy) || 0) / maxPedidosHoy);
+      const espera = mesa.minutos_espera != null ? `${mesa.minutos_espera} min` : "Sin espera";
+      const participantes = Number(mesa.participantes) || 0;
+      const carrito = Number(mesa.items_carrito) || 0;
+      const pedidos = Number(mesa.pedidos_activos) || 0;
+      const actividad = Number(mesa.pedidos_hoy) || 0;
+      const estadoLabel = getEstadoMesaLabel(estado);
+      const pedidoResumen = mesa.pendientes > 0
+        ? `${mesa.pendientes} pendiente${mesa.pendientes === 1 ? "" : "s"}`
+        : mesa.cuenta_solicitada
+          ? "Cuenta solicitada"
+          : `${pedidos} pedidos activos`;
+      const alerta = estado === "abandonada"
+        ? `<div class="mesa-alerta">Sin pedido hace ${mesa.minutos_desde_scan || 10} min</div>`
+        : estado === "esperando"
+          ? `<div class="mesa-alerta">Espera alta</div>`
+          : mesa.cuenta_solicitada
+            ? `<div class="mesa-alerta">Solicitó la cuenta</div>`
+            : mesa.mozo_solicitado
+              ? `<div class="mesa-alerta">Solicitó mozo</div>`
+          : "";
+
+      return `
+        <button
+          class="mesa-plano mesa-${estado}"
+          style="--i:${index}; --heat:${heat.toFixed(2)}"
+          type="button"
+          onclick="abrirMesaOperacion(${mesa.id_mesa})"
+          title="Mesa ${mesa.numero} — ${estadoLabel}"
+        >
+          <span class="mesa-heat"></span>
+          <span class="mesa-top">
+            <span class="mesa-status-dot"></span>
+            <span class="mesa-status">${estadoLabel}</span>
+          </span>
+          <strong>Mesa ${escapeHtml(String(mesa.numero))}</strong>
+          <span class="mesa-plano-meta">
+            <span>${pedidoResumen}</span>
+            <span>${carrito} items en carrito</span>
+            <span>${participantes} personas</span>
+          </span>
+          <span class="mesa-plano-foot">
+            <span>${espera}</span>
+            <span>${actividad} hoy</span>
+          </span>
+          ${alerta}
+        </button>`;
+    }
+
+    function getEstadoMesaLabel(estado) {
+      const labels = {
+        libre: "Libre",
+        ocupada: "Ocupada",
+        pidiendo: "Pidiendo",
+        pedido_activo: "Pedido activo",
+        esperando: "Espera alta",
+        cuenta: "Cuenta",
+        abandonada: "Abandonada",
+      };
+      return labels[estado] || "Libre";
+    }
+
+    async function abrirMesaOperacion(idMesa) {
+      mesaOperacionActual = idMesa;
+      const overlay = document.getElementById("mesa-operacion-overlay");
+      const body = document.getElementById("mesa-operacion-body");
+      const title = document.getElementById("mesa-operacion-title");
+      if (!overlay || !body || !title) return;
+
+      overlay.classList.add("open");
+      title.textContent = "Mesa";
+      body.innerHTML = `
+        <div class="empty-state">
+          <div class="icon">Mesa</div>
+          <p>Cargando detalle...</p>
+        </div>`;
+
+      try {
+        const data = await fetchAPI(`/mesas/${idMesa}/operacion`);
+        renderMesaOperacion(data);
+      } catch (error) {
+        body.innerHTML = `
+          <div class="empty-state">
+            <div class="icon">Error</div>
+            <p>No se pudo cargar la mesa: ${escapeHtml(error.message)}</p>
+          </div>`;
+      }
+    }
+
+    function renderMesaOperacion(data) {
+      const body = document.getElementById("mesa-operacion-body");
+      const title = document.getElementById("mesa-operacion-title");
+      const mesa = data.mesa || {};
+      const pedidos = Array.isArray(data.pedidos) ? data.pedidos : [];
+      title.textContent = `Mesa ${mesa.numero || "—"}`;
+
+      body.innerHTML = `
+        <div class="mesa-operacion-summary">
+          <div>
+            <span>Estado</span>
+            <strong>${data.cuenta_solicitada ? "Cuenta solicitada" : data.ocupada ? "Ocupada" : "Sin actividad"}</strong>
+          </div>
+          <div>
+            <span>Pedidos del día</span>
+            <strong>${pedidos.length}</strong>
+          </div>
+        </div>
+        <div class="mesa-operacion-actions">
+          <button class="btn-ghost" type="button" onclick="liberarMesa(${mesa.id_mesa})">Marcar cobrada y liberar</button>
+        </div>
+        <div class="mesa-pedidos-list">
+          ${pedidos.length
+            ? pedidos.map(renderPedidoMesa).join("")
+            : `<div class="empty-state mesa-empty"><p>Esta mesa no tiene pedidos activos del día.</p></div>`
+          }
+        </div>`;
+    }
+
+    function renderPedidoMesa(pedido) {
+      const detalle = Array.isArray(pedido.detalle) ? pedido.detalle : [];
+      const accion = pedido.estado === "pendiente"
+        ? `<button class="btn-primary mesa-action-primary" type="button" onclick="avanzarPedidoMesa(${pedido.id_pedido}, 'confirmado')">Confirmar pedido</button>`
+        : pedido.siguiente_estado
+          ? `<button class="btn-ghost" type="button" onclick="avanzarPedidoMesa(${pedido.id_pedido}, '${pedido.siguiente_estado}')">Pasar a ${escapeHtml(labelEstadoPedido(pedido.siguiente_estado))}</button>`
+          : "";
+
+      return `
+        <article class="mesa-pedido-card">
+          <div class="mesa-pedido-head">
+            <div>
+              <strong>Pedido #${pedido.id_pedido}</strong>
+              <span>${escapeHtml(labelEstadoPedido(pedido.estado))} · ${pedido.minutos_espera ?? 0} min</span>
+            </div>
+            <div class="mesa-pedido-total">${formatPrecio(pedido.total)}</div>
+          </div>
+          <div class="mesa-pedido-items">
+            ${detalle.map(item => `
+              <div>
+                <span>${escapeHtml(item.nombre)} x${item.cantidad}</span>
+                <strong>${formatPrecio(item.subtotal)}</strong>
+              </div>
+            `).join("")}
+          </div>
+          ${accion ? `<div class="mesa-pedido-actions">${accion}</div>` : ""}
+        </article>`;
+    }
+
+    async function avanzarPedidoMesa(idPedido, estado) {
+      try {
+        await fetchAPI(`/pedidos/${idPedido}/estado`, "PATCH", { estado });
+        mostrarToast("Pedido actualizado.", "success");
+        await cargarMapaMesas();
+        if (mesaOperacionActual) await abrirMesaOperacion(mesaOperacionActual);
+      } catch (error) {
+        mostrarToast("No se pudo actualizar el pedido: " + error.message, "error");
+      }
+    }
+
+    async function liberarMesa(idMesa) {
+      try {
+        await fetchAPI(`/mesas/${idMesa}/liberar`, "POST");
+        mostrarToast("Mesa marcada como cobrada y libre.", "success");
+        cerrarMesaOperacion();
+        await cargarMapaMesas();
+      } catch (error) {
+        mostrarToast("No se pudo liberar la mesa: " + error.message, "error");
+      }
+    }
+
+    function cerrarMesaOperacion() {
+      document.getElementById("mesa-operacion-overlay").classList.remove("open");
+      mesaOperacionActual = null;
+    }
+
+    function cerrarMesaOperacionSiAfuera(event) {
+      if (event.target === document.getElementById("mesa-operacion-overlay")) cerrarMesaOperacion();
+    }
+
+    function labelEstadoPedido(estado) {
+      const labels = {
+        pendiente: "Pendiente",
+        confirmado: "Confirmado",
+        en_preparacion: "En preparación",
+        listo: "Listo",
+        entregado: "Entregado",
+      };
+      return labels[estado] || estado;
     }
 
     // ── RENDER GRID ─────────────────────────────────────────────
@@ -131,7 +424,7 @@
         mostrarToast("Error al crear mesa: " + error.message, "error");
       } finally {
         btn.disabled = false;
-        btn.innerHTML = "+ Crear mesa";
+        btn.innerHTML = "Crear mesa";
       }
     }
 
@@ -175,7 +468,14 @@
     }
 
     document.addEventListener("keydown", e => {
-      if (e.key === "Escape") cerrarModal();
+      if (e.key === "Escape") {
+        cerrarModal();
+        cerrarMesaOperacion();
+      }
+    });
+
+    window.addEventListener("beforeunload", () => {
+      if (mapaTimer) clearInterval(mapaTimer);
     });
 
     // ── TOAST ───────────────────────────────────────────────────
@@ -197,5 +497,67 @@
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+    }
+
+    function conectarTiempoRealMesas() {
+      const token = getToken();
+      if (!token) return;
+
+      const wsProtocol = API_URL.startsWith("https") ? "wss" : "ws";
+      const wsBase = API_URL.replace(/^https?:\/\//, "");
+      socketMesas = new WebSocket(`${wsProtocol}://${wsBase}/pedidos/ws/cocina?token=${encodeURIComponent(token)}`);
+
+      socketMesas.addEventListener("message", (event) => {
+        reproducirAviso();
+        let data = {};
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          data = {};
+        }
+
+        if (data.type === "pedido_creado") {
+          mostrarToast(data.message || "Nueva mesa envió un pedido.", "success");
+        } else if (data.type === "servicio_mesa") {
+          mostrarToast(data.message || "Nueva solicitud de mesa", "success");
+        } else if (data.type === "pedido_actualizado") {
+          mostrarToast("Pedido actualizado en cocina.", "success");
+        }
+
+        cargarMapaMesas();
+        if (mesaOperacionActual) abrirMesaOperacion(mesaOperacionActual);
+      });
+
+      socketMesas.addEventListener("close", () => {
+        setTimeout(conectarTiempoRealMesas, 4000);
+      });
+    }
+
+    function reproducirAviso() {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioContext();
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.value = 740;
+        gain.gain.value = 0.035;
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.14);
+      } catch {
+        // El navegador puede bloquear audio si no hubo interacción.
+      }
+    }
+
+    const formatterPrecio = new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: "ARS",
+      maximumFractionDigits: 0,
+    });
+
+    function formatPrecio(valor) {
+      return formatterPrecio.format(Number(valor) || 0);
     }
   

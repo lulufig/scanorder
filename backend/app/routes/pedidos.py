@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends, WebSocket, WebSocketDisconnect
 from typing import List, Optional
 from anyio import from_thread
+from datetime import datetime, timezone
 
 from app.database import get_db_connection, close_db_connection
 from app.schemas.pedidos import (
@@ -59,6 +60,35 @@ class CocinaConnectionManager:
 manager = CocinaConnectionManager()
 
 
+class MesaOperationalState:
+    """Estado operativo liviano de salón mientras corre el servidor."""
+
+    def __init__(self):
+        self.states: dict[int, dict] = {}
+
+    def touch(self, id_mesa: int, **updates):
+        state = self.states.setdefault(
+            int(id_mesa),
+            {
+                "ocupada": True,
+                "cuenta_solicitada": False,
+                "mozo_solicitado": False,
+                "last_activity_at": datetime.now(timezone.utc),
+            },
+        )
+        state.update(updates)
+        state["last_activity_at"] = datetime.now(timezone.utc)
+
+    def release(self, id_mesa: int):
+        self.states.pop(int(id_mesa), None)
+
+    def snapshot(self) -> dict[int, dict]:
+        return self.states.copy()
+
+
+mesa_operational_state = MesaOperationalState()
+
+
 class MesaSessionManager:
     """Mantiene carritos colaborativos activos por mesa mientras corre el servidor."""
 
@@ -70,6 +100,29 @@ class MesaSessionManager:
 
     def get_session(self, key: str) -> dict | None:
         return self.sessions.get(key)
+
+    def activity_snapshot(self) -> list[dict]:
+        now = datetime.now(timezone.utc)
+        snapshot = []
+        for session in self.sessions.values():
+            created_at = session.get("created_at") or now
+            last_activity_at = session.get("last_activity_at") or created_at
+            carrito = session.get("carrito") or []
+            snapshot.append({
+                "mesa": session["mesa"],
+                "participantes": len(session.get("clients") or {}),
+                "items_carrito": sum(int(item.get("cantidad") or 0) for item in carrito),
+                "total_carrito": sum(
+                    float(item.get("precio") or 0) * int(item.get("cantidad") or 0)
+                    for item in carrito
+                ),
+                "observaciones": session.get("observaciones") or "",
+                "created_at": created_at.isoformat(),
+                "last_activity_at": last_activity_at.isoformat(),
+                "minutos_desde_scan": int((now - created_at).total_seconds() // 60),
+                "minutos_sin_actividad": int((now - last_activity_at).total_seconds() // 60),
+            })
+        return snapshot
 
     def _snapshot(self, key: str, event: str = "snapshot") -> dict:
         session = self.sessions[key]
@@ -102,6 +155,8 @@ class MesaSessionManager:
                 "clients": {},
                 "carrito": [],
                 "observaciones": "",
+                "created_at": datetime.now(timezone.utc),
+                "last_activity_at": datetime.now(timezone.utc),
             },
         )
 
@@ -112,6 +167,7 @@ class MesaSessionManager:
             "nombre": nombre or "Cliente",
             "websocket": websocket,
         }
+        session["last_activity_at"] = datetime.now(timezone.utc)
         await websocket.send_json(self._snapshot(key))
         await self.broadcast(key, self._snapshot(key, "participantes_actualizados"), exclude=client_id)
 
@@ -149,6 +205,7 @@ class MesaSessionManager:
             return
         session["carrito"] = carrito
         session["observaciones"] = observaciones or ""
+        session["last_activity_at"] = datetime.now(timezone.utc)
         await self.broadcast(key, self._snapshot(key, "carrito_actualizado"))
 
     async def clear_cart(self, key: str):
@@ -157,6 +214,7 @@ class MesaSessionManager:
             return
         session["carrito"] = []
         session["observaciones"] = ""
+        session["last_activity_at"] = datetime.now(timezone.utc)
         await self.broadcast(key, self._snapshot(key, "pedido_confirmado"))
 
 
@@ -385,7 +443,14 @@ def create_pedido(pedido: PedidoCreate):
             (nuevo_id,)
         )
         creado = cursor.fetchone()
-        notificar_cocina({"type": "pedido_creado", "id_pedido": nuevo_id})
+        mesa_operational_state.touch(mesa["id_mesa"], ocupada=True, cuenta_solicitada=False)
+        notificar_cocina({
+            "type": "pedido_creado",
+            "id_pedido": nuevo_id,
+            "id_mesa": mesa["id_mesa"],
+            "numero_mesa": mesa["numero"],
+            "message": f"Nuevo pedido: Mesa {mesa['numero']}",
+        })
         return creado
 
     except HTTPException:
@@ -431,6 +496,12 @@ def solicitar_servicio(servicio: ServicioMesaCreate):
             )
 
         mensaje = "Mesa solicita mozo" if servicio.tipo == "mozo" else "Mesa solicita la cuenta"
+        mesa_operational_state.touch(
+            mesa["id_mesa"],
+            ocupada=True,
+            cuenta_solicitada=servicio.tipo == "cuenta",
+            mozo_solicitado=servicio.tipo == "mozo",
+        )
         notificar_cocina({
             "type": "servicio_mesa",
             "tipo": servicio.tipo,
@@ -646,6 +717,8 @@ def actualizar_estado_pedido(
             (id_pedido,)
         )
         actualizado = cursor.fetchone()
+        if actualizado:
+            mesa_operational_state.touch(actualizado["id_mesa"], ocupada=True)
         notificar_cocina({
             "type": "pedido_actualizado",
             "id_pedido": id_pedido,

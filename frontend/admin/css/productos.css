@@ -967,3 +967,340 @@
     .badge-gray { background: #EFE7DC; color: #6B4F3A; }
 
   
+/* ===== ADMIN PRODUCTOS: ESTILO OPERATIVO LIMPIO ===== */
+:root {
+  --admin-bg: #FFFFFF;
+  --admin-sidebar: #182230;
+  --admin-text: #17202A;
+  --admin-muted: #667085;
+  --admin-line: #E5E7EB;
+  --admin-soft: #F8FAFC;
+  --admin-accent: #2563EB;
+  --admin-accent-soft: #EFF6FF;
+  --admin-danger: #B42318;
+  --admin-success: #067647;
+}
+
+body {
+  background: var(--admin-bg);
+  color: var(--admin-text);
+  font-family: "Nunito", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.sidebar {
+  background: var(--admin-sidebar);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+.sidebar-logo {
+  color: #FFFFFF;
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  font-size: 1.08rem;
+  font-weight: 900;
+}
+
+.sidebar-logo span {
+  color: #93C5FD;
+}
+
+.sidebar-section {
+  color: #8EA0B8;
+  font-size: 0.62rem;
+  font-weight: 900;
+}
+
+.sidebar-link {
+  margin: 2px 12px;
+  padding: 10px 12px;
+  border-left: 0;
+  border-radius: 6px;
+  color: #CBD5E1;
+  font-weight: 800;
+}
+
+.sidebar-link:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #FFFFFF;
+}
+
+.sidebar-link.active {
+  background: rgba(37, 99, 235, 0.18);
+  border-left: 0;
+  color: #FFFFFF;
+}
+
+.sidebar-bottom {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.user-info {
+  color: #94A3B8;
+}
+
+.user-name {
+  color: #FFFFFF;
+}
+
+.btn-logout {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #E5E7EB;
+}
+
+.btn-logout:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #FFFFFF;
+}
+
+.main {
+  padding: 34px 42px 48px;
+}
+
+.page-header {
+  margin-bottom: 22px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.page-title,
+.modal-title,
+.confirm-title,
+.product-name,
+.price-cell {
+  color: var(--admin-text);
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 900;
+}
+
+.page-subtitle,
+.stat-label,
+.product-desc,
+.form-label,
+.confirm-msg {
+  color: var(--admin-muted);
+}
+
+.stats-row {
+  gap: 0;
+  margin-bottom: 22px;
+  overflow: hidden;
+  background: #FFFFFF;
+  border: 1px solid var(--admin-line);
+  border-radius: 10px;
+}
+
+.stat-card {
+  padding: 16px 18px;
+  background: #FFFFFF;
+  border: 0;
+  border-right: 1px solid var(--admin-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.stat-card:last-child {
+  border-right: 0;
+}
+
+.stat-value {
+  color: var(--admin-text);
+  font-weight: 900;
+}
+
+.stat-value.red {
+  color: var(--admin-danger);
+}
+
+.table-card,
+.modal,
+.confirm-box {
+  background: #FFFFFF;
+  border: 1px solid var(--admin-line);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.table-toolbar {
+  padding: 16px 18px;
+  background: #FFFFFF;
+  border-bottom: 1px solid var(--admin-line);
+}
+
+.search-input,
+.form-input,
+.form-select,
+.form-textarea {
+  background: #FFFFFF;
+  border-color: #D0D5DD;
+  border-radius: 6px;
+  color: var(--admin-text);
+  box-shadow: none;
+}
+
+.search-input:focus,
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  border-color: var(--admin-accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+}
+
+thead th {
+  background: var(--admin-soft);
+  border-bottom: 1px solid var(--admin-line);
+  color: var(--admin-muted);
+}
+
+tbody tr:hover {
+  background: #FAFAFA;
+}
+
+.product-img,
+.product-img-placeholder {
+  background: var(--admin-soft);
+  border-color: var(--admin-line);
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.badge {
+  border-radius: 999px;
+  font-weight: 800;
+}
+
+.badge-cat {
+  background: var(--admin-accent-soft);
+  color: #1D4ED8;
+}
+
+.badge-green {
+  background: #ECFDF3;
+  color: var(--admin-success);
+}
+
+.badge-gray {
+  background: #F2F4F7;
+  color: #475467;
+}
+
+.btn-primary,
+.btn-danger,
+.btn-cancel,
+.btn-edit,
+.btn-delete {
+  border-radius: 6px;
+  box-shadow: none;
+  font-family: inherit;
+  font-weight: 900;
+}
+
+.btn-primary {
+  background: var(--admin-accent);
+  color: #FFFFFF;
+}
+
+.btn-primary:hover {
+  background: #1D4ED8;
+  box-shadow: none;
+  transform: none;
+}
+
+.btn-danger {
+  background: var(--admin-danger);
+}
+
+.btn-danger:hover {
+  background: #912018;
+  box-shadow: none;
+  transform: none;
+}
+
+.btn-cancel {
+  background: #FFFFFF;
+  border-color: var(--admin-line);
+  color: #344054;
+}
+
+.btn-cancel:hover {
+  background: var(--admin-soft);
+}
+
+.btn-edit {
+  background: var(--admin-accent-soft);
+  border-color: #BFDBFE;
+  color: #1D4ED8;
+}
+
+.btn-delete {
+  background: #FEF3F2;
+  border-color: #FDA29B;
+  color: var(--admin-danger);
+}
+
+.modal-header {
+  background: var(--admin-sidebar);
+  border-bottom: 0;
+}
+
+.modal-title {
+  color: #FFFFFF;
+}
+
+.modal-close {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: #FFFFFF;
+}
+
+.modal-body,
+.modal-footer {
+  background: #FFFFFF;
+}
+
+.confirm-icon {
+  background: #FEF3F2;
+  border-color: #FDA29B;
+  color: var(--admin-danger);
+}
+
+.empty-state {
+  color: var(--admin-muted);
+}
+
+.toast {
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(17, 24, 39, 0.14);
+}
+
+@media (max-width: 980px) {
+  body {
+    background: #FFFFFF;
+  }
+
+  .sidebar {
+    background: var(--admin-sidebar);
+  }
+
+  .main {
+    padding: 24px 18px 40px;
+  }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .stat-card {
+    border-right: 0;
+    border-bottom: 1px solid var(--admin-line);
+  }
+
+  .stat-card:last-child {
+    border-bottom: 0;
+  }
+}
