@@ -7,7 +7,7 @@ from app.database import get_db_connection, close_db_connection
 from app.schemas.mesas import MesaCreate, MesaResponse
 from app.utils.dependencies import require_role
 from app.utils.qr import generate_qr, QR_DIR
-from app.routes.pedidos import mesa_sessions, mesa_operational_state
+from app.routes.pedidos import mesa_sessions, mesa_operational_state, pedidos_tiene_columna
 
 router = APIRouter(
     prefix="/mesas",
@@ -279,10 +279,12 @@ def detalle_operacion_mesa(
         if not mesa:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
 
+        campos_observaciones = ", observaciones" if pedidos_tiene_columna(cursor, "observaciones") else ", NULL AS observaciones"
         cursor.execute(
             """
             SELECT id_pedido, id_mesa, estado, total, created_at AS fecha,
                    TIMESTAMPDIFF(MINUTE, created_at, NOW()) AS minutos_espera
+                   """ + campos_observaciones + """
             FROM pedidos
             WHERE id_mesa = %s
               AND estado IN ('pendiente', 'confirmado', 'en_preparacion', 'listo', 'entregado')
@@ -341,6 +343,16 @@ def liberar_mesa(
     """Marca una mesa como cobrada/liberada en la vista operativa."""
     mesa_operational_state.release(id_mesa)
     return {"message": "Mesa liberada", "id_mesa": id_mesa}
+
+
+@router.post("/{id_mesa}/atender-mozo")
+def atender_solicitud_mozo(
+    id_mesa: int,
+    current_user: dict = Depends(require_role("admin"))
+):
+    """Marca como atendida la solicitud de mozo de una mesa."""
+    mesa_operational_state.clear_service(id_mesa, "mozo")
+    return {"message": "Solicitud de mozo atendida", "id_mesa": id_mesa}
 
 
 @router.get("/{id_mesa}/qr")

@@ -14,13 +14,14 @@
     let mesaOperacionActual = null;
     let mapaTimer       = null;
     let mapaSignature   = "";
+    let mapaCardSignatures = new Map();
     let socketMesas     = null;
 
     // ── INICIALIZACIÓN ──────────────────────────────────────────
     document.addEventListener("DOMContentLoaded", () => {
       cargarMesas();
       conectarTiempoRealMesas();
-      mapaTimer = setInterval(cargarMapaMesas, 8000);
+      mapaTimer = setInterval(cargarMapaMesas, 2500);
     });
 
     // Permitir crear con Enter
@@ -107,25 +108,32 @@
 
       const mesasOrdenadas = [...mesas].sort((a, b) => a.numero - b.numero);
       const maxPedidosHoy = Math.max(1, ...mesasOrdenadas.map(m => Number(m.pedidos_hoy) || 0));
-      const nextSignature = JSON.stringify(mesasOrdenadas.map(m => [
-        m.id_mesa,
-        m.estado_salon,
-        m.pedidos_activos,
-        m.pendientes,
-        m.confirmados,
-        m.en_preparacion,
-        m.listos,
-        m.items_carrito,
-        m.participantes,
-        m.cuenta_solicitada,
-        m.mozo_solicitado,
-        m.minutos_espera,
-      ]));
+      const layoutSignature = JSON.stringify(mesasOrdenadas.map(m => m.id_mesa));
+      const tables = floor.querySelector(".salon-tables");
 
-      if (nextSignature === mapaSignature && floor.querySelector(".salon-tables")) {
+      if (layoutSignature === mapaSignature && tables) {
+        mesasOrdenadas.forEach((mesa, index) => {
+          const cardSignature = getMesaPlanoSignature(mesa, maxPedidosHoy);
+          const currentSignature = mapaCardSignatures.get(mesa.id_mesa);
+          if (cardSignature === currentSignature) return;
+
+          const current = tables.querySelector(`[data-mesa-id="${mesa.id_mesa}"]`);
+          const html = renderMesaPlano(mesa, index, maxPedidosHoy);
+          if (current) {
+            current.outerHTML = html;
+          } else {
+            tables.insertAdjacentHTML("beforeend", html);
+          }
+          mapaCardSignatures.set(mesa.id_mesa, cardSignature);
+        });
         return;
       }
-      mapaSignature = nextSignature;
+
+      mapaSignature = layoutSignature;
+      mapaCardSignatures = new Map(mesasOrdenadas.map(mesa => [
+        mesa.id_mesa,
+        getMesaPlanoSignature(mesa, maxPedidosHoy),
+      ]));
 
       floor.innerHTML = `
         <div class="salon-zone salon-zone-bar">Barra</div>
@@ -134,6 +142,27 @@
         <div class="salon-tables">
           ${mesasOrdenadas.map((mesa, index) => renderMesaPlano(mesa, index, maxPedidosHoy)).join("")}
         </div>`;
+    }
+
+    function getMesaPlanoSignature(mesa, maxPedidosHoy) {
+      return JSON.stringify([
+        mesa.id_mesa,
+        mesa.numero,
+        mesa.estado_salon,
+        mesa.pedidos_activos,
+        mesa.pendientes,
+        mesa.confirmados,
+        mesa.en_preparacion,
+        mesa.listos,
+        mesa.items_carrito,
+        mesa.participantes,
+        mesa.cuenta_solicitada,
+        mesa.mozo_solicitado,
+        mesa.minutos_espera,
+        mesa.minutos_desde_scan,
+        mesa.pedidos_hoy,
+        maxPedidosHoy,
+      ]);
     }
 
     function renderSalonSummary(activas, esperando, alertas) {
@@ -179,6 +208,7 @@
       return `
         <button
           class="mesa-plano mesa-${estado}"
+          data-mesa-id="${mesa.id_mesa}"
           style="--i:${index}; --heat:${heat.toFixed(2)}"
           type="button"
           onclick="abrirMesaOperacion(${mesa.id_mesa})"
@@ -208,7 +238,7 @@
         libre: "Libre",
         ocupada: "Ocupada",
         pidiendo: "Pidiendo",
-        pedido_activo: "Pedido activo",
+        pedido_activo: "Ocupada",
         esperando: "Espera alta",
         cuenta: "Cuenta",
         abandonada: "Abandonada",
@@ -254,7 +284,7 @@
         <div class="mesa-operacion-summary">
           <div>
             <span>Estado</span>
-            <strong>${data.cuenta_solicitada ? "Cuenta solicitada" : data.ocupada ? "Ocupada" : "Sin actividad"}</strong>
+            <strong>${data.cuenta_solicitada ? "Cuenta solicitada" : data.mozo_solicitado ? "Mozo solicitado" : data.ocupada ? "Ocupada" : "Sin actividad"}</strong>
           </div>
           <div>
             <span>Pedidos del día</span>
@@ -262,6 +292,10 @@
           </div>
         </div>
         <div class="mesa-operacion-actions">
+          ${data.mozo_solicitado
+            ? `<button class="btn-ghost btn-service-done" type="button" onclick="atenderMozo(${mesa.id_mesa})">Mozo atendido</button>`
+            : ""
+          }
           <button class="btn-ghost" type="button" onclick="liberarMesa(${mesa.id_mesa})">Marcar cobrada y liberar</button>
         </div>
         <div class="mesa-pedidos-list">
@@ -274,31 +308,52 @@
 
     function renderPedidoMesa(pedido) {
       const detalle = Array.isArray(pedido.detalle) ? pedido.detalle : [];
+      const observaciones = (pedido.observaciones || "").trim();
       const accion = pedido.estado === "pendiente"
         ? `<button class="btn-primary mesa-action-primary" type="button" onclick="avanzarPedidoMesa(${pedido.id_pedido}, 'confirmado')">Confirmar pedido</button>`
-        : pedido.siguiente_estado
-          ? `<button class="btn-ghost" type="button" onclick="avanzarPedidoMesa(${pedido.id_pedido}, '${pedido.siguiente_estado}')">Pasar a ${escapeHtml(labelEstadoPedido(pedido.siguiente_estado))}</button>`
+        : pedido.estado === "listo"
+          ? `<button class="btn-primary mesa-action-primary" type="button" onclick="avanzarPedidoMesa(${pedido.id_pedido}, 'entregado')">Entregar pedido</button>`
           : "";
+      const estadoClase = String(pedido.estado || "").replace(/_/g, "-");
 
       return `
-        <article class="mesa-pedido-card">
-          <div class="mesa-pedido-head">
+        <article class="mesa-pedido-card estado-${estadoClase}">
+          <button class="mesa-pedido-head" type="button" onclick="togglePedidoMesa(${pedido.id_pedido})">
             <div>
-              <strong>Pedido #${pedido.id_pedido}</strong>
-              <span>${escapeHtml(labelEstadoPedido(pedido.estado))} · ${pedido.minutos_espera ?? 0} min</span>
+              <strong class="mesa-pedido-number">Pedido #${pedido.id_pedido}</strong>
+              <span>
+                <b>${escapeHtml(labelEstadoPedido(pedido.estado))}</b>
+                · ${pedido.minutos_espera ?? 0} min
+                ${observaciones ? " · Con observaciones" : ""}
+              </span>
             </div>
             <div class="mesa-pedido-total">${formatPrecio(pedido.total)}</div>
-          </div>
-          <div class="mesa-pedido-items">
+          </button>
+          <div class="mesa-pedido-detail" id="pedido-detalle-${pedido.id_pedido}">
+            ${observaciones
+              ? `<div class="mesa-pedido-observaciones">
+                  <span>Observaciones</span>
+                  <p>${escapeHtml(observaciones)}</p>
+                </div>`
+              : ""
+            }
+            <div class="mesa-pedido-items">
             ${detalle.map(item => `
               <div>
                 <span>${escapeHtml(item.nombre)} x${item.cantidad}</span>
                 <strong>${formatPrecio(item.subtotal)}</strong>
               </div>
             `).join("")}
+            </div>
+            ${accion ? `<div class="mesa-pedido-actions">${accion}</div>` : ""}
           </div>
-          ${accion ? `<div class="mesa-pedido-actions">${accion}</div>` : ""}
         </article>`;
+    }
+
+    function togglePedidoMesa(idPedido) {
+      const detail = document.getElementById(`pedido-detalle-${idPedido}`);
+      if (!detail) return;
+      detail.classList.toggle("open");
     }
 
     async function avanzarPedidoMesa(idPedido, estado) {
@@ -315,11 +370,24 @@
     async function liberarMesa(idMesa) {
       try {
         await fetchAPI(`/mesas/${idMesa}/liberar`, "POST");
+        document.querySelectorAll(".mesa-pedido-card").forEach(card => {
+          card.classList.add("mesa-pedido-cobrada");
+        });
         mostrarToast("Mesa marcada como cobrada y libre.", "success");
-        cerrarMesaOperacion();
         await cargarMapaMesas();
       } catch (error) {
         mostrarToast("No se pudo liberar la mesa: " + error.message, "error");
+      }
+    }
+
+    async function atenderMozo(idMesa) {
+      try {
+        await fetchAPI(`/mesas/${idMesa}/atender-mozo`, "POST");
+        mostrarToast("Solicitud de mozo marcada como atendida.", "success");
+        await cargarMapaMesas();
+        if (mesaOperacionActual) await abrirMesaOperacion(mesaOperacionActual);
+      } catch (error) {
+        mostrarToast("No se pudo marcar la solicitud: " + error.message, "error");
       }
     }
 

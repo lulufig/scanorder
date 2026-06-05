@@ -271,3 +271,61 @@ def dashboard_metricas(current_user: dict = Depends(require_role("admin"))):
     finally:
         cursor.close()
         close_db_connection(connection)
+
+
+@router.get("/ventas-hoy")
+def ventas_hoy_por_hora(current_user: dict = Depends(require_role("admin"))):
+    """
+    Retorna la serie de ventas del dia agrupada por hora para el grafico del dashboard.
+    Se contabilizan pedidos confirmados o avanzados en el flujo operativo.
+    """
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos"
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            f"""
+            SELECT
+                HOUR(created_at) AS hora,
+                COUNT(*) AS pedidos,
+                COALESCE(SUM(total), 0) AS ventas
+            FROM pedidos
+            WHERE DATE(created_at) = CURDATE()
+              AND estado IN ({ESTADOS_VENTA_SQL})
+            GROUP BY HOUR(created_at)
+            ORDER BY hora
+            """
+        )
+        ventas_por_hora = {int(row["hora"]): row for row in cursor.fetchall()}
+
+        horas_operativas = list(range(8, 24))
+        serie = []
+        for hora in horas_operativas:
+            row = ventas_por_hora.get(hora)
+            serie.append({
+                "hora": hora,
+                "label": f"{hora:02d}:00",
+                "ventas": float(row["ventas"]) if row else 0.0,
+                "pedidos": int(row["pedidos"]) if row else 0,
+            })
+
+        return {
+            "fecha": date.today().isoformat(),
+            "total_ventas": sum(item["ventas"] for item in serie),
+            "total_pedidos": sum(item["pedidos"] for item in serie),
+            "serie": serie,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener ventas por hora: {str(e)}"
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)

@@ -13,6 +13,7 @@
     document.getElementById("fecha-inicio").value = hoy;
     document.getElementById("fecha-fin").value    = hoy;
     cargarDashboard();
+    cargarGraficoVentas();
     conectarNotificacionesAdmin();
 
     const formatterPrecio = new Intl.NumberFormat("es-AR", {
@@ -20,6 +21,8 @@
       currency: "ARS",
       maximumFractionDigits: 0,
     });
+    let ventasChartData = [];
+    let resizeChartTimer;
 
     async function cargarDashboard() {
       try {
@@ -54,9 +57,13 @@
           }
           if (data.type === "pedido_creado" || data.type === "pedido_actualizado") {
             cargarDashboard();
+            if (!data.estado || ["confirmado", "en_preparacion", "listo", "entregado"].includes(data.estado)) {
+              cargarGraficoVentas();
+            }
           }
         } catch {
           cargarDashboard();
+          cargarGraficoVentas();
         }
       });
 
@@ -86,6 +93,111 @@
     function formatPrecio(valor) {
       return formatterPrecio.format(Number(valor) || 0);
     }
+
+    async function cargarGraficoVentas() {
+      try {
+        const data = await fetchAPI("/reportes/ventas-hoy");
+        ventasChartData = data.serie || [];
+        document.getElementById("chart-total").textContent = formatPrecio(data.total_ventas || 0);
+        document.getElementById("chart-orders").textContent =
+          `${Number(data.total_pedidos || 0)} pedidos confirmados`;
+        renderGraficoVentas();
+      } catch (error) {
+        document.getElementById("chart-empty").textContent = "No se pudo cargar el gráfico de ventas.";
+        document.getElementById("chart-empty").style.display = "grid";
+      }
+    }
+
+    function renderGraficoVentas() {
+      const canvas = document.getElementById("ventas-chart");
+      const empty = document.getElementById("chart-empty");
+      if (!canvas) return;
+
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const width = Math.max(320, Math.floor(rect.width));
+      const height = 260;
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = width * ratio;
+      canvas.height = height * ratio;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+
+      const data = ventasChartData.length ? ventasChartData : [];
+      const maxVenta = Math.max(...data.map(item => Number(item.ventas) || 0), 0);
+      empty.style.display = maxVenta > 0 ? "none" : "grid";
+
+      const padding = { top: 20, right: 20, bottom: 42, left: 58 };
+      const chartWidth = width - padding.left - padding.right;
+      const chartHeight = height - padding.top - padding.bottom;
+      const barGap = 8;
+      const barWidth = Math.max(12, (chartWidth - barGap * (data.length - 1)) / Math.max(data.length, 1));
+
+      ctx.font = "700 11px Nunito, sans-serif";
+      ctx.strokeStyle = "#E5E7EB";
+      ctx.fillStyle = "#667085";
+      ctx.lineWidth = 1;
+
+      for (let i = 0; i <= 4; i++) {
+        const y = padding.top + (chartHeight / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(width - padding.right, y);
+        ctx.stroke();
+
+        const value = maxVenta ? maxVenta - (maxVenta / 4) * i : 0;
+        ctx.fillText(formatNumeroCompacto(value), 12, y + 4);
+      }
+
+      data.forEach((item, index) => {
+        const x = padding.left + index * (barWidth + barGap);
+        const value = Number(item.ventas) || 0;
+        const barHeight = maxVenta ? Math.max(4, (value / maxVenta) * chartHeight) : 0;
+        const y = padding.top + chartHeight - barHeight;
+
+        const gradient = ctx.createLinearGradient(0, y, 0, padding.top + chartHeight);
+        gradient.addColorStop(0, "#2563EB");
+        gradient.addColorStop(1, "#93C5FD");
+
+        ctx.fillStyle = value > 0 ? gradient : "#EEF2F7";
+        roundRect(ctx, x, y, barWidth, barHeight || 4, 5);
+        ctx.fill();
+
+        if (index % 2 === 0) {
+          ctx.fillStyle = "#667085";
+          ctx.textAlign = "center";
+          ctx.fillText(item.label.replace(":00", "h"), x + barWidth / 2, height - 16);
+        }
+      });
+
+      ctx.textAlign = "left";
+    }
+
+    function roundRect(ctx, x, y, width, height, radius) {
+      const r = Math.min(radius, width / 2, height / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + width, y, x + width, y + height, r);
+      ctx.arcTo(x + width, y + height, x, y + height, r);
+      ctx.arcTo(x, y + height, x, y, r);
+      ctx.arcTo(x, y, x + width, y, r);
+      ctx.closePath();
+    }
+
+    function formatNumeroCompacto(valor) {
+      const numero = Number(valor) || 0;
+      if (numero >= 1000000) return `$${(numero / 1000000).toFixed(1)}M`;
+      if (numero >= 1000) return `$${Math.round(numero / 1000)}k`;
+      return `$${Math.round(numero)}`;
+    }
+
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeChartTimer);
+      resizeChartTimer = setTimeout(renderGraficoVentas, 120);
+    });
 
     // ── ATAJOS DE FECHA ──────────────────────────────────────────
     function setAtajo(tipo) {

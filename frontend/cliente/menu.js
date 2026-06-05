@@ -1158,7 +1158,7 @@ function mostrarExito() {
 function volverAlMenu() {
   // Limpiar carrito
   carrito = [];
-  setObservaciones("");
+  setObservaciones("", { force: true });
   limpiarCarritoGuardado();
   actualizarCarritoUI();
 
@@ -1177,7 +1177,7 @@ function volverAlMenu() {
 
 function vaciarCarrito() {
   carrito = [];
-  setObservaciones("");
+  setObservaciones("", { force: true });
   limpiarCarritoGuardado();
   cerrarConfirmacion();
   actualizarCarritoUI();
@@ -1242,7 +1242,7 @@ function aplicarSnapshotMesa(data) {
   if (data.type === "pedido_confirmado") {
     aplicandoCarritoRemoto = true;
     carrito = [];
-    setObservaciones("");
+    setObservaciones("", { force: true });
     limpiarCarritoGuardado();
     aplicandoCarritoRemoto = false;
     actualizarCarritoUI();
@@ -1427,6 +1427,15 @@ function inicializarControlesPedido() {
   const observaciones = document.getElementById("pedido-observaciones");
   if (observaciones) {
     observaciones.addEventListener("input", guardarCarrito);
+    observaciones.addEventListener("focus", () => {
+      const bar = document.getElementById("carrito-bar");
+      if (bar) bar.classList.add("editing-notes");
+    });
+    observaciones.addEventListener("blur", () => {
+      const bar = document.getElementById("carrito-bar");
+      if (bar) bar.classList.remove("editing-notes");
+      guardarCarrito();
+    });
   }
 }
 
@@ -1452,7 +1461,7 @@ function restaurarCarritoGuardado() {
       })
       .filter(Boolean);
 
-    setObservaciones(guardado.observaciones || "");
+    setObservaciones(guardado.observaciones || "", { force: true });
   } catch {
     limpiarCarritoGuardado();
   }
@@ -1490,9 +1499,18 @@ function obtenerObservaciones() {
   return el ? el.value.trim() : "";
 }
 
-function setObservaciones(valor) {
+function setObservaciones(valor, options = {}) {
   const el = document.getElementById("pedido-observaciones");
-  if (el) el.value = valor;
+  if (!el) return;
+
+  if (!options.force && document.activeElement === el) {
+    return;
+  }
+
+  const nuevoValor = valor || "";
+  if (el.value === nuevoValor) return;
+
+  el.value = nuevoValor;
 }
 
 function obtenerClientIdMesa() {

@@ -82,6 +82,16 @@ class MesaOperationalState:
     def release(self, id_mesa: int):
         self.states.pop(int(id_mesa), None)
 
+    def clear_service(self, id_mesa: int, service: str):
+        state = self.states.get(int(id_mesa))
+        if not state:
+            return
+        if service == "mozo":
+            state["mozo_solicitado"] = False
+        elif service == "cuenta":
+            state["cuenta_solicitada"] = False
+        state["last_activity_at"] = datetime.now(timezone.utc)
+
     def snapshot(self) -> dict[int, dict]:
         return self.states.copy()
 

@@ -16,13 +16,14 @@
   <aside class="sidebar">
     <div class="sidebar-logo">Maven<span>Burger</span></div>
   
-
-    <div class="sidebar-section">Gestión</div>
-    <a href="productos.html" class="sidebar-link"> Productos</a>
-    <a href="mesas.html"     class="sidebar-link"> Mesas</a>
-
     <div class="sidebar-section">Reportes</div>
     <a href="index.html" class="sidebar-link active"> Reportes</a>
+
+    <div class="sidebar-section">Gestión</div>
+    <a href="mesas.html"     class="sidebar-link"> Mesas</a>
+    <a href="productos.html" class="sidebar-link"> Productos</a>
+
+
 
     <div class="sidebar-bottom">
       <div class="user-info">
@@ -41,9 +42,12 @@
       <div class="welcome-text">
         <div class="welcome-saludo">Panel de administración</div>
         <div class="welcome-nombre" id="welcome-nombre">Bienvenida </div>
-        <div class="welcome-sub">Maven Burger — Sistema ScanOrder</div>
+        <div class="welcome-sub">Ventas, mesas y operación diaria en tiempo real.</div>
       </div>
-      <div class="welcome-mark">SO</div>
+      <div class="welcome-status">
+        <span class="status-dot"></span>
+        Datos en vivo
+      </div>
     </div>
 
     <!-- Accesos rápidos -->
@@ -75,40 +79,29 @@
       </div>
     </div>
 
-    <div class="accesos-grid fade-in" style="animation-delay:0.1s;">
-      <a href="productos.html" class="acceso-card">
-        <div class="acceso-icon">PR</div>
+    <section class="sales-panel fade-in" style="animation-delay:0.15s;">
+      <div class="sales-panel-head">
         <div>
-          <div class="acceso-titulo">Productos</div>
-          <div class="acceso-desc">Gestioná el menú: agregá, editá y eliminá productos</div>
+          <div class="panel-kicker">Ventas por hora</div>
+          <h2 class="panel-title">Movimiento de hoy</h2>
+          <p class="panel-subtitle">El gráfico se actualiza cuando un pedido entra al flujo de venta.</p>
         </div>
-        <div class="acceso-arrow">Ir a productos →</div>
-      </a>
-
-      <a href="mesas.html" class="acceso-card">
-        <div class="acceso-icon">QR</div>
-        <div>
-          <div class="acceso-titulo">Mesas y QR</div>
-          <div class="acceso-desc">Creá mesas y generá los códigos QR para los clientes</div>
+        <div class="chart-summary">
+          <span id="chart-total">—</span>
+          <small id="chart-orders">—</small>
         </div>
-        <div class="acceso-arrow">Ir a mesas →</div>
-      </a>
-
-      <div class="acceso-card" onclick="document.getElementById('seccion-reportes').scrollIntoView({behavior:'smooth'})">
-        <div class="acceso-icon">PDF</div>
-        <div>
-          <div class="acceso-titulo">Reportes</div>
-          <div class="acceso-desc">Generá reportes de ventas en PDF por rango de fechas</div>
-        </div>
-        <div class="acceso-arrow">Ver reportes →</div>
       </div>
-    </div>
+      <div class="chart-shell">
+        <canvas id="ventas-chart" height="260"></canvas>
+        <div class="chart-empty" id="chart-empty">Todavía no hay ventas confirmadas hoy.</div>
+      </div>
+    </section>
 
     <!-- Sección Reportes -->
     <div id="seccion-reportes" class="fade-in" style="animation-delay:0.2s;">
       <div class="section-title"> Reportes de ventas</div>
 
-      <div class="reportes-grid">
+      <div class="reportes-grid reportes-grid-single">
 
         <!-- Reporte de ventas -->
         <div class="reporte-card">
@@ -154,59 +147,6 @@
               <div id="historial-ventas-lista"></div>
             </div>
 
-          </div>
-        </div>
-
-        <!-- Info / ayuda -->
-        <div class="reporte-card">
-          <div class="reporte-card-header">
-            <div class="reporte-icon">INFO</div>
-            <div>
-              <div class="reporte-titulo">¿Qué incluye el reporte?</div>
-              <div class="reporte-desc">Detalle del contenido generado</div>
-            </div>
-          </div>
-          <div class="reporte-card-body">
-            <div style="display:flex; flex-direction:column; gap:14px;">
-
-              <div style="display:flex; gap:12px; align-items:flex-start;">
-                <span style="font-size:1.2rem; flex-shrink:0;">-</span>
-                <div>
-                  <div style="font-weight:600; font-size:0.875rem; margin-bottom:2px;">Total de ventas</div>
-                  <div style="font-size:0.78rem; color:#a89880;">Suma total del período seleccionado</div>
-                </div>
-              </div>
-
-              <div style="display:flex; gap:12px; align-items:flex-start;">
-                <span style="font-size:1.2rem; flex-shrink:0;">-</span>
-                <div>
-                  <div style="font-weight:600; font-size:0.875rem; margin-bottom:2px;">Cantidad de pedidos</div>
-                  <div style="font-size:0.78rem; color:#a89880;">Total de pedidos procesados</div>
-                </div>
-              </div>
-
-              <div style="display:flex; gap:12px; align-items:flex-start;">
-                <span style="font-size:1.2rem; flex-shrink:0;">-</span>
-                <div>
-                  <div style="font-weight:600; font-size:0.875rem; margin-bottom:2px;">Productos más vendidos</div>
-                  <div style="font-size:0.78rem; color:#a89880;">Ranking de productos por cantidad</div>
-                </div>
-              </div>
-
-              <div style="display:flex; gap:12px; align-items:flex-start;">
-                <span style="font-size:1.2rem; flex-shrink:0;">-</span>
-                <div>
-                  <div style="font-weight:600; font-size:0.875rem; margin-bottom:2px;">Período del reporte</div>
-                  <div style="font-size:0.78rem; color:#a89880;">Fechas de inicio y fin seleccionadas</div>
-                </div>
-              </div>
-
-              <div style="margin-top:8px; padding:14px; background:#faf6f0; border-radius:10px; border:1px solid rgba(26,16,9,0.07);">
-                <div style="font-size:0.78rem; color:#7a6a58; line-height:1.5;">
-                  El reporte se descarga como <strong>archivo PDF</strong> con el logo de Maven Burger y se genera en el momento con los datos actuales de la base de datos.
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
