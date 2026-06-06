@@ -36,6 +36,8 @@ class DetallePedidoResponse(BaseModel):
     nombre: str
     cantidad: int
     subtotal: float
+    categoria: Optional[str] = None
+    subcategoria: Optional[str] = None
 
 
 class PedidoResponse(BaseModel):

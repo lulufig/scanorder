@@ -19,6 +19,26 @@ router = APIRouter(
 )
 
 ESTADOS_VENTA_SQL = "'confirmado', 'en_preparacion', 'listo', 'entregado'"
+_col_cache = {}
+
+
+def pedidos_tiene_columna(cursor, columna: str) -> bool:
+    """Indica si la tabla pedidos tiene una columna determinada."""
+    key = f"pedidos.{columna}"
+    if key not in _col_cache:
+        cursor.execute("SHOW COLUMNS FROM pedidos LIKE %s", (columna,))
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
+
+
+def fecha_venta_sql(cursor) -> str:
+    """
+    Usa la fecha de confirmacion de la venta cuando existe.
+    Fallback a created_at para bases viejas que todavia no tengan trazabilidad.
+    """
+    if pedidos_tiene_columna(cursor, "confirmado_at"):
+        return "COALESCE(confirmado_at, created_at)"
+    return "created_at"
 
 
 @router.get("/ventas")
@@ -202,18 +222,29 @@ def dashboard_metricas(current_user: dict = Depends(require_role("admin"))):
         )
     try:
         cursor = connection.cursor(dictionary=True)
+        fecha_venta = fecha_venta_sql(cursor)
 
         cursor.execute(
             f"""
             SELECT
-                COUNT(*) AS pedidos_hoy,
-                COALESCE(SUM(CASE WHEN estado IN ({ESTADOS_VENTA_SQL}) THEN total ELSE 0 END), 0) AS ventas_hoy,
-                COALESCE(AVG(CASE WHEN estado IN ({ESTADOS_VENTA_SQL}) THEN total ELSE NULL END), 0) AS ticket_promedio
+                COUNT(*) AS pedidos_hoy
             FROM pedidos
             WHERE DATE(created_at) = CURDATE()
             """
         )
         resumen = cursor.fetchone()
+
+        cursor.execute(
+            f"""
+            SELECT
+                COALESCE(SUM(total), 0) AS ventas_hoy,
+                COALESCE(AVG(total), 0) AS ticket_promedio
+            FROM pedidos
+            WHERE estado IN ({ESTADOS_VENTA_SQL})
+              AND DATE({fecha_venta}) = CURDATE()
+            """
+        )
+        ventas = cursor.fetchone()
 
         cursor.execute(
             """
@@ -249,9 +280,9 @@ def dashboard_metricas(current_user: dict = Depends(require_role("admin"))):
         mesas = cursor.fetchone()
 
         return {
-            "ventas_hoy": float(resumen["ventas_hoy"]),
+            "ventas_hoy": float(ventas["ventas_hoy"]),
             "pedidos_hoy": int(resumen["pedidos_hoy"]),
-            "ticket_promedio": float(resumen["ticket_promedio"]),
+            "ticket_promedio": float(ventas["ticket_promedio"]),
             "pedidos_activos": {
                 "pendiente": estados.get("pendiente", 0),
                 "confirmado": estados.get("confirmado", 0),
@@ -287,22 +318,23 @@ def ventas_hoy_por_hora(current_user: dict = Depends(require_role("admin"))):
         )
     try:
         cursor = connection.cursor(dictionary=True)
+        fecha_venta = fecha_venta_sql(cursor)
         cursor.execute(
             f"""
             SELECT
-                HOUR(created_at) AS hora,
+                HOUR({fecha_venta}) AS hora,
                 COUNT(*) AS pedidos,
                 COALESCE(SUM(total), 0) AS ventas
             FROM pedidos
-            WHERE DATE(created_at) = CURDATE()
+            WHERE DATE({fecha_venta}) = CURDATE()
               AND estado IN ({ESTADOS_VENTA_SQL})
-            GROUP BY HOUR(created_at)
+            GROUP BY HOUR({fecha_venta})
             ORDER BY hora
             """
         )
         ventas_por_hora = {int(row["hora"]): row for row in cursor.fetchall()}
 
-        horas_operativas = list(range(8, 24))
+        horas_operativas = list(range(0, 24))
         serie = []
         for hora in horas_operativas:
             row = ventas_por_hora.get(hora)

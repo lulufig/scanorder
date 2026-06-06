@@ -299,9 +299,16 @@ def detalle_operacion_mesa(
         for pedido in pedidos:
             cursor.execute(
                 """
-                SELECT p.nombre, dp.cantidad, dp.subtotal
+                SELECT
+                    dp.id_producto,
+                    p.nombre,
+                    dp.cantidad,
+                    dp.subtotal,
+                    c.nombre AS categoria,
+                    p.subcategoria
                 FROM detalle_pedidos dp
                 JOIN productos p ON p.id_producto = dp.id_producto
+                LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
                 WHERE dp.id_pedido = %s
                 """,
                 (pedido["id_pedido"],)

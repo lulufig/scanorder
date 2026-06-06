@@ -728,6 +728,54 @@
     .btn-listo { background: #047857; }
     .btn-entregar { background: #B91C1C; }
 
+/* ===== PEDIDOS: GRUPOS COMIDA / BEBIDAS ===== */
+.pedido-grupo {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(17, 24, 39, 0.08);
+}
+
+.pedido-grupo:last-child {
+  border-bottom: 0;
+}
+
+.pedido-grupo-titulo {
+  margin-bottom: 2px;
+  color: #667085;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pedido-grupo-comida {
+  margin-top: 4px;
+  padding: 8px 10px;
+  background: #FFF7ED;
+  border: 1px solid #FED7AA;
+  border-radius: 8px;
+}
+
+.pedido-grupo-comida .pedido-grupo-titulo {
+  color: #C2410C;
+}
+
+.pedido-grupo-bebidas {
+  padding: 8px 0;
+}
+
+.pedido-grupo-bebidas .pedido-grupo-titulo {
+  color: #667085;
+}
+
+.pedido-item-nombre em {
+  display: block;
+  margin-top: 2px;
+  color: #667085;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
     .toast.success { background: #ECFDF5; color: #047857; border-color: #A7F3D0; }
     .toast.error { background: #FEF2F2; color: #B91C1C; border-color: #FECACA; }
 

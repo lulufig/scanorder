@@ -620,9 +620,16 @@ def get_pedido(
 
         cursor.execute(
             """
-            SELECT dp.id_producto, p.nombre, dp.cantidad, dp.subtotal
+            SELECT
+                dp.id_producto,
+                p.nombre,
+                dp.cantidad,
+                dp.subtotal,
+                c.nombre AS categoria,
+                p.subcategoria
             FROM detalle_pedidos dp
             JOIN productos p ON dp.id_producto = p.id_producto
+            LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
             WHERE dp.id_pedido = %s
             """,
             (id_pedido,)

@@ -2322,6 +2322,47 @@
   line-height: 1.45;
 }
 
+.mesa-pedido-grupo {
+  margin: 12px 16px;
+  border: 1px solid var(--admin-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mesa-pedido-grupo-title {
+  padding: 9px 12px;
+  background: #F8FAFC;
+  border-bottom: 1px solid var(--admin-line);
+  color: #344054;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mesa-pedido-grupo-bebidas {
+  border-color: #BFDBFE;
+}
+
+.mesa-pedido-grupo-bebidas .mesa-pedido-grupo-title {
+  background: #EFF6FF;
+  border-bottom-color: #BFDBFE;
+  color: #1D4ED8;
+}
+
+.mesa-pedido-grupo .mesa-pedido-items {
+  padding: 2px 12px;
+}
+
+.mesa-pedido-items em {
+  display: block;
+  margin-top: 2px;
+  color: var(--admin-muted);
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .mesa-pedido-card.estado-entregado,
 .mesa-pedido-card.mesa-pedido-cobrada {
   background: #F8FAFC;

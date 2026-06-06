@@ -309,6 +309,7 @@
     function renderPedidoMesa(pedido) {
       const detalle = Array.isArray(pedido.detalle) ? pedido.detalle : [];
       const observaciones = (pedido.observaciones || "").trim();
+      const grupos = agruparDetallePedido(detalle);
       const accion = pedido.estado === "pendiente"
         ? `<button class="btn-primary mesa-action-primary" type="button" onclick="avanzarPedidoMesa(${pedido.id_pedido}, 'confirmado')">Confirmar pedido</button>`
         : pedido.estado === "listo"
@@ -337,17 +338,54 @@
                 </div>`
               : ""
             }
-            <div class="mesa-pedido-items">
-            ${detalle.map(item => `
-              <div>
-                <span>${escapeHtml(item.nombre)} x${item.cantidad}</span>
-                <strong>${formatPrecio(item.subtotal)}</strong>
-              </div>
-            `).join("")}
-            </div>
+            ${renderGrupoPedidoMesa("Bebidas", grupos.bebidas, "bebidas")}
+            ${renderGrupoPedidoMesa("Comida", grupos.comida, "comida")}
             ${accion ? `<div class="mesa-pedido-actions">${accion}</div>` : ""}
           </div>
         </article>`;
+    }
+
+    function renderGrupoPedidoMesa(titulo, items, tipo) {
+      if (!items.length) return "";
+      return `
+        <section class="mesa-pedido-grupo mesa-pedido-grupo-${tipo}">
+          <div class="mesa-pedido-grupo-title">${titulo}</div>
+          <div class="mesa-pedido-items">
+            ${items.map(item => `
+              <div>
+                <span>
+                  ${escapeHtml(item.nombre)} x${item.cantidad}
+                  ${item.subcategoria ? `<em>${escapeHtml(item.subcategoria)}</em>` : ""}
+                </span>
+                <strong>${formatPrecio(item.subtotal)}</strong>
+              </div>
+            `).join("")}
+          </div>
+        </section>`;
+    }
+
+    function agruparDetallePedido(detalle) {
+      return detalle.reduce((acc, item) => {
+        const destino = esBebida(item) ? "bebidas" : "comida";
+        acc[destino].push(item);
+        return acc;
+      }, { bebidas: [], comida: [] });
+    }
+
+    function esBebida(item) {
+      const texto = normalizarTexto([
+        item.categoria,
+        item.subcategoria,
+        item.nombre,
+      ].filter(Boolean).join(" "));
+      return /bebida|bebidas|cerveza|cervezas|coctel|cocteleria|gin|tonic|whisky|champagne|gaseosa|agua|limonada|pomelada|naranjada|jugo|coca|sprite|tragos?|sin alcohol/.test(texto);
+    }
+
+    function normalizarTexto(texto) {
+      return String(texto || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
     }
 
     function togglePedidoMesa(idPedido) {

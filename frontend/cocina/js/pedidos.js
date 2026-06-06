@@ -121,6 +121,7 @@
       const hora      = pedido.fecha ? formatHora(pedido.fecha) : "—";
       const tiempo    = pedido.fecha ? calcularTiempo(pedido.fecha) : null;
       const productos = pedido.detalle || [];
+      const grupos    = agruparDetallePedido(productos);
       const total     = pedido.total || calcularTotal(productos);
 
       // Clase de urgencia según tiempo transcurrido
@@ -177,13 +178,8 @@
 
           <div class="pedido-items">
             ${productos.length > 0
-              ? productos.map(item => `
-                  <div class="pedido-item">
-                    <span class="pedido-item-nombre">
-                      ${escapeHtml(item.nombre || item.producto_nombre || "Producto")}
-                    </span>
-                    <span class="pedido-item-cantidad ${color}">×${item.cantidad}</span>
-                  </div>`).join("")
+              ? `${renderGrupoPedido("Comida", grupos.comida, color, "comida")}
+                 ${renderGrupoPedido("Bebidas", grupos.bebidas, color, "bebidas")}`
               : `<div class="pedido-item" style="color:var(--text-dim); font-size:0.8rem;">
                    Sin detalle disponible
                  </div>`
@@ -205,6 +201,46 @@
           ${acciones ? `<div class="pedido-actions">${acciones}</div>` : ""}
 
         </div>`;
+    }
+
+    function renderGrupoPedido(titulo, items, color, tipo) {
+      if (!items.length) return "";
+      return `
+        <div class="pedido-grupo pedido-grupo-${tipo}">
+          <div class="pedido-grupo-titulo">${titulo}</div>
+          ${items.map(item => `
+            <div class="pedido-item">
+              <span class="pedido-item-nombre">
+                ${escapeHtml(item.nombre || item.producto_nombre || "Producto")}
+                ${item.subcategoria ? `<em>${escapeHtml(item.subcategoria)}</em>` : ""}
+              </span>
+              <span class="pedido-item-cantidad ${color}">×${item.cantidad}</span>
+            </div>`).join("")}
+        </div>`;
+    }
+
+    function agruparDetallePedido(detalle) {
+      return detalle.reduce((acc, item) => {
+        const destino = esBebida(item) ? "bebidas" : "comida";
+        acc[destino].push(item);
+        return acc;
+      }, { bebidas: [], comida: [] });
+    }
+
+    function esBebida(item) {
+      const texto = normalizarTexto([
+        item.categoria,
+        item.subcategoria,
+        item.nombre,
+      ].filter(Boolean).join(" "));
+      return /bebida|bebidas|cerveza|cervezas|coctel|cocteleria|gin|tonic|whisky|champagne|gaseosa|agua|limonada|pomelada|naranjada|jugo|coca|sprite|tragos?|sin alcohol/.test(texto);
+    }
+
+    function normalizarTexto(texto) {
+      return String(texto || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
     }
 
     // ── CAMBIAR ESTADO ────────────────────────────────────────────
