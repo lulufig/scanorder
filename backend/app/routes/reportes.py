@@ -31,6 +31,15 @@ def pedidos_tiene_columna(cursor, columna: str) -> bool:
     return _col_cache[key]
 
 
+def cierres_mesa_existe(cursor) -> bool:
+    """Indica si la tabla cierres_mesa ya fue migrada. Resultado cacheado por proceso."""
+    key = "table.cierres_mesa"
+    if key not in _col_cache:
+        cursor.execute("SHOW TABLES LIKE 'cierres_mesa'")
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
+
+
 def fecha_venta_sql(cursor) -> str:
     """
     Usa la fecha de confirmacion de la venta cuando existe.
@@ -279,6 +288,27 @@ def dashboard_metricas(current_user: dict = Depends(require_role("admin"))):
         )
         mesas = cursor.fetchone()
 
+        cobros_hoy = {"total": 0.0, "cantidad": 0, "metodos": {}}
+        if cierres_mesa_existe(cursor):
+            cursor.execute(
+                """
+                SELECT
+                    COUNT(*) AS cantidad,
+                    COALESCE(SUM(total_consumido), 0) AS total,
+                    metodo_pago
+                FROM cierres_mesa
+                WHERE DATE(created_at) = CURDATE()
+                GROUP BY metodo_pago
+                """
+            )
+            for row in cursor.fetchall():
+                cobros_hoy["cantidad"] += int(row["cantidad"])
+                cobros_hoy["total"] += float(row["total"])
+                cobros_hoy["metodos"][row["metodo_pago"]] = {
+                    "cantidad": int(row["cantidad"]),
+                    "total": float(row["total"]),
+                }
+
         return {
             "ventas_hoy": float(ventas["ventas_hoy"]),
             "pedidos_hoy": int(resumen["pedidos_hoy"]),
@@ -291,6 +321,7 @@ def dashboard_metricas(current_user: dict = Depends(require_role("admin"))):
             },
             "producto_top": producto_top or {"nombre": "—", "cantidad": 0},
             "mesas_activas": int(mesas["mesas_activas"]),
+            "cobros_hoy": cobros_hoy,
         }
     except HTTPException:
         raise

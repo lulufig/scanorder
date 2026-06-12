@@ -2395,3 +2395,255 @@
 .mesa-pedido-card.estado-entregado {
   border-left: 4px solid var(--mesa-libre);
 }
+
+/* ===== BOTONES DE ACCIÓN EN MODAL OPERACIÓN ===== */
+
+.btn-cobrar {
+  padding: 9px 20px;
+  background: var(--admin-success);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-cobrar:hover { background: #166534; }
+
+.btn-liberar-forzado {
+  font-size: 0.78rem;
+  padding: 7px 14px;
+  opacity: 0.7;
+}
+.btn-liberar-forzado:hover { opacity: 1; }
+
+/* ===== MODAL COBRO ===== */
+
+.cobro-overlay {
+  z-index: 400;
+}
+
+.cobro-modal {
+  max-width: 480px;
+  width: 100%;
+}
+
+.cobro-body {
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: min(80vh, 640px);
+  overflow-y: auto;
+}
+
+.cobro-loading {
+  text-align: center;
+  color: var(--admin-muted);
+  padding: 32px 0;
+  font-size: 0.9rem;
+}
+
+.cobro-alerta {
+  background: #FFFBEB;
+  border: 1px solid #FCD34D;
+  border-left: 4px solid #F59E0B;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 0.82rem;
+  color: #92400E;
+  font-weight: 600;
+}
+
+.cobro-sin-pedidos {
+  text-align: center;
+  color: var(--admin-muted);
+  font-size: 0.88rem;
+  padding: 12px 0;
+}
+
+.cobro-items-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--admin-line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--admin-soft);
+}
+
+.cobro-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.875rem;
+}
+
+.cobro-item-nombre {
+  color: var(--admin-text);
+}
+
+.cobro-item-nombre em {
+  font-style: normal;
+  font-size: 0.78rem;
+  color: var(--admin-muted);
+  margin-left: 4px;
+}
+
+.cobro-item-precio {
+  font-weight: 700;
+  color: var(--admin-text);
+  white-space: nowrap;
+  margin-left: 12px;
+}
+
+.cobro-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  border-radius: 8px;
+}
+
+.cobro-total-row span {
+  font-size: 0.88rem;
+  color: var(--admin-muted);
+  font-weight: 600;
+}
+
+.cobro-total-monto {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--admin-accent);
+}
+
+.cobro-section-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--admin-muted);
+  margin-bottom: 8px;
+}
+
+.cobro-metodo-section,
+.cobro-efectivo-section,
+.cobro-obs-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.cobro-metodos {
+  display: flex;
+  gap: 8px;
+}
+
+.cobro-metodo-btn {
+  flex: 1;
+  padding: 8px 4px;
+  border: 1.5px solid var(--admin-line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--admin-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.cobro-metodo-btn:hover {
+  border-color: var(--admin-accent);
+  color: var(--admin-accent);
+}
+
+.cobro-metodo-btn.active {
+  border-color: var(--admin-accent);
+  background: #EFF6FF;
+  color: var(--admin-accent);
+}
+
+.cobro-monto-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid var(--admin-line);
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--admin-text);
+  background: #fff;
+  transition: border-color 0.15s;
+}
+
+.cobro-monto-input:focus {
+  outline: none;
+  border-color: var(--admin-accent);
+}
+
+.cobro-vuelto-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  border-radius: 6px;
+  margin-top: 8px;
+}
+
+.cobro-vuelto-row span {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #166534;
+}
+
+.cobro-vuelto-row strong {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #15803D;
+}
+
+.cobro-obs-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1.5px solid var(--admin-line);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: var(--admin-text);
+  background: #fff;
+}
+
+.cobro-obs-input:focus {
+  outline: none;
+  border-color: var(--admin-accent);
+}
+
+.cobro-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--admin-line);
+}
+
+.btn-cobrar-confirmar {
+  padding: 10px 24px;
+  background: var(--admin-success);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-cobrar-confirmar:hover:not(:disabled) { background: #166534; }
+
+.btn-cobrar-confirmar:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

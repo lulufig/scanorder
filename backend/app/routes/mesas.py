@@ -4,7 +4,10 @@ from typing import List
 import secrets
 
 from app.database import get_db_connection, close_db_connection
-from app.schemas.mesas import MesaCreate, MesaResponse
+from app.schemas.mesas import (
+    MesaCreate, MesaResponse,
+    CuentaMesaResponse, CierreMesaCreate, CierreMesaResponse,
+)
 from app.utils.dependencies import require_role
 from app.utils.qr import generate_qr, QR_DIR
 from app.routes.pedidos import mesa_sessions, mesa_operational_state, pedidos_tiene_columna
@@ -18,7 +21,6 @@ _col_cache: dict[str, bool] = {}
 
 
 def mesa_tiene_columna(cursor, columna: str) -> bool:
-    """Indica si la tabla mesas tiene una columna determinada. Resultado cacheado por proceso."""
     key = f"mesas.{columna}"
     if key not in _col_cache:
         cursor.execute("SHOW COLUMNS FROM mesas LIKE %s", (columna,))
@@ -342,12 +344,256 @@ def detalle_operacion_mesa(
         close_db_connection(connection)
 
 
+@router.get("/{id_mesa}/cuenta", response_model=CuentaMesaResponse)
+def cuenta_mesa(
+    id_mesa: int,
+    current_user: dict = Depends(require_role("admin"))
+):
+    """
+    Devuelve los pedidos no cobrados de una mesa y el total a pagar.
+    Excluye pedidos ya incluidos en un cierre anterior (ciclos previos del mismo día).
+    """
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos"
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT id_mesa, numero FROM mesas WHERE id_mesa = %s",
+            (id_mesa,)
+        )
+        mesa = cursor.fetchone()
+        if not mesa:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
+
+        cursor.execute(
+            """
+            SELECT p.id_pedido, p.estado, p.total,
+                   DATE_FORMAT(p.created_at, '%H:%i') AS fecha
+            FROM pedidos p
+            LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido
+            WHERE p.id_mesa = %s
+              AND p.estado NOT IN ('cancelado')
+              AND cp.id_pedido IS NULL
+            ORDER BY p.created_at ASC
+            """,
+            (id_mesa,)
+        )
+        pedidos_raw = cursor.fetchall()
+
+        pedidos = []
+        total_consumido = 0.0
+        tiene_pendientes = False
+
+        for pedido in pedidos_raw:
+            cursor.execute(
+                """
+                SELECT
+                    dp.id_producto,
+                    p.nombre,
+                    dp.cantidad,
+                    dp.precio_unitario,
+                    dp.subtotal,
+                    c.nombre AS categoria,
+                    p.subcategoria
+                FROM detalle_pedidos dp
+                JOIN productos p ON p.id_producto = dp.id_producto
+                LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
+                WHERE dp.id_pedido = %s
+                ORDER BY c.nombre, p.nombre
+                """,
+                (pedido["id_pedido"],)
+            )
+            items = cursor.fetchall()
+
+            total = float(pedido["total"] or 0)
+            total_consumido += total
+
+            if pedido["estado"] in ("pendiente", "confirmado", "en_preparacion"):
+                tiene_pendientes = True
+
+            pedidos.append({
+                "id_pedido": pedido["id_pedido"],
+                "estado": pedido["estado"],
+                "total": total,
+                "fecha": pedido["fecha"] or "",
+                "items": [
+                    {
+                        "id_producto": item["id_producto"],
+                        "nombre": item["nombre"],
+                        "cantidad": int(item["cantidad"]),
+                        "precio_unitario": float(item["precio_unitario"]),
+                        "subtotal": float(item["subtotal"]),
+                        "categoria": item.get("categoria"),
+                        "subcategoria": item.get("subcategoria"),
+                    }
+                    for item in items
+                ],
+            })
+
+        return {
+            "id_mesa": id_mesa,
+            "numero_mesa": int(mesa["numero"]),
+            "pedidos": pedidos,
+            "total_consumido": total_consumido,
+            "tiene_pendientes": tiene_pendientes,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener cuenta: {str(e)}"
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
+@router.post("/{id_mesa}/cerrar", response_model=CierreMesaResponse)
+def cerrar_mesa(
+    id_mesa: int,
+    body: CierreMesaCreate,
+    current_user: dict = Depends(require_role("admin"))
+):
+    """
+    Registra el cobro de una mesa y la libera.
+    Operación atómica: SELECT FOR UPDATE garantiza que dos cierres simultáneos
+    no puedan cobrar los mismos pedidos.
+    """
+    metodos_validos = {"efectivo", "tarjeta", "qr", "otro"}
+    if body.metodo_pago not in metodos_validos:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Método de pago inválido. Opciones: {', '.join(metodos_validos)}"
+        )
+
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos"
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT id_mesa, numero FROM mesas WHERE id_mesa = %s",
+            (id_mesa,)
+        )
+        mesa = cursor.fetchone()
+        if not mesa:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
+
+        connection.start_transaction()
+        try:
+            # Bloqueo de filas: el segundo admin queda esperando hasta que el primero commitee
+            cursor.execute(
+                """
+                SELECT p.id_pedido, p.total
+                FROM pedidos p
+                LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido
+                WHERE p.id_mesa = %s
+                  AND p.estado NOT IN ('cancelado')
+                  AND cp.id_pedido IS NULL
+                FOR UPDATE
+                """,
+                (id_mesa,)
+            )
+            pedidos = cursor.fetchall()
+
+            if not pedidos:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="No hay pedidos pendientes de cobro en esta mesa"
+                )
+
+            total_consumido = sum(float(p["total"] or 0) for p in pedidos)
+            monto_cobrado = float(body.monto_cobrado)
+            vuelto = max(0.0, round(monto_cobrado - total_consumido, 2))
+            id_usuario = current_user.get("user_id")
+
+            cursor.execute(
+                """
+                INSERT INTO cierres_mesa
+                    (id_mesa, numero_mesa, metodo_pago, total_consumido,
+                     monto_cobrado, vuelto, id_usuario_cierre, observaciones)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    id_mesa,
+                    int(mesa["numero"]),
+                    body.metodo_pago,
+                    total_consumido,
+                    monto_cobrado,
+                    vuelto,
+                    id_usuario,
+                    body.observaciones or None,
+                )
+            )
+            id_cierre = cursor.lastrowid
+
+            for pedido in pedidos:
+                cursor.execute(
+                    """
+                    INSERT INTO cierre_pedidos (id_cierre, id_pedido, total_pedido)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (id_cierre, pedido["id_pedido"], float(pedido["total"] or 0))
+                )
+
+            cursor.execute(
+                "SELECT DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') AS created_at FROM cierres_mesa WHERE id_cierre = %s",
+                (id_cierre,)
+            )
+            cierre_row = cursor.fetchone()
+            connection.commit()
+
+        except HTTPException:
+            connection.rollback()
+            raise
+        except Exception:
+            connection.rollback()
+            raise
+
+        # Liberar estado en memoria (post-commit, no crítico para integridad)
+        mesa_operational_state.release(id_mesa)
+
+        return {
+            "id_cierre": id_cierre,
+            "id_mesa": id_mesa,
+            "numero_mesa": int(mesa["numero"]),
+            "metodo_pago": body.metodo_pago,
+            "total_consumido": total_consumido,
+            "monto_cobrado": monto_cobrado,
+            "vuelto": vuelto,
+            "pedidos_incluidos": len(pedidos),
+            "created_at": cierre_row["created_at"] if cierre_row else "",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al cerrar mesa: {str(e)}"
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
 @router.post("/{id_mesa}/liberar")
 def liberar_mesa(
     id_mesa: int,
     current_user: dict = Depends(require_role("admin"))
 ):
-    """Marca una mesa como cobrada/liberada en la vista operativa."""
+    """Fuerza la liberación operativa de una mesa sin registrar cobro."""
     mesa_operational_state.release(id_mesa)
     return {"message": "Mesa liberada", "id_mesa": id_mesa}
 

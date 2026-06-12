@@ -190,6 +190,22 @@
     </div>
   </div>
 
+  <!-- ===== MODAL COBRO MESA ===== -->
+  <div class="modal-overlay cobro-overlay" id="cobro-overlay" onclick="cerrarCobroSiAfuera(event)">
+    <div class="modal-qr cobro-modal">
+      <div class="modal-qr-header">
+        <span class="modal-qr-title" id="cobro-title">Cobrar Mesa</span>
+        <button class="modal-close" onclick="cerrarCobro()">X</button>
+      </div>
+      <div class="cobro-body" id="cobro-body">
+        <div class="empty-state">
+          <div class="icon">...</div>
+          <p>Cargando cuenta...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== TOAST ===== -->
   <div class="toast" id="toast"></div>
 

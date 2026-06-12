@@ -16,6 +16,8 @@
     let mapaSignature   = "";
     let mapaCardSignatures = new Map();
     let socketMesas     = null;
+    let cuentaDataActual = null;
+    let metodoPagoSeleccionado = "efectivo";
 
     // ── INICIALIZACIÓN ──────────────────────────────────────────
     document.addEventListener("DOMContentLoaded", () => {
@@ -296,7 +298,8 @@
             ? `<button class="btn-ghost btn-service-done" type="button" onclick="atenderMozo(${mesa.id_mesa})">Mozo atendido</button>`
             : ""
           }
-          <button class="btn-ghost" type="button" onclick="liberarMesa(${mesa.id_mesa})">Marcar cobrada y liberar</button>
+          <button class="btn-cobrar" type="button" onclick="cobrarMesa(${mesa.id_mesa})">Cobrar mesa</button>
+          <button class="btn-ghost btn-liberar-forzado" type="button" onclick="liberarMesa(${mesa.id_mesa})">Forzar liberar</button>
         </div>
         <div class="mesa-pedidos-list">
           ${pedidos.length
@@ -427,6 +430,200 @@
       } catch (error) {
         mostrarToast("No se pudo marcar la solicitud: " + error.message, "error");
       }
+    }
+
+    // ── COBRO DE MESA ───────────────────────────────────────
+
+    async function cobrarMesa(idMesa) {
+      const overlay = document.getElementById("cobro-overlay");
+      const body = document.getElementById("cobro-body");
+      const title = document.getElementById("cobro-title");
+
+      metodoPagoSeleccionado = "efectivo";
+      cuentaDataActual = null;
+
+      overlay.classList.add("open");
+      title.textContent = "Cargando cuenta...";
+      body.innerHTML = `<div class="cobro-loading">Calculando cuenta...</div>`;
+
+      try {
+        const data = await fetchAPI(`/mesas/${idMesa}/cuenta`);
+        cuentaDataActual = data;
+        title.textContent = `Cobrar Mesa ${data.numero_mesa}`;
+        renderModalCobro(data, idMesa);
+      } catch (error) {
+        body.innerHTML = `
+          <div class="empty-state">
+            <p>No se pudo cargar la cuenta: ${escapeHtml(error.message)}</p>
+          </div>`;
+      }
+    }
+
+    function renderModalCobro(data, idMesa) {
+      const body = document.getElementById("cobro-body");
+      const pedidos = Array.isArray(data.pedidos) ? data.pedidos : [];
+      const total = data.total_consumido || 0;
+
+      // Consolidar todos los items de todos los pedidos
+      const itemsConsolidados = {};
+      pedidos.forEach(pedido => {
+        (pedido.items || []).forEach(item => {
+          const key = item.id_producto;
+          if (itemsConsolidados[key]) {
+            itemsConsolidados[key].cantidad += item.cantidad;
+            itemsConsolidados[key].subtotal += item.subtotal;
+          } else {
+            itemsConsolidados[key] = { ...item };
+          }
+        });
+      });
+
+      const itemsOrdenados = Object.values(itemsConsolidados)
+        .sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+
+      const alertaPendientes = data.tiene_pendientes
+        ? `<div class="cobro-alerta">Hay pedidos aún no entregados incluidos en esta cuenta.</div>`
+        : "";
+
+      const sinPedidos = pedidos.length === 0
+        ? `<div class="cobro-sin-pedidos">Esta mesa no tiene pedidos para cobrar.</div>`
+        : "";
+
+      body.innerHTML = `
+        ${alertaPendientes}
+        ${sinPedidos}
+
+        <div class="cobro-items-lista">
+          ${itemsOrdenados.map(item => `
+            <div class="cobro-item-row">
+              <span class="cobro-item-nombre">${escapeHtml(item.nombre)} <em>x${item.cantidad}</em></span>
+              <span class="cobro-item-precio">${formatPrecio(item.subtotal)}</span>
+            </div>
+          `).join("")}
+        </div>
+
+        <div class="cobro-total-row">
+          <span>Total a cobrar</span>
+          <strong class="cobro-total-monto">${formatPrecio(total)}</strong>
+        </div>
+
+        <div class="cobro-metodo-section">
+          <div class="cobro-section-label">Método de pago</div>
+          <div class="cobro-metodos">
+            <button class="cobro-metodo-btn active" data-metodo="efectivo" type="button" onclick="seleccionarMetodoPago('efectivo')">Efectivo</button>
+            <button class="cobro-metodo-btn" data-metodo="tarjeta" type="button" onclick="seleccionarMetodoPago('tarjeta')">Tarjeta</button>
+            <button class="cobro-metodo-btn" data-metodo="qr" type="button" onclick="seleccionarMetodoPago('qr')">QR</button>
+            <button class="cobro-metodo-btn" data-metodo="otro" type="button" onclick="seleccionarMetodoPago('otro')">Otro</button>
+          </div>
+        </div>
+
+        <div class="cobro-efectivo-section" id="cobro-efectivo-section">
+          <label class="cobro-section-label" for="cobro-monto-input">Monto recibido</label>
+          <input
+            class="cobro-monto-input"
+            id="cobro-monto-input"
+            type="number"
+            min="0"
+            step="1"
+            placeholder="${Math.ceil(total)}"
+            oninput="calcularVuelto(${total})"
+          />
+          <div class="cobro-vuelto-row" id="cobro-vuelto-row" style="display:none">
+            <span>Vuelto</span>
+            <strong id="cobro-vuelto-monto">—</strong>
+          </div>
+        </div>
+
+        <div class="cobro-obs-section">
+          <label class="cobro-section-label" for="cobro-obs">Observaciones (opcional)</label>
+          <input class="cobro-obs-input" id="cobro-obs" type="text" maxlength="255" placeholder="Ej: pagó con billete de $10.000" />
+        </div>
+
+        <div class="cobro-footer">
+          <button class="btn-ghost" type="button" onclick="cerrarCobro()">Cancelar</button>
+          <button class="btn-cobrar-confirmar" id="cobro-confirmar-btn" type="button"
+            onclick="confirmarCobro(${idMesa}, ${total})"
+            ${pedidos.length === 0 ? "disabled" : ""}
+          >Confirmar cobro</button>
+        </div>`;
+    }
+
+    function seleccionarMetodoPago(metodo) {
+      metodoPagoSeleccionado = metodo;
+      document.querySelectorAll(".cobro-metodo-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.metodo === metodo);
+      });
+      const efectivoSection = document.getElementById("cobro-efectivo-section");
+      if (efectivoSection) {
+        efectivoSection.style.display = metodo === "efectivo" ? "" : "none";
+      }
+      if (metodo !== "efectivo") {
+        const vueltoRow = document.getElementById("cobro-vuelto-row");
+        if (vueltoRow) vueltoRow.style.display = "none";
+      }
+    }
+
+    function calcularVuelto(totalConsumir) {
+      const input = document.getElementById("cobro-monto-input");
+      const vueltoRow = document.getElementById("cobro-vuelto-row");
+      const vueltoMonto = document.getElementById("cobro-vuelto-monto");
+      if (!input || !vueltoRow || !vueltoMonto) return;
+
+      const monto = parseFloat(input.value) || 0;
+      if (monto > 0) {
+        const vuelto = Math.max(0, monto - totalConsumir);
+        vueltoMonto.textContent = formatPrecio(vuelto);
+        vueltoRow.style.display = "";
+      } else {
+        vueltoRow.style.display = "none";
+      }
+    }
+
+    async function confirmarCobro(idMesa, totalConsumir) {
+      const btn = document.getElementById("cobro-confirmar-btn");
+      let montoCobrado = totalConsumir;
+
+      if (metodoPagoSeleccionado === "efectivo") {
+        const input = document.getElementById("cobro-monto-input");
+        const valorInput = parseFloat(input ? input.value : 0);
+        montoCobrado = valorInput > 0 ? valorInput : totalConsumir;
+      }
+
+      const observaciones = (document.getElementById("cobro-obs")?.value || "").trim() || null;
+
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Registrando...";
+      }
+
+      try {
+        await fetchAPI(`/mesas/${idMesa}/cerrar`, "POST", {
+          metodo_pago: metodoPagoSeleccionado,
+          monto_cobrado: montoCobrado,
+          observaciones,
+        });
+
+        cerrarCobro();
+        cerrarMesaOperacion();
+        mostrarToast("Mesa cobrada y liberada correctamente.", "success");
+        await cargarMapaMesas();
+      } catch (error) {
+        mostrarToast("No se pudo registrar el cobro: " + error.message, "error");
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Confirmar cobro";
+        }
+      }
+    }
+
+    function cerrarCobro() {
+      document.getElementById("cobro-overlay").classList.remove("open");
+      cuentaDataActual = null;
+      metodoPagoSeleccionado = "efectivo";
+    }
+
+    function cerrarCobroSiAfuera(event) {
+      if (event.target === document.getElementById("cobro-overlay")) cerrarCobro();
     }
 
     function cerrarMesaOperacion() {
@@ -575,6 +772,7 @@
 
     document.addEventListener("keydown", e => {
       if (e.key === "Escape") {
+        cerrarCobro();
         cerrarModal();
         cerrarMesaOperacion();
       }
