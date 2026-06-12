@@ -1,6 +1,6 @@
 
     // ── PROTECCIÓN DE RUTA ──────────────────────────────────────
-    requireAuth(ROLES.ADMIN);
+    if (!requireAuth(ROLES.ADMIN)) throw new Error();
 
     const usuario = getUser();
     if (usuario) {

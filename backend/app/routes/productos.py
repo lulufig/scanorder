@@ -10,6 +10,34 @@ router = APIRouter(
     tags=["Productos"]
 )
 
+_col_cache: dict[str, bool] = {}
+
+
+def producto_tiene_columna(cursor, columna: str) -> bool:
+    key = f"productos.{columna}"
+    if key not in _col_cache:
+        cursor.execute("SHOW COLUMNS FROM productos LIKE %s", (columna,))
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
+
+
+def select_productos_sql(cursor) -> str:
+    campo_subcategoria = "p.subcategoria" if producto_tiene_columna(cursor, "subcategoria") else "NULL AS subcategoria"
+    return f"""
+            SELECT
+                p.id_producto,
+                p.id_categoria,
+                p.nombre,
+                p.descripcion,
+                p.precio,
+                {campo_subcategoria},
+                p.imagen_url,
+                p.disponible,
+                c.nombre AS categoria
+            FROM productos p
+            LEFT JOIN categorias c ON p.id_categoria = c.id_categoria
+            """
+
 
 def resolver_id_categoria(cursor, id_categoria=None, categoria=None):
     """Resuelve el id_categoria desde un ID explícito o desde el nombre de categoría."""
@@ -89,14 +117,7 @@ def listar_productos():
         )
     try:
         cursor = connection.cursor(dictionary=True)
-        cursor.execute(
-            """
-            SELECT p.*, c.nombre AS categoria
-            FROM productos p
-            LEFT JOIN categorias c ON p.id_categoria = c.id_categoria
-            WHERE p.disponible = TRUE
-            """
-        )
+        cursor.execute(select_productos_sql(cursor) + "WHERE p.disponible = TRUE")
         return cursor.fetchall()
     except HTTPException:
         raise
@@ -121,15 +142,18 @@ def productos_populares_hoy():
         )
     try:
         cursor = connection.cursor(dictionary=True)
+        tiene_subcategoria = producto_tiene_columna(cursor, "subcategoria")
+        campo_subcategoria = "p.subcategoria" if tiene_subcategoria else "NULL AS subcategoria"
+        group_subcategoria = ", p.subcategoria" if tiene_subcategoria else ""
         cursor.execute(
-            """
+            f"""
             SELECT
                 p.id_producto,
                 p.nombre,
                 p.descripcion,
                 p.precio,
                 p.imagen_url,
-                p.subcategoria,
+                {campo_subcategoria},
                 p.disponible,
                 c.nombre AS categoria,
                 SUM(dp.cantidad) AS total_pedido
@@ -139,7 +163,7 @@ def productos_populares_hoy():
             LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
             WHERE DATE(pe.created_at) = CURDATE()
               AND p.disponible = TRUE
-            GROUP BY p.id_producto, p.nombre, p.descripcion, p.precio, p.imagen_url, p.subcategoria, p.disponible, c.nombre
+            GROUP BY p.id_producto, p.nombre, p.descripcion, p.precio, p.imagen_url{group_subcategoria}, p.disponible, c.nombre
             ORDER BY total_pedido DESC
             LIMIT 6
             """
@@ -172,15 +196,7 @@ def get_producto(id_producto: int):
         )
     try:
         cursor = connection.cursor(dictionary=True)
-        cursor.execute(
-            """
-            SELECT p.*, c.nombre AS categoria
-            FROM productos p
-            LEFT JOIN categorias c ON p.id_categoria = c.id_categoria
-            WHERE p.id_producto = %s
-            """,
-            (id_producto,)
-        )
+        cursor.execute(select_productos_sql(cursor) + "WHERE p.id_producto = %s", (id_producto,))
         producto = cursor.fetchone()
         if not producto:
             raise HTTPException(
@@ -219,31 +235,38 @@ def create_producto(
             id_categoria=producto.id_categoria,
             categoria=producto.categoria
         )
-        query = """
-            INSERT INTO productos (nombre, descripcion, precio, id_categoria, subcategoria, imagen_url, disponible)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """
-        cursor.execute(query, (
-            producto.nombre,
-            producto.descripcion,
-            producto.precio,
-            id_categoria,
-            producto.subcategoria,
-            producto.imagen_url,
-            producto.disponible
-        ))
+        if producto_tiene_columna(cursor, "subcategoria"):
+            query = """
+                INSERT INTO productos (nombre, descripcion, precio, id_categoria, subcategoria, imagen_url, disponible)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            values = (
+                producto.nombre,
+                producto.descripcion,
+                producto.precio,
+                id_categoria,
+                producto.subcategoria,
+                producto.imagen_url,
+                producto.disponible
+            )
+        else:
+            query = """
+                INSERT INTO productos (nombre, descripcion, precio, id_categoria, imagen_url, disponible)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            values = (
+                producto.nombre,
+                producto.descripcion,
+                producto.precio,
+                id_categoria,
+                producto.imagen_url,
+                producto.disponible
+            )
+        cursor.execute(query, values)
         connection.commit()
 
         nuevo_id = cursor.lastrowid
-        cursor.execute(
-            """
-            SELECT p.*, c.nombre AS categoria
-            FROM productos p
-            LEFT JOIN categorias c ON p.id_categoria = c.id_categoria
-            WHERE p.id_producto = %s
-            """,
-            (nuevo_id,)
-        )
+        cursor.execute(select_productos_sql(cursor) + "WHERE p.id_producto = %s", (nuevo_id,))
         return cursor.fetchone()
     except HTTPException:
         connection.rollback()
@@ -295,42 +318,36 @@ def update_producto(
             )
 
         campos_enviados = getattr(producto, "model_fields_set", getattr(producto, "__fields_set__", set()))
+        tiene_subcategoria = producto_tiene_columna(cursor, "subcategoria")
         subcategoria = producto.subcategoria if "subcategoria" in campos_enviados else existing.get("subcategoria")
 
-        # COALESCE preserva campos no enviados; subcategoria se maneja aparte para permitir limpiarla.
-        query = """
-            UPDATE productos
-            SET
-                nombre       = COALESCE(%s, nombre),
-                descripcion  = COALESCE(%s, descripcion),
-                precio       = COALESCE(%s, precio),
-                id_categoria = COALESCE(%s, id_categoria),
-                subcategoria = %s,
-                imagen_url   = COALESCE(%s, imagen_url),
-                disponible   = COALESCE(%s, disponible)
-            WHERE id_producto = %s
-        """
-        cursor.execute(query, (
+        campos_update = [
+            "nombre = COALESCE(%s, nombre)",
+            "descripcion = COALESCE(%s, descripcion)",
+            "precio = COALESCE(%s, precio)",
+            "id_categoria = COALESCE(%s, id_categoria)",
+        ]
+        values = [
             producto.nombre,
             producto.descripcion,
             producto.precio,
             id_categoria,
-            subcategoria,
-            producto.imagen_url,
-            producto.disponible,
-            id_producto
-        ))
+        ]
+        if tiene_subcategoria:
+            campos_update.append("subcategoria = %s")
+            values.append(subcategoria)
+        campos_update.extend([
+            "imagen_url = COALESCE(%s, imagen_url)",
+            "disponible = COALESCE(%s, disponible)",
+        ])
+        values.extend([producto.imagen_url, producto.disponible, id_producto])
+        cursor.execute(
+            "UPDATE productos SET " + ", ".join(campos_update) + " WHERE id_producto = %s",
+            values
+        )
         connection.commit()
 
-        cursor.execute(
-            """
-            SELECT p.*, c.nombre AS categoria
-            FROM productos p
-            LEFT JOIN categorias c ON p.id_categoria = c.id_categoria
-            WHERE p.id_producto = %s
-            """,
-            (id_producto,)
-        )
+        cursor.execute(select_productos_sql(cursor) + "WHERE p.id_producto = %s", (id_producto,))
         return cursor.fetchone()
     except HTTPException:
         connection.rollback()

@@ -1,7 +1,7 @@
 
     // ── PROTECCIÓN DE RUTA ──────────────────────────────────────
     // Solo usuarios con rol "cocina" pueden acceder
-    requireAuth(ROLES.COCINA);
+    if (!requireAuth(ROLES.COCINA)) throw new Error();
 
     const usuario = getUser();
     if (usuario) {

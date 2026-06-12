@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, WebSocket, WebSoc
 from typing import List, Optional
 from anyio import from_thread
 from datetime import datetime, timezone
+import json
 
 from app.database import get_db_connection, close_db_connection
 from app.schemas.pedidos import (
@@ -29,6 +30,207 @@ TRANSICION_ESTADO = {
     "en_preparacion": "listo",
     "listo": "entregado",
 }
+
+
+def tabla_existe(cursor, tabla: str) -> bool:
+    key = f"table.{tabla}"
+    if key not in _col_cache:
+        cursor.execute("SHOW TABLES LIKE %s", (tabla,))
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
+
+
+def productos_tiene_columna(cursor, columna: str) -> bool:
+    key = f"productos.{columna}"
+    if key not in _col_cache:
+        cursor.execute("SHOW COLUMNS FROM productos LIKE %s", (columna,))
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
+
+
+def persist_mesa_operational_state(id_mesa: int, updates: dict):
+    connection = get_db_connection()
+    if not connection:
+        return
+    try:
+        cursor = connection.cursor(dictionary=True)
+        if not tabla_existe(cursor, "mesa_estado_operativo"):
+            return
+        cursor.execute(
+            """
+            INSERT INTO mesa_estado_operativo
+                (id_mesa, ocupada, cuenta_solicitada, mozo_solicitado, last_activity_at)
+            VALUES (%s, %s, %s, %s, NOW())
+            ON DUPLICATE KEY UPDATE
+                ocupada = VALUES(ocupada),
+                cuenta_solicitada = VALUES(cuenta_solicitada),
+                mozo_solicitado = VALUES(mozo_solicitado),
+                last_activity_at = NOW()
+            """,
+            (
+                int(id_mesa),
+                bool(updates.get("ocupada", True)),
+                bool(updates.get("cuenta_solicitada", False)),
+                bool(updates.get("mozo_solicitado", False)),
+            )
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
+def release_mesa_operational_state(id_mesa: int):
+    connection = get_db_connection()
+    if not connection:
+        return
+    try:
+        cursor = connection.cursor(dictionary=True)
+        if not tabla_existe(cursor, "mesa_estado_operativo"):
+            return
+        cursor.execute("DELETE FROM mesa_estado_operativo WHERE id_mesa = %s", (int(id_mesa),))
+        connection.commit()
+    except Exception:
+        connection.rollback()
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
+def load_mesa_operational_snapshot() -> dict[int, dict]:
+    connection = get_db_connection()
+    if not connection:
+        return {}
+    try:
+        cursor = connection.cursor(dictionary=True)
+        if not tabla_existe(cursor, "mesa_estado_operativo"):
+            return {}
+        cursor.execute(
+            """
+            SELECT id_mesa, ocupada, cuenta_solicitada, mozo_solicitado, last_activity_at
+            FROM mesa_estado_operativo
+            """
+        )
+        return {
+            int(row["id_mesa"]): {
+                "ocupada": bool(row["ocupada"]),
+                "cuenta_solicitada": bool(row["cuenta_solicitada"]),
+                "mozo_solicitado": bool(row["mozo_solicitado"]),
+                "last_activity_at": row["last_activity_at"],
+            }
+            for row in cursor.fetchall()
+        }
+    except Exception:
+        return {}
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
+def persist_mesa_session_snapshot(key: str, session: dict):
+    connection = get_db_connection()
+    if not connection:
+        return
+    try:
+        cursor = connection.cursor(dictionary=True)
+        if not tabla_existe(cursor, "mesa_sesiones_snapshot"):
+            return
+        cursor.execute(
+            """
+            INSERT INTO mesa_sesiones_snapshot
+                (session_key, numero_mesa, host_client_id, participantes, carrito_json,
+                 observaciones, created_at, last_activity_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                host_client_id = VALUES(host_client_id),
+                participantes = VALUES(participantes),
+                carrito_json = VALUES(carrito_json),
+                observaciones = VALUES(observaciones),
+                last_activity_at = VALUES(last_activity_at)
+            """,
+            (
+                key,
+                int(session["mesa"]),
+                session.get("host_client_id"),
+                len(session.get("clients") or {}),
+                json.dumps(session.get("carrito") or [], ensure_ascii=False),
+                session.get("observaciones") or "",
+                session.get("created_at"),
+                session.get("last_activity_at"),
+            )
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
+def delete_mesa_session_snapshot(key: str):
+    connection = get_db_connection()
+    if not connection:
+        return
+    try:
+        cursor = connection.cursor(dictionary=True)
+        if not tabla_existe(cursor, "mesa_sesiones_snapshot"):
+            return
+        cursor.execute("DELETE FROM mesa_sesiones_snapshot WHERE session_key = %s", (key,))
+        connection.commit()
+    except Exception:
+        connection.rollback()
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
+def load_mesa_session_snapshots() -> list[dict]:
+    connection = get_db_connection()
+    if not connection:
+        return []
+    try:
+        cursor = connection.cursor(dictionary=True)
+        if not tabla_existe(cursor, "mesa_sesiones_snapshot"):
+            return []
+        cursor.execute(
+            """
+            SELECT numero_mesa, participantes, carrito_json, observaciones,
+                   created_at, last_activity_at
+            FROM mesa_sesiones_snapshot
+            """
+        )
+        now = datetime.now(timezone.utc)
+        result = []
+        for row in cursor.fetchall():
+            created_at = row["created_at"]
+            last_activity_at = row["last_activity_at"] or created_at
+            if created_at and created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if last_activity_at and last_activity_at.tzinfo is None:
+                last_activity_at = last_activity_at.replace(tzinfo=timezone.utc)
+            carrito = json.loads(row["carrito_json"] or "[]")
+            result.append({
+                "mesa": int(row["numero_mesa"]),
+                "participantes": int(row["participantes"] or 0),
+                "items_carrito": sum(int(item.get("cantidad") or 0) for item in carrito),
+                "total_carrito": sum(
+                    float(item.get("precio") or 0) * int(item.get("cantidad") or 0)
+                    for item in carrito
+                ),
+                "observaciones": row.get("observaciones") or "",
+                "created_at": created_at.isoformat() if created_at else "",
+                "last_activity_at": last_activity_at.isoformat() if last_activity_at else "",
+                "minutos_desde_scan": int((now - created_at).total_seconds() // 60) if created_at else 0,
+                "minutos_sin_actividad": int((now - last_activity_at).total_seconds() // 60) if last_activity_at else 0,
+            })
+        return result
+    except Exception:
+        return []
+    finally:
+        cursor.close()
+        close_db_connection(connection)
 
 
 class CocinaConnectionManager:
@@ -78,12 +280,14 @@ class MesaOperationalState:
         )
         state.update(updates)
         state["last_activity_at"] = datetime.now(timezone.utc)
+        persist_mesa_operational_state(int(id_mesa), state)
 
     def release(self, id_mesa: int):
         self.states.pop(int(id_mesa), None)
+        release_mesa_operational_state(int(id_mesa))
 
     def clear_service(self, id_mesa: int, service: str):
-        state = self.states.get(int(id_mesa))
+        state = self.states.get(int(id_mesa)) or load_mesa_operational_snapshot().get(int(id_mesa))
         if not state:
             return
         if service == "mozo":
@@ -91,9 +295,12 @@ class MesaOperationalState:
         elif service == "cuenta":
             state["cuenta_solicitada"] = False
         state["last_activity_at"] = datetime.now(timezone.utc)
+        persist_mesa_operational_state(int(id_mesa), state)
 
     def snapshot(self) -> dict[int, dict]:
-        return self.states.copy()
+        persisted = load_mesa_operational_snapshot()
+        persisted.update(self.states)
+        return persisted.copy()
 
 
 mesa_operational_state = MesaOperationalState()
@@ -132,7 +339,11 @@ class MesaSessionManager:
                 "minutos_desde_scan": int((now - created_at).total_seconds() // 60),
                 "minutos_sin_actividad": int((now - last_activity_at).total_seconds() // 60),
             })
-        return snapshot
+        persisted = load_mesa_session_snapshots()
+        memory_tables = {int(item["mesa"]): item for item in snapshot}
+        for item in persisted:
+            memory_tables.setdefault(int(item["mesa"]), item)
+        return list(memory_tables.values())
 
     def _snapshot(self, key: str, event: str = "snapshot") -> dict:
         session = self.sessions[key]
@@ -178,6 +389,7 @@ class MesaSessionManager:
             "websocket": websocket,
         }
         session["last_activity_at"] = datetime.now(timezone.utc)
+        persist_mesa_session_snapshot(key, session)
         await websocket.send_json(self._snapshot(key))
         await self.broadcast(key, self._snapshot(key, "participantes_actualizados"), exclude=client_id)
 
@@ -191,6 +403,9 @@ class MesaSessionManager:
             session["host_client_id"] = next(iter(session["clients"].keys()))
         if not session["clients"] and not session["carrito"]:
             self.sessions.pop(key, None)
+            delete_mesa_session_snapshot(key)
+        else:
+            persist_mesa_session_snapshot(key, session)
 
     async def broadcast(self, key: str, message: dict, exclude: str | None = None):
         session = self.sessions.get(key)
@@ -216,6 +431,7 @@ class MesaSessionManager:
         session["carrito"] = carrito
         session["observaciones"] = observaciones or ""
         session["last_activity_at"] = datetime.now(timezone.utc)
+        persist_mesa_session_snapshot(key, session)
         await self.broadcast(key, self._snapshot(key, "carrito_actualizado"))
 
     async def clear_cart(self, key: str):
@@ -225,7 +441,18 @@ class MesaSessionManager:
         session["carrito"] = []
         session["observaciones"] = ""
         session["last_activity_at"] = datetime.now(timezone.utc)
+        persist_mesa_session_snapshot(key, session)
         await self.broadcast(key, self._snapshot(key, "pedido_confirmado"))
+
+    def force_release(self, numero_mesa: int):
+        """Elimina todas las sesiones activas de una mesa al cerrar la cuenta."""
+        keys_to_remove = [
+            key for key, session in self.sessions.items()
+            if int(session.get("mesa", -1)) == int(numero_mesa)
+        ]
+        for key in keys_to_remove:
+            self.sessions.pop(key, None)
+            delete_mesa_session_snapshot(key)
 
 
 mesa_sessions = MesaSessionManager()
@@ -257,10 +484,19 @@ def mesas_tiene_qr_token(cursor) -> bool:
     return _col_cache[key]
 
 
+def mesas_tiene_columna(cursor, columna: str) -> bool:
+    key = f"mesas.{columna}"
+    if key not in _col_cache:
+        cursor.execute("SHOW COLUMNS FROM mesas LIKE %s", (columna,))
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
+
+
 def obtener_mesa_por_numero(cursor, numero_mesa: int):
     tiene_qr_token = mesas_tiene_qr_token(cursor)
     campos_mesa = "id_mesa, numero, qr_token" if tiene_qr_token else "id_mesa, numero, NULL AS qr_token"
-    query_mesa = "SELECT " + campos_mesa + " FROM mesas WHERE numero = %s AND activa = TRUE"
+    filtro_activa = " AND activa = TRUE" if mesas_tiene_columna(cursor, "activa") else ""
+    query_mesa = "SELECT " + campos_mesa + " FROM mesas WHERE numero = %s" + filtro_activa
     cursor.execute(query_mesa, (numero_mesa,))
     return cursor.fetchone(), tiene_qr_token
 
@@ -618,6 +854,7 @@ def get_pedido(
                 detail="Pedido no encontrado"
             )
 
+        campo_subcategoria = ", p.subcategoria" if productos_tiene_columna(cursor, "subcategoria") else ", NULL AS subcategoria"
         cursor.execute(
             """
             SELECT
@@ -625,8 +862,8 @@ def get_pedido(
                 p.nombre,
                 dp.cantidad,
                 dp.subtotal,
-                c.nombre AS categoria,
-                p.subcategoria
+                c.nombre AS categoria
+                """ + campo_subcategoria + """
             FROM detalle_pedidos dp
             JOIN productos p ON dp.id_producto = p.id_producto
             LEFT JOIN categorias c ON c.id_categoria = p.id_categoria

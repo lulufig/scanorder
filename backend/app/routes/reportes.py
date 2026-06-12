@@ -75,13 +75,14 @@ def reporte_ventas(
         )
     try:
         cursor = connection.cursor(dictionary=True)
+        fecha_venta = fecha_venta_sql(cursor)
 
         cursor.execute(
             f"""
             SELECT COUNT(*) AS cantidad_pedidos, COALESCE(SUM(total), 0) AS total_ventas
             FROM pedidos
             WHERE estado IN ({ESTADOS_VENTA_SQL})
-              AND DATE(created_at) BETWEEN %s AND %s
+              AND DATE({fecha_venta}) BETWEEN %s AND %s
             """,
             (fecha_inicio, fecha_fin)
         )
@@ -96,7 +97,7 @@ def reporte_ventas(
             JOIN productos p  ON dp.id_producto = p.id_producto
             JOIN pedidos    pe ON dp.id_pedido   = pe.id_pedido
             WHERE pe.estado IN ({ESTADOS_VENTA_SQL})
-              AND DATE(pe.created_at) BETWEEN %s AND %s
+              AND DATE({fecha_venta.replace("created_at", "pe.created_at").replace("confirmado_at", "pe.confirmado_at")}) BETWEEN %s AND %s
             GROUP BY p.id_producto, p.nombre
             ORDER BY total_vendido DESC
             LIMIT 10
@@ -109,7 +110,7 @@ def reporte_ventas(
             """
             SELECT estado, COUNT(*) AS cantidad, COALESCE(SUM(total), 0) AS total
             FROM pedidos
-            WHERE DATE(created_at) BETWEEN %s AND %s
+            WHERE DATE({fecha_venta}) BETWEEN %s AND %s
             GROUP BY estado
             ORDER BY FIELD(estado, 'pendiente', 'confirmado', 'en_preparacion', 'listo', 'entregado', 'cancelado')
             """,
@@ -266,12 +267,12 @@ def dashboard_metricas(current_user: dict = Depends(require_role("admin"))):
         estados = {row["estado"]: row["cantidad"] for row in cursor.fetchall()}
 
         cursor.execute(
-            """
+            f"""
             SELECT p.nombre, SUM(dp.cantidad) AS cantidad
             FROM detalle_pedidos dp
             JOIN productos p ON p.id_producto = dp.id_producto
             JOIN pedidos pe ON pe.id_pedido = dp.id_pedido
-            WHERE DATE(pe.created_at) = CURDATE()
+            WHERE DATE({fecha_venta.replace("created_at", "pe.created_at").replace("confirmado_at", "pe.confirmado_at")}) = CURDATE()
             GROUP BY p.id_producto, p.nombre
             ORDER BY cantidad DESC
             LIMIT 1

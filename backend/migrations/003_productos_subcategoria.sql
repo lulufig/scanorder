@@ -1,6 +1,6 @@
 -- Permite ubicar cada producto manualmente dentro de una subseccion del menu.
 ALTER TABLE productos
-ADD COLUMN subcategoria VARCHAR(100) NULL AFTER id_categoria;
+ADD COLUMN IF NOT EXISTS subcategoria VARCHAR(100) NULL AFTER id_categoria;
 
 UPDATE productos
 SET subcategoria = CASE

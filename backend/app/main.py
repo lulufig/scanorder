@@ -29,7 +29,7 @@ def get_cors_origins() -> list[str]:
     menu_url = os.getenv("MENU_URL", "")
     if menu_url:
         parsed = urlparse(menu_url)
-        menu_origin = f"{parsed.scheme}://{parsed.netloc}"
+        menu_origin = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
         if menu_origin and menu_origin not in origins:
             origins.append(menu_origin)
 
@@ -40,7 +40,7 @@ def get_cors_origins() -> list[str]:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_cors_origins(),
-    allow_origin_regex=os.getenv("CORS_ORIGIN_REGEX", r"https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:\d+)?"),
+    allow_origin_regex=os.getenv("CORS_ORIGIN_REGEX") or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

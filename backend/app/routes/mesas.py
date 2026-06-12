@@ -28,6 +28,25 @@ def mesa_tiene_columna(cursor, columna: str) -> bool:
     return _col_cache[key]
 
 
+def tabla_tiene_columna(cursor, tabla: str, columna: str) -> bool:
+    tablas_permitidas = {"mesas", "pedidos", "productos", "categorias", "detalle_pedidos"}
+    if tabla not in tablas_permitidas:
+        raise ValueError("Tabla no permitida")
+    key = f"{tabla}.{columna}"
+    if key not in _col_cache:
+        cursor.execute("SHOW COLUMNS FROM " + tabla + " LIKE %s", (columna,))
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
+
+
+def tabla_existe(cursor, tabla: str) -> bool:
+    key = f"table.{tabla}"
+    if key not in _col_cache:
+        cursor.execute("SHOW TABLES LIKE %s", (tabla,))
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
+
+
 @router.post("/", response_model=MesaResponse, status_code=status.HTTP_201_CREATED)
 def create_mesa(
     mesa: MesaCreate,
@@ -134,8 +153,9 @@ def mapa_mesas(current_user: dict = Depends(require_role("admin"))):
 
     try:
         cursor = connection.cursor(dictionary=True)
+        filtro_activa = "WHERE m.activa = TRUE" if mesa_tiene_columna(cursor, "activa") else ""
         cursor.execute(
-            """
+            f"""
             SELECT
               m.id_mesa,
               m.numero,
@@ -173,7 +193,7 @@ def mapa_mesas(current_user: dict = Depends(require_role("admin"))):
               WHERE DATE(created_at) = CURDATE()
               GROUP BY id_mesa
             ) hoy ON hoy.id_mesa = m.id_mesa
-            WHERE m.activa = TRUE
+            {filtro_activa}
             ORDER BY m.numero ASC
             """
         )
@@ -282,6 +302,7 @@ def detalle_operacion_mesa(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
 
         campos_observaciones = ", observaciones" if pedidos_tiene_columna(cursor, "observaciones") else ", NULL AS observaciones"
+        campo_subcategoria = ", p.subcategoria" if tabla_tiene_columna(cursor, "productos", "subcategoria") else ", NULL AS subcategoria"
         cursor.execute(
             """
             SELECT id_pedido, id_mesa, estado, total, created_at AS fecha,
@@ -306,8 +327,8 @@ def detalle_operacion_mesa(
                     p.nombre,
                     dp.cantidad,
                     dp.subtotal,
-                    c.nombre AS categoria,
-                    p.subcategoria
+                    c.nombre AS categoria
+                """ + campo_subcategoria + """
                 FROM detalle_pedidos dp
                 JOIN productos p ON p.id_producto = dp.id_producto
                 LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
@@ -370,24 +391,41 @@ def cuenta_mesa(
         if not mesa:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
 
-        cursor.execute(
-            """
-            SELECT p.id_pedido, p.estado, p.total,
-                   DATE_FORMAT(p.created_at, '%H:%i') AS fecha
-            FROM pedidos p
-            LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido
-            WHERE p.id_mesa = %s
-              AND p.estado NOT IN ('cancelado')
-              AND cp.id_pedido IS NULL
-            ORDER BY p.created_at ASC
-            """,
-            (id_mesa,)
-        )
+        if tabla_existe(cursor, "cierre_pedidos"):
+            cursor.execute(
+                """
+                SELECT p.id_pedido, p.estado, p.total,
+                       DATE_FORMAT(p.created_at, '%H:%i') AS fecha
+                FROM pedidos p
+                LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido
+                WHERE p.id_mesa = %s
+                  AND p.estado NOT IN ('cancelado')
+                  AND cp.id_pedido IS NULL
+                ORDER BY p.created_at ASC
+                """,
+                (id_mesa,)
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT id_pedido, estado, total,
+                       DATE_FORMAT(created_at, '%H:%i') AS fecha
+                FROM pedidos
+                WHERE id_mesa = %s
+                  AND estado NOT IN ('cancelado')
+                  AND DATE(created_at) = CURDATE()
+                ORDER BY created_at ASC
+                """,
+                (id_mesa,)
+            )
         pedidos_raw = cursor.fetchall()
 
         pedidos = []
         total_consumido = 0.0
         tiene_pendientes = False
+
+        tiene_subcategoria = tabla_tiene_columna(cursor, "productos", "subcategoria")
+        campo_sub = ", p.subcategoria" if tiene_subcategoria else ", NULL AS subcategoria"
 
         for pedido in pedidos_raw:
             cursor.execute(
@@ -398,8 +436,8 @@ def cuenta_mesa(
                     dp.cantidad,
                     dp.precio_unitario,
                     dp.subtotal,
-                    c.nombre AS categoria,
-                    p.subcategoria
+                    c.nombre AS categoria
+                """ + campo_sub + """
                 FROM detalle_pedidos dp
                 JOIN productos p ON p.id_producto = dp.id_producto
                 LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
@@ -490,79 +528,98 @@ def cerrar_mesa(
         if not mesa:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
 
-        connection.start_transaction()
-        try:
-            # Bloqueo de filas: el segundo admin queda esperando hasta que el primero commitee
+        if not tabla_existe(cursor, "cierres_mesa") or not tabla_existe(cursor, "cierre_pedidos"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Ejecutá la migración 005_cierres_mesa.sql para habilitar el registro de cobros"
+            )
+
+        # Con autocommit=False (default de mysql-connector) ya estamos en una
+        # transacción implícita. FOR UPDATE adquiere el lock de fila hasta el COMMIT.
+        cursor.execute(
+            """
+            SELECT p.id_pedido, p.total
+            FROM pedidos p
+            LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido
+            WHERE p.id_mesa = %s
+              AND p.estado NOT IN ('cancelado')
+              AND cp.id_pedido IS NULL
+            FOR UPDATE
+            """,
+            (id_mesa,)
+        )
+        pedidos = cursor.fetchall()
+
+        if not pedidos:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No hay pedidos pendientes de cobro en esta mesa"
+            )
+
+        total_consumido = sum(float(p["total"] or 0) for p in pedidos)
+        monto_cobrado = float(body.monto_cobrado)
+        if monto_cobrado < total_consumido:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "El monto cobrado no puede ser menor al total consumido "
+                    f"(${total_consumido:.2f})"
+                )
+            )
+        vuelto = max(0.0, round(monto_cobrado - total_consumido, 2))
+        id_usuario = current_user.get("user_id")
+
+        cursor.execute(
+            """
+            INSERT INTO cierres_mesa
+                (id_mesa, numero_mesa, metodo_pago, total_consumido,
+                 monto_cobrado, vuelto, id_usuario_cierre, observaciones)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                id_mesa,
+                int(mesa["numero"]),
+                body.metodo_pago,
+                total_consumido,
+                monto_cobrado,
+                vuelto,
+                id_usuario,
+                body.observaciones or None,
+            )
+        )
+        id_cierre = cursor.lastrowid
+        pedidos_ids = [p["id_pedido"] for p in pedidos]
+
+        for pedido in pedidos:
             cursor.execute(
                 """
-                SELECT p.id_pedido, p.total
-                FROM pedidos p
-                LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido
-                WHERE p.id_mesa = %s
-                  AND p.estado NOT IN ('cancelado')
-                  AND cp.id_pedido IS NULL
-                FOR UPDATE
+                INSERT INTO cierre_pedidos (id_cierre, id_pedido, total_pedido)
+                VALUES (%s, %s, %s)
                 """,
-                (id_mesa,)
+                (id_cierre, pedido["id_pedido"], float(pedido["total"] or 0))
             )
-            pedidos = cursor.fetchall()
 
-            if not pedidos:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="No hay pedidos pendientes de cobro en esta mesa"
-                )
+        # Marcar todos los pedidos cobrados como 'entregado' para que el mapa
+        # los excluya del conteo pedidos_activos y libere visualmente la mesa.
+        placeholders = ", ".join(["%s"] * len(pedidos_ids))
+        cursor.execute(
+            f"UPDATE pedidos SET estado = 'entregado', entregado_at = COALESCE(entregado_at, NOW()) "
+            f"WHERE id_pedido IN ({placeholders}) AND estado NOT IN ('entregado', 'cancelado')",
+            pedidos_ids
+        )
 
-            total_consumido = sum(float(p["total"] or 0) for p in pedidos)
-            monto_cobrado = float(body.monto_cobrado)
-            vuelto = max(0.0, round(monto_cobrado - total_consumido, 2))
-            id_usuario = current_user.get("user_id")
+        connection.commit()
 
-            cursor.execute(
-                """
-                INSERT INTO cierres_mesa
-                    (id_mesa, numero_mesa, metodo_pago, total_consumido,
-                     monto_cobrado, vuelto, id_usuario_cierre, observaciones)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    id_mesa,
-                    int(mesa["numero"]),
-                    body.metodo_pago,
-                    total_consumido,
-                    monto_cobrado,
-                    vuelto,
-                    id_usuario,
-                    body.observaciones or None,
-                )
-            )
-            id_cierre = cursor.lastrowid
+        # Obtenemos el created_at después del commit para que mysql-connector
+        # devuelva un datetime nativo de Python, evitando conflictos con %s en DATE_FORMAT.
+        cursor.execute(
+            "SELECT created_at FROM cierres_mesa WHERE id_cierre = %s",
+            (id_cierre,)
+        )
+        cierre_row = cursor.fetchone()
 
-            for pedido in pedidos:
-                cursor.execute(
-                    """
-                    INSERT INTO cierre_pedidos (id_cierre, id_pedido, total_pedido)
-                    VALUES (%s, %s, %s)
-                    """,
-                    (id_cierre, pedido["id_pedido"], float(pedido["total"] or 0))
-                )
-
-            cursor.execute(
-                "SELECT DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') AS created_at FROM cierres_mesa WHERE id_cierre = %s",
-                (id_cierre,)
-            )
-            cierre_row = cursor.fetchone()
-            connection.commit()
-
-        except HTTPException:
-            connection.rollback()
-            raise
-        except Exception:
-            connection.rollback()
-            raise
-
-        # Liberar estado en memoria (post-commit, no crítico para integridad)
         mesa_operational_state.release(id_mesa)
+        mesa_sessions.force_release(int(mesa["numero"]))
 
         return {
             "id_cierre": id_cierre,
@@ -573,12 +630,14 @@ def cerrar_mesa(
             "monto_cobrado": monto_cobrado,
             "vuelto": vuelto,
             "pedidos_incluidos": len(pedidos),
-            "created_at": cierre_row["created_at"] if cierre_row else "",
+            "created_at": str(cierre_row["created_at"]) if cierre_row and cierre_row["created_at"] else "",
         }
 
     except HTTPException:
+        connection.rollback()
         raise
     except Exception as e:
+        connection.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al cerrar mesa: {str(e)}"
@@ -594,7 +653,24 @@ def liberar_mesa(
     current_user: dict = Depends(require_role("admin"))
 ):
     """Fuerza la liberación operativa de una mesa sin registrar cobro."""
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos"
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT numero FROM mesas WHERE id_mesa = %s", (id_mesa,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
+        numero = int(row["numero"])
+    finally:
+        cursor.close()
+        close_db_connection(connection)
     mesa_operational_state.release(id_mesa)
+    mesa_sessions.force_release(numero)
     return {"message": "Mesa liberada", "id_mesa": id_mesa}
 
 
@@ -604,6 +680,20 @@ def atender_solicitud_mozo(
     current_user: dict = Depends(require_role("admin"))
 ):
     """Marca como atendida la solicitud de mozo de una mesa."""
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos"
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT id_mesa FROM mesas WHERE id_mesa = %s", (id_mesa,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
+    finally:
+        cursor.close()
+        close_db_connection(connection)
     mesa_operational_state.clear_service(id_mesa, "mozo")
     return {"message": "Solicitud de mozo atendida", "id_mesa": id_mesa}
 
