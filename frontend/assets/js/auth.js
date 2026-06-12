@@ -22,13 +22,16 @@
 
 const TOKEN_KEY = "scanorder_token";
 const USER_KEY  = "scanorder_user";
+const SESSION_STORE = window.sessionStorage;
+const LEGACY_STORE = window.localStorage;
 
 /**
- * Guarda el token JWT en localStorage.
+ * Guarda el token JWT en sessionStorage.
  * @param {string} token
  */
 function saveToken(token) {
-  localStorage.setItem(TOKEN_KEY, token);
+  SESSION_STORE.setItem(TOKEN_KEY, token);
+  LEGACY_STORE.removeItem(TOKEN_KEY);
 }
 
 /**
@@ -36,16 +39,22 @@ function saveToken(token) {
  * @returns {string|null}
  */
 function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  const token = SESSION_STORE.getItem(TOKEN_KEY) || LEGACY_STORE.getItem(TOKEN_KEY);
+  if (token && !SESSION_STORE.getItem(TOKEN_KEY)) {
+    SESSION_STORE.setItem(TOKEN_KEY, token);
+    LEGACY_STORE.removeItem(TOKEN_KEY);
+  }
+  return token;
 }
 
 /**
- * Guarda el objeto user que devuelve el backend en /auth/login.
+ * Guarda en sessionStorage el objeto user que devuelve el backend en /auth/login.
  * Estructura: { id_usuario, nombre, email, rol, activo }
  * @param {Object} user
  */
 function saveUser(user) {
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  SESSION_STORE.setItem(USER_KEY, JSON.stringify(user));
+  LEGACY_STORE.removeItem(USER_KEY);
 }
 
 /**
@@ -53,7 +62,11 @@ function saveUser(user) {
  * @returns {{ id_usuario, nombre, email, rol, activo } | null}
  */
 function getUser() {
-  const raw = localStorage.getItem(USER_KEY);
+  const raw = SESSION_STORE.getItem(USER_KEY) || LEGACY_STORE.getItem(USER_KEY);
+  if (raw && !SESSION_STORE.getItem(USER_KEY)) {
+    SESSION_STORE.setItem(USER_KEY, raw);
+    LEGACY_STORE.removeItem(USER_KEY);
+  }
   return raw ? JSON.parse(raw) : null;
 }
 
@@ -80,8 +93,10 @@ function getUserNombre() {
  * y redirige al login.
  */
 function logout() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+  SESSION_STORE.removeItem(TOKEN_KEY);
+  SESSION_STORE.removeItem(USER_KEY);
+  LEGACY_STORE.removeItem(TOKEN_KEY);
+  LEGACY_STORE.removeItem(USER_KEY);
   window.location.href = ROUTES.login;
 }
 
@@ -107,12 +122,14 @@ function isLoggedIn() {
 function requireAuth(requiredRole = null) {
   if (!isLoggedIn()) {
     window.location.href = ROUTES.login;
-    return;
+    return false;
   }
   if (requiredRole && getUserRole() !== requiredRole) {
-    // Redirige al panel correcto según el rol real del usuario
     const role = getUserRole();
-    if (role === ROLES.ADMIN)  window.location.href = ROUTES.admin;
-    if (role === ROLES.COCINA) window.location.href = ROUTES.cocina;
+    if (role === ROLES.ADMIN)       window.location.href = ROUTES.admin;
+    else if (role === ROLES.COCINA) window.location.href = ROUTES.cocina;
+    else                            window.location.href = ROUTES.login;
+    return false;
   }
+  return true;
 }
