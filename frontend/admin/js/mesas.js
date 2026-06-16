@@ -18,6 +18,8 @@
     let socketMesas     = null;
     let cuentaDataActual = null;
     let metodoPagoSeleccionado = "efectivo";
+    let qrPreviewUrls = new Map();
+    let qrModalObjectUrl = null;
 
     // ── INICIALIZACIÓN ──────────────────────────────────────────
     document.addEventListener("DOMContentLoaded", () => {
@@ -299,7 +301,6 @@
             : ""
           }
           <button class="btn-cobrar" type="button" onclick="cobrarMesa(${mesa.id_mesa})">Cobrar mesa</button>
-          <button class="btn-ghost btn-liberar-forzado" type="button" onclick="liberarMesa(${mesa.id_mesa})">Forzar liberar</button>
         </div>
         <div class="mesa-pedidos-list">
           ${pedidos.length
@@ -650,6 +651,7 @@
     function renderMesas(mesas) {
       const container = document.getElementById("mesas-grid-container");
       const label     = document.getElementById("mesas-count-label");
+      limpiarPreviewQRs();
 
       label.textContent = mesas.length === 1 ? "1 mesa" : `${mesas.length} mesas`;
 
@@ -667,7 +669,6 @@
       const cards = mesas.map((mesa, i) => {
         // La URL del QR la arma el backend como: /mesas/{id}/qr
         const qrEndpoint = `/mesas/${mesa.id_mesa}/qr`;
-        const qrSrc      = `${API_URL}${qrEndpoint}?v=${Date.now()}`;
 
         return `
           <div class="mesa-card" style="animation-delay: ${i * 0.05}s">
@@ -675,7 +676,9 @@
             <div class="mesa-numero">${escapeHtml(String(mesa.numero))}</div>
             ${mesa.qr_url
               ? `<img
-                   src="${escapeHtml(qrSrc)}"
+                   id="qr-preview-${mesa.id_mesa}"
+                   data-qr-endpoint="${escapeHtml(qrEndpoint)}"
+                   src=""
                    class="mesa-qr-preview"
                    alt="QR Mesa ${mesa.numero}"
                    onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
@@ -683,7 +686,7 @@
               : `<div class="mesa-qr-placeholder">QR</div>`
             }
             <div class="mesa-actions">
-              <button class="btn-ver-qr" onclick="verQR(${mesa.id_mesa}, ${mesa.numero}, '${escapeHtml(qrSrc)}')">
+              <button class="btn-ver-qr" onclick="verQR(${mesa.id_mesa}, ${mesa.numero}, '${escapeHtml(qrEndpoint)}')">
                 Ver QR
               </button>
               <button class="btn-dl-qr" onclick="descargarQR('${escapeHtml(qrEndpoint)}', ${mesa.numero})">
@@ -694,6 +697,28 @@
       }).join("");
 
       container.innerHTML = `<div class="mesas-grid">${cards}</div>`;
+      cargarPreviewsQR();
+    }
+
+    function limpiarPreviewQRs() {
+      qrPreviewUrls.forEach(url => URL.revokeObjectURL(url));
+      qrPreviewUrls = new Map();
+    }
+
+    async function cargarPreviewsQR() {
+      const imagenes = document.querySelectorAll("[data-qr-endpoint]");
+      for (const img of imagenes) {
+        const endpoint = img.dataset.qrEndpoint;
+        if (!endpoint) continue;
+        try {
+          const objectUrl = await fetchFileObjectUrl(endpoint);
+          qrPreviewUrls.set(img.id, objectUrl);
+          img.src = objectUrl;
+        } catch {
+          img.style.display = "none";
+          if (img.nextElementSibling) img.nextElementSibling.style.display = "flex";
+        }
+      }
     }
 
     // ── CREAR MESA ──────────────────────────────────────────────
@@ -732,21 +757,30 @@
     }
 
     // ── VER QR EN MODAL ─────────────────────────────────────────
-    function verQR(idMesa, numero, qrSrc) {
-      mesaQRActual = { idMesa, numero, qrSrc };
+    async function verQR(idMesa, numero, qrEndpoint) {
+      mesaQRActual = { idMesa, numero, qrEndpoint };
 
       document.getElementById("modal-qr-title").textContent = `QR — Mesa ${numero}`;
-      document.getElementById("modal-qr-img").src            = qrSrc;
+      const img = document.getElementById("modal-qr-img");
+      img.removeAttribute("src");
       document.getElementById("modal-qr-url").textContent    =
         `${API_URL}/mesas/${idMesa}/qr`;
 
       document.getElementById("modal-overlay").classList.add("open");
+
+      try {
+        if (qrModalObjectUrl) URL.revokeObjectURL(qrModalObjectUrl);
+        qrModalObjectUrl = await fetchFileObjectUrl(qrEndpoint);
+        img.src = qrModalObjectUrl;
+      } catch (error) {
+        mostrarToast("No se pudo cargar el QR: " + error.message, "error");
+      }
     }
 
     // ── DESCARGAR QR DESDE MODAL ────────────────────────────────
     async function descargarQRModal() {
       if (!mesaQRActual) return;
-      await descargarQR(`/mesas/${mesaQRActual.idMesa}/qr`, mesaQRActual.numero);
+      await descargarQR(mesaQRActual.qrEndpoint, mesaQRActual.numero);
     }
 
     // ── DESCARGAR QR DIRECTO DESDE CARD ─────────────────────────
@@ -763,6 +797,10 @@
     // ── HELPERS MODAL ───────────────────────────────────────────
     function cerrarModal() {
       document.getElementById("modal-overlay").classList.remove("open");
+      if (qrModalObjectUrl) {
+        URL.revokeObjectURL(qrModalObjectUrl);
+        qrModalObjectUrl = null;
+      }
       mesaQRActual = null;
     }
 
@@ -780,6 +818,7 @@
 
     window.addEventListener("beforeunload", () => {
       if (mapaTimer) clearInterval(mapaTimer);
+      limpiarPreviewQRs();
     });
 
     // ── TOAST ───────────────────────────────────────────────────

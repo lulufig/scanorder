@@ -37,18 +37,9 @@
     // ── CARGAR PEDIDOS ───────────────────────────────────────────
     async function cargarPedidos() {
       try {
-        // GET /pedidos — devuelve todos los pedidos activos
-        // El backend filtra por estado si se pasa ?estado=pendiente
-        // Traemos todos para mostrar las columnas de cocina
-        const lista = await fetchAPI("/pedidos");
-        const base  = Array.isArray(lista) ? lista : [];
-
-        // GET /pedidos/{id} para cada pedido — trae el detalle de productos
-        const conDetalle = (await Promise.all(
-          base.map(p =>
-            fetchAPI(`/pedidos/${p.id_pedido}`).catch(() => p)
-          )
-        )).filter(Boolean); // descarta cualquier resultado null/undefined
+        // GET /pedidos/activos-completos — devuelve pedidos activos con detalle
+        const lista = await fetchAPI("/pedidos/activos-completos");
+        const conDetalle = Array.isArray(lista) ? lista : [];
 
         // Separar por estado
         pedidos.pendiente      = conDetalle.filter(p => p.estado === "pendiente");

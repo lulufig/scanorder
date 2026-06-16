@@ -3,7 +3,6 @@ load_dotenv()  # debe ejecutarse antes de cualquier import que lea variables de 
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 import os
 from pathlib import Path
 from urllib.parse import urlparse
@@ -53,10 +52,10 @@ app.include_router(mesas.router)
 app.include_router(pedidos.router)
 app.include_router(reportes.router)
 
-# Servir archivos estáticos (QR images)
+# Los QR se entregan por /mesas/{id}/qr con autenticación de admin.
+# No se monta /static para evitar exponer tokens embebidos en imágenes QR.
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Endpoints base
 @app.get("/")

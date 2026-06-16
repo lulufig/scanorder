@@ -4,7 +4,8 @@ import socket
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
-# Ruta absoluta a backend/static/qr/ derivada desde la ubicación de este archivo
+# Ruta absoluta a backend/static/qr/ derivada desde la ubicación de este archivo.
+# Las imágenes se sirven por /mesas/{id}/qr con autenticación de admin.
 QR_DIR = Path(__file__).resolve().parent.parent.parent / "static" / "qr"
 
 
@@ -20,6 +21,9 @@ def get_lan_ip() -> str | None:
 
 def get_menu_url() -> str:
     menu_url = os.getenv("MENU_URL", "http://localhost:5500/frontend/cliente/menu.html")
+    if os.getenv("AUTO_LAN_IP", "false").lower() not in {"1", "true", "yes"}:
+        return menu_url
+
     parsed = urlparse(menu_url)
     lan_ip = get_lan_ip()
 
@@ -36,7 +40,7 @@ def generate_qr(mesa_id: int, mesa_numero: int, token: str | None = None) -> str
     """
     Genera un código QR para la mesa indicada y lo guarda como PNG.
     Crea el directorio si no existe.
-    Retorna la URL relativa accesible desde el frontend: /static/qr/mesa_{id}.png
+    Retorna una referencia interna al archivo QR generado.
     """
     QR_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -51,4 +55,4 @@ def generate_qr(mesa_id: int, mesa_numero: int, token: str | None = None) -> str
     ruta_archivo = QR_DIR / nombre_archivo
     imagen_qr.save(str(ruta_archivo))
 
-    return f"/static/qr/{nombre_archivo}"
+    return f"/mesas/{mesa_id}/qr"

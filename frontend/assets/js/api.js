@@ -103,6 +103,31 @@ async function downloadFile(endpoint, filename) {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Obtiene un archivo binario autenticado y devuelve una URL temporal para usar en <img>.
+ *
+ * @param {string} endpoint - Ruta relativa del recurso protegido.
+ * @returns {Promise<string>} URL temporal creada con URL.createObjectURL.
+ */
+async function fetchFileObjectUrl(endpoint) {
+  const token = getToken();
+  const headers = token ? { "Authorization": `Bearer ${token}` } : {};
+
+  let response;
+  try {
+    response = await fetch(`${API_URL}${endpoint}`, { headers });
+  } catch {
+    throw new ApiError("No se pudo cargar el archivo protegido.", 0);
+  }
+
+  if (!response.ok) {
+    throw new ApiError(`Error al cargar el archivo (${response.status})`, response.status);
+  }
+
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+}
+
 // ---- Clase de error personalizada ----
 
 class ApiError extends Error {

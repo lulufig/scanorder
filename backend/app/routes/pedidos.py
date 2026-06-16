@@ -392,6 +392,13 @@ class MesaSessionManager:
         persist_mesa_session_snapshot(key, session)
         await websocket.send_json(self._snapshot(key))
         await self.broadcast(key, self._snapshot(key, "participantes_actualizados"), exclude=client_id)
+        await manager.broadcast({
+            "type": "mesa_sesion_actualizada",
+            "mesa": numero_mesa,
+            "participantes": len(session.get("clients") or {}),
+            "items_carrito": sum(int(item.get("cantidad") or 0) for item in session.get("carrito") or []),
+            "message": f"Mesa {numero_mesa}: sesión colaborativa actualizada",
+        })
 
     def disconnect(self, key: str, client_id: str):
         session = self.sessions.get(key)
@@ -433,6 +440,17 @@ class MesaSessionManager:
         session["last_activity_at"] = datetime.now(timezone.utc)
         persist_mesa_session_snapshot(key, session)
         await self.broadcast(key, self._snapshot(key, "carrito_actualizado"))
+        await manager.broadcast({
+            "type": "mesa_carrito_actualizado",
+            "mesa": session["mesa"],
+            "participantes": len(session.get("clients") or {}),
+            "items_carrito": sum(int(item.get("cantidad") or 0) for item in carrito),
+            "total_carrito": sum(
+                float(item.get("precio") or 0) * int(item.get("cantidad") or 0)
+                for item in carrito
+            ),
+            "message": f"Mesa {session['mesa']}: carrito actualizado",
+        })
 
     async def clear_cart(self, key: str):
         session = self.sessions.get(key)
@@ -443,6 +461,14 @@ class MesaSessionManager:
         session["last_activity_at"] = datetime.now(timezone.utc)
         persist_mesa_session_snapshot(key, session)
         await self.broadcast(key, self._snapshot(key, "pedido_confirmado"))
+        await manager.broadcast({
+            "type": "mesa_carrito_limpiado",
+            "mesa": session["mesa"],
+            "participantes": len(session.get("clients") or {}),
+            "items_carrito": 0,
+            "total_carrito": 0,
+            "message": f"Mesa {session['mesa']}: carrito limpiado",
+        })
 
     def force_release(self, numero_mesa: int):
         """Elimina todas las sesiones activas de una mesa al cerrar la cuenta."""
@@ -572,6 +598,11 @@ async def websocket_mesa(
                 session_key,
                 mesa_sessions._snapshot(session_key, "participantes_actualizados")
             )
+        notificar_cocina({
+            "type": "mesa_sesion_actualizada",
+            "mesa": mesa,
+            "message": f"Mesa {mesa}: participantes actualizados",
+        })
 
 
 @router.post("/", response_model=PedidoResponse, status_code=status.HTTP_201_CREATED)
@@ -608,14 +639,6 @@ def create_pedido(pedido: PedidoCreate):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="QR inválido para esta mesa"
-            )
-
-        session_key = mesa_sessions.session_key(pedido.id_mesa, pedido.qr_token)
-        session = mesa_sessions.get_session(session_key)
-        if session and session.get("host_client_id") and pedido.client_id != session["host_client_id"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Solo el anfitrion de la mesa puede confirmar el pedido"
             )
 
         # Validar cada producto y armar los datos del detalle
@@ -817,6 +840,86 @@ def listar_pedidos(
         close_db_connection(connection)
 
 
+@router.get("/activos-completos", response_model=List[PedidoCompletoResponse])
+def listar_pedidos_activos_completos(
+    current_user: dict = Depends(get_current_user)
+):
+    """Lista pedidos activos con detalle en una sola respuesta para cocina/admin."""
+    if current_user.get("rol") not in {"admin", "cocina"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo administración o cocina pueden consultar pedidos activos"
+        )
+
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos"
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+        campos_observaciones = ", observaciones" if pedidos_tiene_columna(cursor, "observaciones") else ", NULL AS observaciones"
+        cursor.execute(
+            "SELECT id_pedido, id_mesa, estado, total, created_at AS fecha"
+            + campos_observaciones
+            + """
+              FROM pedidos
+              WHERE estado IN ('pendiente', 'confirmado', 'en_preparacion', 'listo')
+              ORDER BY created_at DESC
+            """
+        )
+        pedidos = cursor.fetchall()
+        if not pedidos:
+            return []
+
+        ids = [pedido["id_pedido"] for pedido in pedidos]
+        placeholders = ", ".join(["%s"] * len(ids))
+        campo_subcategoria = ", p.subcategoria" if productos_tiene_columna(cursor, "subcategoria") else ", NULL AS subcategoria"
+        cursor.execute(
+            """
+            SELECT
+                dp.id_pedido,
+                dp.id_producto,
+                p.nombre,
+                dp.cantidad,
+                dp.subtotal,
+                c.nombre AS categoria
+                """ + campo_subcategoria + f"""
+            FROM detalle_pedidos dp
+            JOIN productos p ON dp.id_producto = p.id_producto
+            LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
+            WHERE dp.id_pedido IN ({placeholders})
+            ORDER BY dp.id_detalle ASC
+            """,
+            ids
+        )
+        detalles_por_pedido = {id_pedido: [] for id_pedido in ids}
+        for item in cursor.fetchall():
+            detalles_por_pedido.setdefault(item["id_pedido"], []).append({
+                "id_producto": item["id_producto"],
+                "nombre": item["nombre"],
+                "cantidad": item["cantidad"],
+                "subtotal": item["subtotal"],
+                "categoria": item.get("categoria"),
+                "subcategoria": item.get("subcategoria"),
+            })
+
+        for pedido in pedidos:
+            pedido["detalle"] = detalles_por_pedido.get(pedido["id_pedido"], [])
+        return pedidos
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener pedidos activos: {str(e)}"
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
 @router.get("/{id_pedido}", response_model=PedidoCompletoResponse)
 def get_pedido(
     id_pedido: int,
@@ -903,8 +1006,14 @@ def actualizar_estado_pedido(
     """
     Avanza el estado de un pedido: pendiente → en_preparacion → listo.
     No se permiten saltos ni retrocesos.
-    Requiere autenticación.
+    Requiere usuario admin o cocina.
     """
+    if current_user.get("rol") not in {"admin", "cocina"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo administración o cocina pueden actualizar pedidos"
+        )
+
     connection = get_db_connection()
     if not connection:
         raise HTTPException(

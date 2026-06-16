@@ -1073,11 +1073,6 @@ function confirmarPedido() {
     return;
   }
 
-  if (mesaSocketListo && !soyAnfitrion) {
-    alert("Solo el anfitrion de la mesa puede confirmar el pedido final.");
-    return;
-  }
-
   mostrarConfirmacion();
 }
 
@@ -1103,10 +1098,21 @@ function mostrarConfirmacion() {
     notas.innerHTML = "";
   }
 
+  const btnFinal = document.getElementById("btn-enviar-final");
+  if (btnFinal) {
+    btnFinal.disabled = false;
+    btnFinal.innerHTML = "Enviar a cocina";
+  }
+
   document.getElementById("confirmacion-overlay").classList.add("visible");
 }
 
 function cerrarConfirmacion() {
+  const btnFinal = document.getElementById("btn-enviar-final");
+  if (btnFinal) {
+    btnFinal.disabled = false;
+    btnFinal.innerHTML = "Enviar a cocina";
+  }
   document.getElementById("confirmacion-overlay").classList.remove("visible");
 }
 
@@ -1135,8 +1141,12 @@ async function enviarPedidoConfirmado() {
     // POST /pedidos — sin token (cliente no tiene cuenta)
     await fetchAPI("/pedidos", "POST", body, false);
     cerrarConfirmacion();
+    carrito = [];
+    setObservaciones("", { force: true });
     limpiarCarritoGuardado();
     limpiarSesionMesa();
+    actualizarCarritoUI();
+    todosProductos.forEach(p => actualizarControlCantidad(p.id_producto));
     mostrarExito();
   } catch (error) {
     alert("No se pudo enviar el pedido: " + error.message);
@@ -1231,11 +1241,11 @@ function aplicarSnapshotMesa(data) {
   }
 
   participantesMesa = Array.isArray(data.participantes) ? data.participantes : [];
-  soyAnfitrion = data.host_client_id === mesaClientId;
+  soyAnfitrion = true;
 
-  if (data.type === "snapshot" && soyAnfitrion && (!data.carrito || data.carrito.length === 0) && carrito.length > 0) {
+  if (data.type === "snapshot" && (!data.carrito || data.carrito.length === 0) && carrito.length > 0) {
     sincronizarCarritoMesa();
-    actualizarPanelSesion("Sos anfitrion: podes confirmar el pedido final.", "Anfitrion", Math.max(participantesMesa.length, 1));
+    actualizarPanelSesion("Pedido compartido de mesa activo.", "Mesa", Math.max(participantesMesa.length, 1));
     return;
   }
 
@@ -1258,10 +1268,7 @@ function aplicarSnapshotMesa(data) {
   }
 
   const totalParticipantes = Math.max(participantesMesa.length, 1);
-  const titulo = soyAnfitrion
-    ? "Sos anfitrion: podes confirmar el pedido final."
-    : "Estas sumando productos al pedido de la mesa.";
-  actualizarPanelSesion(titulo, soyAnfitrion ? "Anfitrion" : "Invitado", totalParticipantes);
+  actualizarPanelSesion("Pedido compartido de mesa activo.", "Mesa", totalParticipantes);
 }
 
 function normalizarCarritoRemoto(items) {
@@ -1313,7 +1320,7 @@ function actualizarPanelSesion(titulo, rol, cantidad, offline = false) {
 
   titleEl.textContent = titulo;
   roleEl.textContent = rol;
-  roleEl.className = offline ? "offline" : soyAnfitrion ? "host" : "";
+  roleEl.className = offline ? "offline" : "host";
   countEl.textContent = cantidad === 1 ? "1 persona" : `${cantidad} personas`;
 }
 
@@ -1389,13 +1396,10 @@ function actualizarEstadoBotonConfirmar() {
   const btn = document.getElementById("btn-confirmar");
   if (!btn) return;
 
-  const bloqueadoPorRol = mesaSocketListo && !soyAnfitrion;
-  btn.classList.toggle("invalid", !mesaValida || bloqueadoPorRol);
-  btn.disabled = !mesaValida || bloqueadoPorRol;
+  btn.classList.toggle("invalid", !mesaValida);
+  btn.disabled = !mesaValida;
   if (!mesaValida) {
     btn.innerHTML = "Escanea el QR de tu mesa";
-  } else if (bloqueadoPorRol) {
-    btn.innerHTML = "Esperando al anfitrion";
   } else {
     btn.innerHTML = "Confirmar pedido";
   }

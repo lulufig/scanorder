@@ -107,7 +107,7 @@ def reporte_ventas(
         productos = cursor.fetchall()
 
         cursor.execute(
-            """
+            f"""
             SELECT estado, COUNT(*) AS cantidad, COALESCE(SUM(total), 0) AS total
             FROM pedidos
             WHERE DATE({fecha_venta}) BETWEEN %s AND %s

@@ -47,6 +47,21 @@ def tabla_existe(cursor, tabla: str) -> bool:
     return _col_cache[key]
 
 
+def obtener_inicio_ciclo_mesa(cursor, id_mesa: int):
+    """
+    Devuelve el último cierre de una mesa.
+    Si no hay cierre, las consultas usan CURDATE() como inicio del ciclo actual.
+    """
+    if not tabla_existe(cursor, "cierres_mesa"):
+        return None
+    cursor.execute(
+        "SELECT MAX(created_at) AS ultimo_cierre FROM cierres_mesa WHERE id_mesa = %s",
+        (id_mesa,)
+    )
+    row = cursor.fetchone() or {}
+    return row.get("ultimo_cierre")
+
+
 @router.post("/", response_model=MesaResponse, status_code=status.HTTP_201_CREATED)
 def create_mesa(
     mesa: MesaCreate,
@@ -114,8 +129,8 @@ def create_mesa(
 
 
 @router.get("/", response_model=List[MesaResponse])
-def listar_mesas():
-    """Lista todas las mesas registradas."""
+def listar_mesas(current_user: dict = Depends(require_role("admin"))):
+    """Lista todas las mesas registradas. Solo administradores."""
     connection = get_db_connection()
     if not connection:
         raise HTTPException(
@@ -391,6 +406,8 @@ def cuenta_mesa(
         if not mesa:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
 
+        inicio_ciclo = obtener_inicio_ciclo_mesa(cursor, id_mesa)
+
         if tabla_existe(cursor, "cierre_pedidos"):
             cursor.execute(
                 """
@@ -401,9 +418,10 @@ def cuenta_mesa(
                 WHERE p.id_mesa = %s
                   AND p.estado NOT IN ('cancelado')
                   AND cp.id_pedido IS NULL
+                  AND p.created_at >= COALESCE(%s, CURDATE())
                 ORDER BY p.created_at ASC
                 """,
-                (id_mesa,)
+                (id_mesa, inicio_ciclo)
             )
         else:
             cursor.execute(
@@ -534,19 +552,22 @@ def cerrar_mesa(
                 detail="Ejecutá la migración 005_cierres_mesa.sql para habilitar el registro de cobros"
             )
 
+        inicio_ciclo = obtener_inicio_ciclo_mesa(cursor, id_mesa)
+
         # Con autocommit=False (default de mysql-connector) ya estamos en una
         # transacción implícita. FOR UPDATE adquiere el lock de fila hasta el COMMIT.
         cursor.execute(
             """
-            SELECT p.id_pedido, p.total
+            SELECT p.id_pedido, p.estado, p.total
             FROM pedidos p
             LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido
             WHERE p.id_mesa = %s
               AND p.estado NOT IN ('cancelado')
               AND cp.id_pedido IS NULL
+              AND p.created_at >= COALESCE(%s, CURDATE())
             FOR UPDATE
             """,
-            (id_mesa,)
+            (id_mesa, inicio_ciclo)
         )
         pedidos = cursor.fetchall()
 
@@ -554,6 +575,19 @@ def cerrar_mesa(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="No hay pedidos pendientes de cobro en esta mesa"
+            )
+
+        pedidos_no_entregables = [
+            p for p in pedidos
+            if p["estado"] in ("pendiente", "confirmado", "en_preparacion")
+        ]
+        if pedidos_no_entregables:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "La mesa tiene pedidos que todavía no están listos/entregados. "
+                    "Confirmá el flujo operativo antes de cobrar."
+                )
             )
 
         total_consumido = sum(float(p["total"] or 0) for p in pedidos)
@@ -599,14 +633,21 @@ def cerrar_mesa(
                 (id_cierre, pedido["id_pedido"], float(pedido["total"] or 0))
             )
 
-        # Marcar todos los pedidos cobrados como 'entregado' para que el mapa
-        # los excluya del conteo pedidos_activos y libere visualmente la mesa.
+        # Los pedidos listos se cierran como entregados al registrar el cobro.
+        # Nunca se avanza automáticamente un pedido pendiente o en preparación.
         placeholders = ", ".join(["%s"] * len(pedidos_ids))
-        cursor.execute(
-            f"UPDATE pedidos SET estado = 'entregado', entregado_at = COALESCE(entregado_at, NOW()) "
-            f"WHERE id_pedido IN ({placeholders}) AND estado NOT IN ('entregado', 'cancelado')",
-            pedidos_ids
-        )
+        if tabla_tiene_columna(cursor, "pedidos", "entregado_at"):
+            cursor.execute(
+                f"UPDATE pedidos SET estado = 'entregado', entregado_at = COALESCE(entregado_at, NOW()) "
+                f"WHERE id_pedido IN ({placeholders}) AND estado NOT IN ('entregado', 'cancelado')",
+                pedidos_ids
+            )
+        else:
+            cursor.execute(
+                f"UPDATE pedidos SET estado = 'entregado' "
+                f"WHERE id_pedido IN ({placeholders}) AND estado NOT IN ('entregado', 'cancelado')",
+                pedidos_ids
+            )
 
         connection.commit()
 
@@ -652,7 +693,7 @@ def liberar_mesa(
     id_mesa: int,
     current_user: dict = Depends(require_role("admin"))
 ):
-    """Fuerza la liberación operativa de una mesa sin registrar cobro."""
+    """Libera una mesa sin pedidos activos ni pendientes de cobro."""
     connection = get_db_connection()
     if not connection:
         raise HTTPException(
@@ -665,6 +706,36 @@ def liberar_mesa(
         row = cursor.fetchone()
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
+        inicio_ciclo = obtener_inicio_ciclo_mesa(cursor, id_mesa)
+        if tabla_existe(cursor, "cierre_pedidos"):
+            cursor.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM pedidos p
+                LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido
+                WHERE p.id_mesa = %s
+                  AND p.estado NOT IN ('cancelado')
+                  AND cp.id_pedido IS NULL
+                  AND p.created_at >= COALESCE(%s, CURDATE())
+                """,
+                (id_mesa, inicio_ciclo)
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM pedidos
+                WHERE id_mesa = %s
+                  AND estado NOT IN ('entregado', 'cancelado')
+                """,
+                (id_mesa,)
+            )
+        pendientes = cursor.fetchone()
+        if int((pendientes or {}).get("total") or 0) > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="La mesa tiene pedidos sin cobrar. Usá Cobrar mesa para liberarla."
+            )
         numero = int(row["numero"])
     finally:
         cursor.close()
@@ -699,7 +770,10 @@ def atender_solicitud_mozo(
 
 
 @router.get("/{id_mesa}/qr")
-def get_qr_mesa(id_mesa: int):
+def get_qr_mesa(
+    id_mesa: int,
+    current_user: dict = Depends(require_role("admin"))
+):
     """Retorna la imagen QR de la mesa como archivo descargable."""
     ruta_archivo = QR_DIR / f"mesa_{id_mesa}.png"
 

@@ -12,8 +12,8 @@ class FakeCursor:
 
     def execute(self, query, params=None):
         self.queries.append((query, params))
-        if "LOWER(nombre)" in query and params and params[0] == "Acompañamientos":
-            self.fetchone_result = {"id_categoria": 2}
+        if "LOWER(nombre)" in query and params and params[0] == "Comidas":
+            self.fetchone_result = {"id_categoria": 1}
         elif "id_categoria = %s" in query and params and params[0] == 1:
             self.fetchone_result = {"id_categoria": 1}
         else:
@@ -37,7 +37,7 @@ def test_producto_create_acepta_categoria_por_nombre():
 def test_resolver_id_categoria_por_alias_papas():
     cursor = FakeCursor()
 
-    assert resolver_id_categoria(cursor, categoria="papas") == 2
+    assert resolver_id_categoria(cursor, categoria="papas") == 1
 
 
 def test_resolver_id_categoria_explicito():
