@@ -177,3 +177,57 @@ El método de pago se valida contra una allow-list **antes de abrir conexión a 
 - Si se elimina o modifica el carrito colaborativo (`MesaSessionManager`), revisar en cascada: detección de "mesa abandonada" (depende de él), `qr_token`/`session_key` (se cruza con él), y los consumidores frontend `frontend/cliente/menu.js` y `frontend/admin/js/mesas.js`.
 - Hay tres llamadas independientes a `load_dotenv()` (`main.py`, `database.py`, `security.py`) — es idempotente y no rompe nada, pero indica que no hay un único punto de carga de configuración.
 - Un análisis más detallado de endpoints, riesgos de eliminar cada feature y discrepancias con la documentación de producto está en [AUDITORIA.md](AUDITORIA.md).
+
+---
+
+## Setup Docker (`chore/dockerized-setup`)
+
+### Archivos creados
+
+| Archivo | Descripción |
+|---|---|
+| `Dockerfile` | Imagen Python 3.12-slim + mysql-client. ENTRYPOINT = `init_app.sh`, CMD = uvicorn. |
+| `docker-compose.yml` | 3 servicios: `db` (mysql:8.0), `app` (backend), `web` (nginx:1.27-alpine). |
+| `nginx.conf` | Root = repo root; sirve `/frontend/`; bloquea `/backend/` y `/docs/`. |
+| `.env.example` | Plantilla versionada. `.env` y `.env.docker` están en `.gitignore`. |
+| `backend/scripts/init_app.sh` | Primer arranque: wait-for-MySQL, carga schema, aplica migración 007, crea admin, lanza uvicorn. |
+| `backend/scripts/create_admin.py` | Si `usuarios` vacía: genera password aleatorio, inserta admin con `must_change_password=TRUE`, imprime credenciales. |
+| `backend/migrations/007_must_change_password.sql` | `ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE` (idempotente). |
+| `frontend/cambiar-password.html` | Página de cambio de contraseña en primer login. Valida largo, llama `POST /auth/cambiar-password`, redirige según rol. |
+| `INSTALL.md` | Guía paso a paso para no-técnicos (10 pasos). |
+
+### Flujo de primer arranque
+
+```
+docker compose up
+  └─ db: MySQL ready (healthcheck)
+  └─ app: init_app.sh
+       ├─ wait MySQL
+       ├─ load docs/database.sql (si usuarios no existe)
+       ├─ apply 007_must_change_password.sql (idempotente)
+       ├─ create_admin.py → imprime password en logs
+       └─ uvicorn app.main:app --host 0.0.0.0 --port 8000
+  └─ web: nginx sirve /frontend/ en :80
+```
+
+### Cambios en auth (`backend/app/routes/auth.py`)
+
+- `POST /auth/login` ahora incluye `must_change_password: bool` en el payload de respuesta. Campo gracioso: usa `.get("must_change_password", False)` → devuelve `False` si la columna no existe (pre-migración 007).
+- `POST /auth/cambiar-password` (nuevo, requiere Bearer): valida 8-72 chars, `UPDATE usuarios SET password_hash, must_change_password=FALSE`.
+
+### Cambio en frontend (`frontend/auth/js/login.js`)
+
+Después de guardar el token: si `data.user.must_change_password` es `true`, redirige a `/frontend/cambiar-password.html` antes del redirect por rol.
+
+### MENU_URL en Docker
+
+`get_lan_ip()` (socket a 8.8.8.8) dentro del contenedor devuelve la IP de la red Docker, no la IP LAN del host. Solución: `MENU_URL` siempre explícita en `.env`. Documentado en `.env.example` con placeholder `TU_IP_LOCAL`. No usar `AUTO_LAN_IP` dentro de Docker.
+
+### Puertos
+
+- `:80` → nginx (frontend estático)
+- `:8000` → uvicorn (API). `config.js` construye `API_URL` como `hostname:8000`, por eso FastAPI debe estar expuesto en ese puerto.
+
+### Próxima migración
+
+La siguiente migración incremental será `008_*.sql`.

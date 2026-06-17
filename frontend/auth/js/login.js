@@ -65,6 +65,12 @@
         saveToken(data.access_token);
         saveUser(data.user);
 
+        // Primer login: el admin debe cambiar su contraseña
+        if (data.user.must_change_password) {
+          window.location.href = "/frontend/cambiar-password.html";
+          return;
+        }
+
         // Redirigir según rol
         if (data.user.rol === ROLES.ADMIN) {
           window.location.href = ROUTES.admin;

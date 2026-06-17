@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Request
+from pydantic import BaseModel
 from app.schemas.auth import UserRegister, UserLogin, Token
 from app.database import get_db_connection, close_db_connection
 from app.utils.security import hash_password, verify_password, create_access_token, decode_access_token
@@ -136,19 +137,21 @@ def login_user(credentials: UserLogin):
         
         access_token = create_access_token(data=token_data)
         
-        # Preparar respuesta
+        # Preparar respuesta — must_change_password solo aparece si la columna
+        # existe en la DB (migración 007); si no existe el campo, default False.
         user_data = {
             "id_usuario": user["id_usuario"],
             "nombre": user["nombre"],
             "email": user["email"],
             "rol": user["rol"],
-            "activo": user["activo"]
+            "activo": user["activo"],
+            "must_change_password": bool(user.get("must_change_password", False)),
         }
-        
+
         return {
             "access_token": access_token,
             "token_type": "bearer",
-            "user": user_data
+            "user": user_data,
         }
         
     except HTTPException:
@@ -183,3 +186,56 @@ def admin_only_endpoint(current_user: dict = Depends(require_role("admin"))):
         "message": "Acceso autorizado - Solo admins",
         "user": current_user
     }
+
+
+class CambiarPasswordRequest(BaseModel):
+    nueva_password: str
+
+
+@router.post("/cambiar-password")
+def cambiar_password(
+    body: CambiarPasswordRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Cambia la contraseña del usuario autenticado y limpia el flag must_change_password.
+    Se usa en el primer login cuando el admin fue creado con contraseña generada automáticamente.
+    """
+    if len(body.nueva_password.encode("utf-8")) > 72:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña no puede superar 72 caracteres",
+        )
+    if len(body.nueva_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña debe tener al menos 8 caracteres",
+        )
+
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos",
+        )
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            UPDATE usuarios
+               SET password_hash = %s, must_change_password = FALSE
+             WHERE id_usuario = %s
+            """,
+            (hash_password(body.nueva_password), current_user["user_id"]),
+        )
+        connection.commit()
+        return {"message": "Contraseña actualizada correctamente"}
+    except Exception as e:
+        connection.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al cambiar contraseña: {str(e)}",
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)
