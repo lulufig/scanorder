@@ -53,6 +53,38 @@ Orden de aplicación: `001` → `006`, secuencial, sin runner (se corren a mano 
 - `utils/dependencies.py`: `get_current_user` (valida Bearer JWT) y `require_role(rol)`.
 - `utils/qr.py`: generación de PNG de QR con `qrcode[pil]`.
 
+### Capas de servicio y repositorio (`services/`, `repositories/`)
+
+Extraídas de `pedidos.py` en `refactor/layered-architecture`. No hay cambios de comportamiento.
+
+```
+repositories/mesa_state_repo.py   persist_operational_state / release_operational_state /
+                                   load_operational_snapshot / persist_session_snapshot /
+                                   delete_session_snapshot / load_session_snapshots
+                                   (toda la SQL de snapshots, ~227 líneas)
+
+services/cocina_manager.py        CocinaConnectionManager + singleton `manager`
+                                   (broadcast WS a panel de cocina)
+
+services/mesa_state.py            MesaOperationalState + singleton `mesa_operational_state`
+                                   (estado ocupada/cuenta/mozo en memoria + espejo a DB)
+
+services/mesa_sessions.py         MesaSessionManager + singleton `mesa_sessions`
+                                   (carrito colaborativo, host/guest, persist/broadcast)
+```
+
+**Dependencias (sin ciclos):**
+- `repositories/` ← solo `app.database` + stdlib
+- `services/cocina_manager.py` ← solo FastAPI
+- `services/mesa_state.py` ← `repositories/`
+- `services/mesa_sessions.py` ← `repositories/` + `services/cocina_manager`
+- `routes/pedidos.py` ← `services/*` (ya no define las clases, solo las importa)
+- `routes/mesas.py` ← `services/*` (ya no importa desde `routes/pedidos`)
+
+**validate_qr_token():** helper en `pedidos.py` que centraliza la validación del token QR. Antes estaba copiada en `create_pedido`, `solicitar_servicio` y el handshake WS. Ahora es una sola función que lanza 403 si el token no coincide.
+
+**`_calcular_estado_salon()`:** función pura en `mesas.py` (arriba de `mapa_mesas()`). Recibe datos de la mesa sin conexión a la DB y devuelve `(estado_salon, abandonada)`. Testeable sin MySQL.
+
 ### `pedidos.py` — el archivo más complejo (~1100 líneas)
 
 Concentra tres responsabilidades distintas:
