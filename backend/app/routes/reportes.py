@@ -1,14 +1,8 @@
-import os
-import tempfile
+import csv
+import io
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, status, Depends, Query
-from fastapi.responses import FileResponse
-from starlette.background import BackgroundTask
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from fastapi import APIRouter, HTTPException, Response, status, Depends, Query
 
 from app.database import close_db_connection, get_db_connection
 from app.utils.dependencies import require_role
@@ -57,9 +51,9 @@ def reporte_ventas(
     current_user: dict = Depends(require_role("admin"))
 ):
     """
-    Genera un PDF con el reporte de ventas entre las fechas indicadas.
-    Incluye total de ventas, cantidad de pedidos y productos más vendidos.
-    Solo administradores.
+    Exporta un CSV con el reporte de ventas entre las fechas indicadas.
+    Incluye resumen, pedidos por estado y productos más vendidos (top 10).
+    Solo administradores. El CSV usa separador ; y BOM UTF-8 para Excel (es-AR).
     """
     if fecha_inicio > fecha_fin:
         raise HTTPException(
@@ -118,92 +112,50 @@ def reporte_ventas(
         )
         estados = cursor.fetchall()
 
-        # ── Generar PDF ──────────────────────────────────────────────
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-        tmp.close()
+        # ── Generar CSV ──────────────────────────────────────────────
+        # sep= en primera línea indica el separador a Excel sin depender del locale
+        buf = io.StringIO()
+        buf.write("sep=;\r\n")
+        w = csv.writer(buf, delimiter=";", lineterminator="\r\n")
 
-        doc      = SimpleDocTemplate(tmp.name, pagesize=A4)
-        styles   = getSampleStyleSheet()
-        elements = []
+        w.writerow(["Maven Burger — Reporte de Ventas"])
+        w.writerow([f"Período: {fecha_inicio} al {fecha_fin}"])
+        w.writerow([])
 
-        elements.append(Paragraph("Maven Burger — Reporte de Ventas", styles["Title"]))
-        elements.append(Paragraph(
-            f"Período: {fecha_inicio} al {fecha_fin}",
-            styles["Normal"]
-        ))
-        elements.append(Spacer(1, 20))
+        w.writerow(["RESUMEN"])
+        w.writerow(["Métrica", "Valor"])
+        w.writerow(["Total de ventas", f"{float(resumen['total_ventas']):.2f}"])
+        w.writerow(["Pedidos contabilizados", resumen["cantidad_pedidos"]])
+        w.writerow(["Estados de venta", "confirmado; en_preparacion; listo; entregado"])
+        w.writerow([])
 
-        # Resumen
-        elements.append(Paragraph("Resumen", styles["Heading2"]))
-        resumen_data = [
-            ["Métrica", "Valor"],
-            ["Total de ventas", f"${float(resumen['total_ventas']):.2f}"],
-            ["Pedidos contabilizados", str(resumen["cantidad_pedidos"])],
-            ["Estados de venta", "confirmado, en_preparacion, listo, entregado"],
-        ]
-        tabla_resumen = Table(resumen_data, colWidths=[280, 180])
-        tabla_resumen.setStyle(TableStyle([
-            ("BACKGROUND",     (0, 0), (-1, 0),  colors.HexColor("#C0392B")),
-            ("TEXTCOLOR",      (0, 0), (-1, 0),  colors.white),
-            ("FONTNAME",       (0, 0), (-1, 0),  "Helvetica-Bold"),
-            ("GRID",           (0, 0), (-1, -1), 0.5, colors.grey),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
-        ]))
-        elements.append(tabla_resumen)
-        elements.append(Spacer(1, 24))
+        w.writerow(["PEDIDOS POR ESTADO"])
+        w.writerow(["Estado", "Cantidad", "Total"])
+        for row in estados:
+            w.writerow([
+                row["estado"] or "sin_estado",
+                row["cantidad"],
+                f"{float(row['total']):.2f}",
+            ])
+        w.writerow([])
 
-        # Productos más vendidos
-        if estados:
-            elements.append(Paragraph("Pedidos por estado", styles["Heading2"]))
-            estados_data = [["Estado", "Cantidad", "Total"]]
-            for row in estados:
-                estados_data.append([
-                    row["estado"] or "sin_estado",
-                    str(row["cantidad"]),
-                    f"${float(row['total']):.2f}",
-                ])
-            tabla_estados = Table(estados_data, colWidths=[190, 90, 180])
-            tabla_estados.setStyle(TableStyle([
-                ("BACKGROUND",     (0, 0), (-1, 0),  colors.HexColor("#21130F")),
-                ("TEXTCOLOR",      (0, 0), (-1, 0),  colors.white),
-                ("FONTNAME",       (0, 0), (-1, 0),  "Helvetica-Bold"),
-                ("GRID",           (0, 0), (-1, -1), 0.5, colors.grey),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
-            ]))
-            elements.append(tabla_estados)
-            elements.append(Spacer(1, 24))
+        w.writerow(["PRODUCTOS MÁS VENDIDOS"])
+        w.writerow(["Producto", "Cantidad vendida", "Ingresos"])
+        for p in productos:
+            w.writerow([
+                p["nombre"],
+                p["total_vendido"],
+                f"{float(p['total_ingresos']):.2f}",
+            ])
 
-        if productos:
-            elements.append(Paragraph("Productos más vendidos", styles["Heading2"]))
-            prod_data = [["Producto", "Cantidad", "Ingresos"]]
-            for p in productos:
-                prod_data.append([
-                    p["nombre"],
-                    str(p["total_vendido"]),
-                    f"${float(p['total_ingresos']):.2f}",
-                ])
-            tabla_prod = Table(prod_data, colWidths=[280, 90, 90])
-            tabla_prod.setStyle(TableStyle([
-                ("BACKGROUND",     (0, 0), (-1, 0),  colors.HexColor("#C0392B")),
-                ("TEXTCOLOR",      (0, 0), (-1, 0),  colors.white),
-                ("FONTNAME",       (0, 0), (-1, 0),  "Helvetica-Bold"),
-                ("GRID",           (0, 0), (-1, -1), 0.5, colors.grey),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
-            ]))
-            elements.append(tabla_prod)
-        else:
-            elements.append(Paragraph(
-                "No hay productos vendidos en el período seleccionado.",
-                styles["Normal"]
-            ))
+        # BOM UTF-8 (\xef\xbb\xbf) para que Excel lo abra con encoding correcto
+        csv_bytes = b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8")
 
-        doc.build(elements)
-
-        return FileResponse(
-            path=tmp.name,
-            media_type="application/pdf",
-            filename=f"reporte_ventas_{fecha_inicio}_{fecha_fin}.pdf",
-            background=BackgroundTask(os.unlink, tmp.name)
+        filename = f"reporte_ventas_{fecha_inicio}_{fecha_fin}.csv"
+        return Response(
+            content=csv_bytes,
+            media_type="text/csv; charset=utf-8-sig",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     except HTTPException:

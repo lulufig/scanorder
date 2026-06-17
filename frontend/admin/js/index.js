@@ -249,13 +249,13 @@
 
       const btn = document.getElementById("btn-ventas");
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span> Generando PDF...';
+      btn.innerHTML = '<span class="spinner"></span> Generando CSV...';
 
       try {
         // GET /reportes/ventas?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD
-        // Devuelve un PDF — usamos downloadFile() de api.js
+        // Devuelve un CSV con BOM UTF-8 — usamos downloadFile() de api.js
         const endpoint  = `/reportes/ventas?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
-        const filename  = `reporte_ventas_${fechaInicio}_${fechaFin}.pdf`;
+        const filename  = `reporte_ventas_${fechaInicio}_${fechaFin}.csv`;
 
         await downloadFile(endpoint, filename);
 
