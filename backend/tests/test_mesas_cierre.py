@@ -1,0 +1,347 @@
+"""
+Tests de integración para POST /mesas/{id_mesa}/cerrar contra una base MySQL real
+y descartable (no contra scanorder_db). Se necesita un servidor MySQL accesible con
+las credenciales de backend/.env (host/puerto/user/password); si no hay uno disponible,
+estos tests se saltan automáticamente (no rompen el resto de la suite).
+
+Por qué con DB real y no con un cursor mockeado: lo que se quiere probar es el
+comportamiento de COMMIT/ROLLBACK de InnoDB ante un fallo a mitad de transacción.
+Un mock solo demuestra que el código Python invoca rollback(), no que la base
+efectivamente descarta los INSERTs ya emitidos.
+"""
+import os
+import uuid
+
+import mysql.connector
+import pytest
+from fastapi.testclient import TestClient
+
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = int(os.getenv("DB_PORT", 3306))
+DB_USER = os.getenv("DB_USER", "root")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+TEST_DB_NAME = "scanorder_test_cierre"
+
+BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATABASE_SQL_PATH = os.path.join(BACKEND_DIR, "..", "docs", "database.sql")
+
+
+def _mysql_disponible() -> bool:
+    try:
+        conn = mysql.connector.connect(
+            host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASSWORD
+        )
+        conn.close()
+        return True
+    except mysql.connector.Error:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _mysql_disponible(),
+    reason="Requiere un MySQL accesible en DB_HOST/DB_PORT (backend/.env) para probar atomicidad real",
+)
+
+
+def _parse_statements(path: str) -> list[str]:
+    with open(path, encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    kept = [ln for ln in lines if not ln.strip().startswith("--")]
+    text = "\n".join(kept)
+    statements = []
+    for chunk in text.split(";"):
+        stmt = chunk.strip()
+        if not stmt:
+            continue
+        upper = stmt.upper()
+        if upper.startswith("USE ") or upper.startswith("CREATE DATABASE"):
+            continue
+        statements.append(stmt)
+    return statements
+
+
+@pytest.fixture(scope="module", autouse=True)
+def schema(monkeypatch_module_env):
+    """Crea scanorder_test_cierre, carga docs/database.sql, la dropea al final."""
+    admin_conn = mysql.connector.connect(
+        host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASSWORD
+    )
+    admin_cur = admin_conn.cursor()
+    admin_cur.execute(f"DROP DATABASE IF EXISTS {TEST_DB_NAME}")
+    admin_cur.execute(
+        f"CREATE DATABASE {TEST_DB_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+    )
+    admin_conn.commit()
+
+    conn = mysql.connector.connect(
+        host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASSWORD, database=TEST_DB_NAME
+    )
+    cur = conn.cursor()
+    for stmt in _parse_statements(DATABASE_SQL_PATH):
+        cur.execute(stmt)
+    conn.commit()
+    conn.close()
+
+    yield
+
+    admin_cur.execute(f"DROP DATABASE IF EXISTS {TEST_DB_NAME}")
+    admin_conn.commit()
+    admin_conn.close()
+
+
+@pytest.fixture(scope="module")
+def monkeypatch_module_env():
+    """Apunta DB_NAME a la base descartable para todo el módulo (get_db_connection
+    lee os.getenv en cada llamada, no al importar, así que esto alcanza)."""
+    previous = os.environ.get("DB_NAME")
+    os.environ["DB_NAME"] = TEST_DB_NAME
+    os.environ["DB_HOST"] = DB_HOST
+    os.environ["DB_PORT"] = str(DB_PORT)
+    os.environ["DB_USER"] = DB_USER
+    os.environ["DB_PASSWORD"] = DB_PASSWORD
+    yield
+    if previous is None:
+        os.environ.pop("DB_NAME", None)
+    else:
+        os.environ["DB_NAME"] = previous
+
+
+@pytest.fixture
+def db_conn(schema):
+    conn = mysql.connector.connect(
+        host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASSWORD, database=TEST_DB_NAME
+    )
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def admin_token():
+    from app.utils.security import create_access_token
+
+    return create_access_token({"user_id": 1, "email": "admin@test.com", "rol": "admin"})
+
+
+@pytest.fixture
+def client(schema):
+    from app.main import app
+
+    return TestClient(app)
+
+
+def _seed_admin_usuario(db_conn):
+    cur = db_conn.cursor()
+    cur.execute(
+        "INSERT IGNORE INTO usuarios (id_usuario, nombre, email, password_hash, rol) "
+        "VALUES (1, 'Admin Test', 'admin@test.com', 'x', 'admin')"
+    )
+    db_conn.commit()
+
+
+def _seed_mesa_con_pedidos(db_conn, totales: list[float], estado="listo"):
+    """Crea una mesa nueva (numero único) con un pedido por cada total en `totales`,
+    cada uno con una línea de detalle consistente con ese total. Devuelve
+    (id_mesa, numero, [id_pedido, ...])."""
+    numero = int(uuid.uuid4().int % 1_000_000) + 1
+    cur = db_conn.cursor(dictionary=True)
+
+    cur.execute("INSERT INTO categorias (nombre) VALUES (%s)", (f"cat-{numero}",))
+    id_categoria = cur.lastrowid
+    cur.execute(
+        "INSERT INTO productos (id_categoria, nombre, precio) VALUES (%s, %s, %s)",
+        (id_categoria, f"prod-{numero}", 100.00),
+    )
+    id_producto = cur.lastrowid
+
+    cur.execute("INSERT INTO mesas (numero) VALUES (%s)", (numero,))
+    id_mesa = cur.lastrowid
+
+    ids_pedido = []
+    for total in totales:
+        cur.execute(
+            "INSERT INTO pedidos (id_mesa, estado, total) VALUES (%s, %s, %s)",
+            (id_mesa, estado, total),
+        )
+        id_pedido = cur.lastrowid
+        ids_pedido.append(id_pedido)
+        cantidad = 1
+        cur.execute(
+            """
+            INSERT INTO detalle_pedidos (id_pedido, id_producto, cantidad, precio_unitario, subtotal)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (id_pedido, id_producto, cantidad, total, total),
+        )
+
+    db_conn.commit()
+    return id_mesa, numero, ids_pedido
+
+
+def _contar_cierres(db_conn, id_mesa) -> int:
+    cur = db_conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM cierres_mesa WHERE id_mesa = %s", (id_mesa,))
+    return cur.fetchone()[0]
+
+
+def _estado_pedido(db_conn, id_pedido) -> str:
+    cur = db_conn.cursor()
+    cur.execute("SELECT estado FROM pedidos WHERE id_pedido = %s", (id_pedido,))
+    return cur.fetchone()[0]
+
+
+# ── 1. El total se recalcula en backend, no se confía en el cliente ──────────
+
+def test_total_se_recalcula_desde_pedidos_no_desde_cliente(db_conn, client, admin_token):
+    _seed_admin_usuario(db_conn)
+    id_mesa, _, _ = _seed_mesa_con_pedidos(db_conn, [1500.00, 2500.00])
+
+    resp = client.post(
+        f"/mesas/{id_mesa}/cerrar",
+        json={"metodo_pago": "efectivo", "monto_cobrado": 4000.0},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    # 4000.0 es la suma real de los pedidos (1500 + 2500), no un valor que el
+    # cliente pueda inyectar: CierreMesaCreate no tiene campo "total".
+    assert body["total_consumido"] == 4000.0
+    assert body["vuelto"] == 0.0
+    assert body["pedidos_incluidos"] == 2
+
+
+# ── 2. Atomicidad: un fallo a mitad de transacción no deja nada a medias ─────
+
+def test_fallo_a_mitad_de_transaccion_no_deja_nada_a_medias(db_conn, client, admin_token, monkeypatch):
+    _seed_admin_usuario(db_conn)
+    id_mesa, _, ids_pedido = _seed_mesa_con_pedidos(db_conn, [1000.00, 2000.00])
+
+    # Deja la mesa marcada "ocupada" en el caché operativo para comprobar que,
+    # si el cierre falla, esa liberación tampoco llega a ejecutarse.
+    cur = db_conn.cursor()
+    cur.execute(
+        "INSERT INTO mesa_estado_operativo (id_mesa, ocupada) VALUES (%s, TRUE)",
+        (id_mesa,),
+    )
+    db_conn.commit()
+
+    import app.database as database_module
+    import app.routes.mesas as mesas_module
+
+    real_get_db_connection = database_module.get_db_connection
+
+    class FailingCursor:
+        """Envuelve el cursor real; revienta en el 2do INSERT a cierre_pedidos
+        para simular un fallo a mitad de la transacción (ej. timeout, bug)."""
+
+        def __init__(self, real_cursor):
+            self._cursor = real_cursor
+            self._inserts_cierre_pedidos = 0
+
+        def execute(self, query, params=None):
+            if "INSERT INTO cierre_pedidos" in query:
+                self._inserts_cierre_pedidos += 1
+                if self._inserts_cierre_pedidos >= 2:
+                    raise RuntimeError("Fallo simulado a mitad de transacción")
+            return self._cursor.execute(query, params) if params is not None else self._cursor.execute(query)
+
+        def __getattr__(self, name):
+            return getattr(self._cursor, name)
+
+    class FailingConnection:
+        def __init__(self, real_connection):
+            self._conn = real_connection
+
+        def cursor(self, *args, **kwargs):
+            return FailingCursor(self._conn.cursor(*args, **kwargs))
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    def patched_get_db_connection():
+        real_conn = real_get_db_connection()
+        return FailingConnection(real_conn) if real_conn else real_conn
+
+    monkeypatch.setattr(mesas_module, "get_db_connection", patched_get_db_connection)
+
+    resp = client.post(
+        f"/mesas/{id_mesa}/cerrar",
+        json={"metodo_pago": "efectivo", "monto_cobrado": 3000.0},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert resp.status_code == 500
+
+    # Nada de lo que la transacción intentó escribir quedó persistido.
+    assert _contar_cierres(db_conn, id_mesa) == 0
+    for id_pedido in ids_pedido:
+        assert _estado_pedido(db_conn, id_pedido) == "listo"
+
+    # La liberación de mesa nunca se alcanzó (el código nunca llega a esa línea
+    # si la transacción falla antes del commit): el registro operativo sigue igual.
+    cur.execute("SELECT ocupada FROM mesa_estado_operativo WHERE id_mesa = %s", (id_mesa,))
+    row = cur.fetchone()
+    assert row is not None and bool(row[0]) is True
+
+
+# ── 3. No-doble-cierre, incluso si la mesa quedó "ocupada" por un cleanup fallido ──
+
+def test_no_doble_cierre_aunque_mesa_no_se_libero_por_cleanup_fallido(
+    db_conn, client, admin_token, monkeypatch
+):
+    _seed_admin_usuario(db_conn)
+    id_mesa, _, _ = _seed_mesa_con_pedidos(db_conn, [1800.00])
+
+    import app.routes.mesas as mesas_module
+
+    # Simula que el cleanup posterior al commit (liberar mesa) falla en
+    # silencio: la mesa queda "ocupada" después de un cierre exitoso.
+    monkeypatch.setattr(mesas_module.mesa_operational_state, "release", lambda *_args, **_kw: None)
+    monkeypatch.setattr(mesas_module.mesa_sessions, "force_release", lambda *_args, **_kw: None)
+
+    cur = db_conn.cursor()
+    cur.execute(
+        "INSERT INTO mesa_estado_operativo (id_mesa, ocupada) VALUES (%s, TRUE)",
+        (id_mesa,),
+    )
+    db_conn.commit()
+
+    primer_cierre = client.post(
+        f"/mesas/{id_mesa}/cerrar",
+        json={"metodo_pago": "efectivo", "monto_cobrado": 1800.0},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert primer_cierre.status_code == 200
+    assert _contar_cierres(db_conn, id_mesa) == 1
+
+    # La mesa sigue "ocupada" (el cleanup fue no-op) — exactamente el escenario
+    # que se quiere blindar: ¿la guarda anti-doble-cierre depende de eso?
+    cur.execute("SELECT ocupada FROM mesa_estado_operativo WHERE id_mesa = %s", (id_mesa,))
+    assert bool(cur.fetchone()[0]) is True
+
+    segundo_cierre = client.post(
+        f"/mesas/{id_mesa}/cerrar",
+        json={"metodo_pago": "efectivo", "monto_cobrado": 1800.0},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert segundo_cierre.status_code == 409
+    # Ningún segundo registro financiero se creó: la guarda no depende del
+    # estado operativo de la mesa, depende de cierre_pedidos (ya linkeados).
+    assert _contar_cierres(db_conn, id_mesa) == 1
+
+
+# ── 4. Validación de método de pago ──────────────────────────────────────────
+
+def test_metodo_pago_invalido_devuelve_400(db_conn, client, admin_token):
+    _seed_admin_usuario(db_conn)
+    id_mesa, _, _ = _seed_mesa_con_pedidos(db_conn, [500.00])
+
+    resp = client.post(
+        f"/mesas/{id_mesa}/cerrar",
+        json={"metodo_pago": "bitcoin", "monto_cobrado": 500.0},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert resp.status_code == 400
+    assert _contar_cierres(db_conn, id_mesa) == 0
