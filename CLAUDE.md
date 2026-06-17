@@ -85,6 +85,56 @@ Estático, sin build ni framework, organizado por área/rol:
 
 `API_URL` se resuelve dinámicamente en `config.js` a partir de `window.location` (o `window.SCANORDER_API_URL` si está definida), no está hardcodeada — esto permite que el mismo frontend funcione tanto en `localhost` como accedido desde otro dispositivo en la LAN (necesario porque los QR apuntan a una IP de LAN vía `MENU_URL`).
 
+## Comportamiento verificado: `POST /mesas/{id}/cerrar`
+
+Auditado y cubierto con tests de integración contra MySQL real (`backend/tests/test_mesas_cierre.py`).
+
+### Atomicidad financiera (garantía InnoDB)
+
+El bloque financiero del cierre es una **única transacción InnoDB**:
+1. `INSERT INTO cierres_mesa` (registro del cierre con total recalculado)
+2. `INSERT INTO cierre_pedidos` × N (uno por pedido incluido)
+3. `UPDATE pedidos SET estado = 'entregado'` × N
+
+Todo en la misma conexión, con un único `connection.commit()` al final. Si cualquier paso falla, el `except` ejecuta `connection.rollback()` y devuelve 500 — la base queda exactamente como estaba antes del intento.
+
+El `total_consumido` **siempre se recalcula en el backend** sumando `detalle_pedidos.subtotal`. El cliente no puede inyectar un total: `CierreMesaCreate` no tiene campo `total`.
+
+### Cleanup post-commit (best-effort, por diseño)
+
+**Después** del `commit()`, el código intenta liberar la mesa en memoria:
+```python
+mesa_operational_state.release(id_mesa)   # línea ~662
+mesa_sessions.force_release(numero)       # línea ~663
+```
+Ambas llamadas están en bloques `try/except` que **tragan todas las excepciones sin re-lanzar**. Esto es **intencional y correcto**:
+
+- El cleanup solo puede fallar *después* de un commit exitoso. Nunca puede dejar la base a medias.
+- La dirección de fallo es segura: si falla el cleanup, la mesa queda "ocupada" en caché pero el registro financiero ya existe y es íntegro.
+- La dirección opuesta sería peligrosa: ejecutar el cleanup *antes* del commit podría liberar la mesa antes de que el cierre quede persistido.
+
+**No "arreglar" esto reordenando el cleanup antes del commit.** Ese cambio introduciría una ventana de corrupción.
+
+### Guarda anti-doble-cierre (independiente del estado operativo)
+
+La guarda usa `SELECT ... FOR UPDATE` buscando pedidos **no linkeados en `cierre_pedidos`**:
+```sql
+SELECT p.* FROM pedidos p
+LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido
+WHERE p.id_mesa = %s AND cp.id_pedido IS NULL
+AND p.estado = 'listo'
+FOR UPDATE
+```
+Si la primera transacción completó exitosamente, todos los pedidos ya tienen fila en `cierre_pedidos` → la segunda consulta devuelve 0 filas → el endpoint devuelve 409.
+
+**Esta guarda es infalible incluso si el cleanup falló** (mesa quede "ocupada" en caché). No depende de `mesa_estado_operativo` en absoluto. Verificado por `test_no_doble_cierre_aunque_mesa_no_se_libero_por_cleanup_fallido`.
+
+### Validación del método de pago
+
+El método de pago se valida contra una allow-list **antes de abrir conexión a la DB** (líneas ~525-530). Un método inválido devuelve 400 inmediatamente, sin costo de conexión.
+
+---
+
 ## Notas para cambios futuros
 
 - Si se elimina o modifica el carrito colaborativo (`MesaSessionManager`), revisar en cascada: detección de "mesa abandonada" (depende de él), `qr_token`/`session_key` (se cruza con él), y los consumidores frontend `frontend/cliente/menu.js` y `frontend/admin/js/mesas.js`.
