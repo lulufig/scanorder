@@ -70,9 +70,14 @@ Cada mesa tiene un `qr_token` (`secrets.token_urlsafe(24)`) embebido en la URL d
 
 Es un cálculo derivado en cada `GET /mesas/mapa` (no hay timers/cron en background): una mesa se marca `abandonada` si tiene sesión activa, sin pedidos activos, carrito vacío y ≥10 min desde el escaneo del QR. Depende 100% del `MesaSessionManager` (feature anterior) para `session`, `items_carrito` y `minutos_desde_scan` — si se toca el carrito colaborativo, revisar este cálculo.
 
-### Reportes PDF
+### Reportes CSV
 
-`GET /reportes/ventas` genera el PDF de forma **síncrona** dentro del request usando ReportLab (bloquea el worker mientras corre). El archivo temporal se borra después de enviarse con `starlette.background.BackgroundTask(os.unlink, ...)` — es limpieza post-respuesta, no generación asíncrona/diferida. Es la feature más aislada del backend: no comparte estado con pedidos/mesas.
+`GET /reportes/ventas` exporta un **CSV** (reemplazó al PDF de ReportLab en `refactor/reports-csv`). Genera la respuesta en memoria con `io.StringIO` + `csv.writer` y la devuelve como `Response` con:
+- BOM UTF-8 (`\xef\xbb\xbf`) para que Excel lo reconozca automáticamente con encoding correcto.
+- Separador `;` y línea `sep=;` como primera línea del archivo (convención Excel es-AR, donde `,` es separador decimal).
+- `media_type="text/csv; charset=utf-8-sig"`.
+
+El CSV incluye tres secciones: Resumen, Pedidos por estado y Productos más vendidos (top 10) — mismos datos y filtros que el PDF anterior. `reportlab` fue eliminado de `requirements.txt`. `dashboard` y `ventas-hoy` (JSON) no se tocaron.
 
 ## Arquitectura frontend (`frontend/`)
 
