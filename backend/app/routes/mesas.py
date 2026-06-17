@@ -10,7 +10,8 @@ from app.schemas.mesas import (
 )
 from app.utils.dependencies import require_role
 from app.utils.qr import generate_qr, QR_DIR
-from app.routes.pedidos import mesa_sessions, mesa_operational_state, pedidos_tiene_columna
+from app.services.mesa_sessions import mesa_sessions
+from app.services.mesa_state import mesa_operational_state
 
 router = APIRouter(
     prefix="/mesas",
@@ -156,6 +157,43 @@ def listar_mesas(current_user: dict = Depends(require_role("admin"))):
         close_db_connection(connection)
 
 
+def _calcular_estado_salon(
+    session: dict | None,
+    pedidos_activos: int,
+    items_carrito: int,
+    participantes: int,
+    minutos_desde_scan: int | None,
+    minutos_espera: int | None,
+    estado_operativo: dict,
+) -> tuple[str, bool]:
+    """Función pura: devuelve (estado_salon, abandonada) a partir de los datos de la mesa.
+    Extraída de mapa_mesas() para ser testeable sin conexión a la DB.
+    """
+    abandonada = (
+        session is not None
+        and pedidos_activos == 0
+        and items_carrito == 0
+        and (minutos_desde_scan or 0) >= 10
+    )
+
+    if abandonada:
+        estado = "abandonada"
+    elif estado_operativo.get("cuenta_solicitada"):
+        estado = "cuenta"
+    elif pedidos_activos > 0 and (minutos_espera or 0) >= 20:
+        estado = "esperando"
+    elif pedidos_activos > 0:
+        estado = "pedido_activo"
+    elif items_carrito > 0:
+        estado = "pidiendo"
+    elif participantes > 0 or estado_operativo.get("ocupada"):
+        estado = "ocupada"
+    else:
+        estado = "libre"
+
+    return estado, abandonada
+
+
 @router.get("/mapa")
 def mapa_mesas(current_user: dict = Depends(require_role("admin"))):
     """Devuelve el estado operativo de las mesas para el mapa visual del salón."""
@@ -235,27 +273,15 @@ def mapa_mesas(current_user: dict = Depends(require_role("admin"))):
                 cursor.execute("SELECT TIMESTAMPDIFF(MINUTE, %s, NOW()) AS minutos", (primer_pedido_at,))
                 minutos_espera = int((cursor.fetchone() or {}).get("minutos") or 0)
 
-            abandonada = (
-                session is not None
-                and pedidos_activos == 0
-                and items_carrito == 0
-                and (minutos_desde_scan or 0) >= 10
+            estado_salon, abandonada = _calcular_estado_salon(
+                session=session,
+                pedidos_activos=pedidos_activos,
+                items_carrito=items_carrito,
+                participantes=participantes,
+                minutos_desde_scan=minutos_desde_scan,
+                minutos_espera=minutos_espera,
+                estado_operativo=estado_operativo,
             )
-
-            if abandonada:
-                estado_salon = "abandonada"
-            elif estado_operativo.get("cuenta_solicitada"):
-                estado_salon = "cuenta"
-            elif pedidos_activos > 0 and (minutos_espera or 0) >= 20:
-                estado_salon = "esperando"
-            elif pedidos_activos > 0:
-                estado_salon = "pedido_activo"
-            elif items_carrito > 0:
-                estado_salon = "pidiendo"
-            elif participantes > 0 or estado_operativo.get("ocupada"):
-                estado_salon = "ocupada"
-            else:
-                estado_salon = "libre"
 
             resultado.append({
                 "id_mesa": mesa["id_mesa"],
@@ -316,7 +342,7 @@ def detalle_operacion_mesa(
         if not mesa:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
 
-        campos_observaciones = ", observaciones" if pedidos_tiene_columna(cursor, "observaciones") else ", NULL AS observaciones"
+        campos_observaciones = ", observaciones" if tabla_tiene_columna(cursor, "pedidos", "observaciones") else ", NULL AS observaciones"
         campo_subcategoria = ", p.subcategoria" if tabla_tiene_columna(cursor, "productos", "subcategoria") else ", NULL AS subcategoria"
         cursor.execute(
             """

@@ -15,13 +15,13 @@ from datetime import datetime, timezone, timedelta
 # ── 1. session_key ────────────────────────────────────────────────────────────
 
 def test_session_key_con_token():
-    from app.routes.pedidos import MesaSessionManager
+    from app.services.mesa_sessions import MesaSessionManager
     mgr = MesaSessionManager()
     assert mgr.session_key(5, "abc123") == "5:abc123"
 
 
 def test_session_key_sin_token():
-    from app.routes.pedidos import MesaSessionManager
+    from app.services.mesa_sessions import MesaSessionManager
     mgr = MesaSessionManager()
     assert mgr.session_key(3, None) == "3:"
     assert mgr.session_key(3, "") == "3:"
@@ -31,10 +31,10 @@ def test_session_key_sin_token():
 
 def test_touch_crea_estado_con_defaults(monkeypatch):
     """touch() inicializa ocupada=True y los flags de servicio en False."""
-    import app.routes.pedidos as mod
-    monkeypatch.setattr(mod, "persist_mesa_operational_state", lambda *_a, **_k: None)
+    import app.services.mesa_state as mod
+    monkeypatch.setattr(mod, "persist_operational_state", lambda *_a, **_k: None)
 
-    from app.routes.pedidos import MesaOperationalState
+    from app.services.mesa_state import MesaOperationalState
     state = MesaOperationalState()
     state.touch(7, ocupada=True)
 
@@ -45,10 +45,10 @@ def test_touch_crea_estado_con_defaults(monkeypatch):
 
 
 def test_touch_actualiza_flags_de_servicio(monkeypatch):
-    import app.routes.pedidos as mod
-    monkeypatch.setattr(mod, "persist_mesa_operational_state", lambda *_a, **_k: None)
+    import app.services.mesa_state as mod
+    monkeypatch.setattr(mod, "persist_operational_state", lambda *_a, **_k: None)
 
-    from app.routes.pedidos import MesaOperationalState
+    from app.services.mesa_state import MesaOperationalState
     state = MesaOperationalState()
     state.touch(8, ocupada=True, cuenta_solicitada=True)
     assert state.states[8]["cuenta_solicitada"] is True
@@ -56,11 +56,11 @@ def test_touch_actualiza_flags_de_servicio(monkeypatch):
 
 
 def test_release_elimina_estado_de_memoria(monkeypatch):
-    import app.routes.pedidos as mod
-    monkeypatch.setattr(mod, "persist_mesa_operational_state", lambda *_a, **_k: None)
-    monkeypatch.setattr(mod, "release_mesa_operational_state", lambda *_a, **_k: None)
+    import app.services.mesa_state as mod
+    monkeypatch.setattr(mod, "persist_operational_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(mod, "release_operational_state", lambda *_a, **_k: None)
 
-    from app.routes.pedidos import MesaOperationalState
+    from app.services.mesa_state import MesaOperationalState
     state = MesaOperationalState()
     state.touch(9, ocupada=True)
     assert 9 in state.states
@@ -73,11 +73,11 @@ def test_release_elimina_estado_de_memoria(monkeypatch):
 
 def test_disconnect_con_carrito_vacio_y_sin_clientes_limpia_sesion(monkeypatch):
     """Si no quedan clientes Y el carrito está vacío, la sesión se elimina."""
-    import app.routes.pedidos as mod
-    monkeypatch.setattr(mod, "persist_mesa_session_snapshot", lambda *_a, **_k: None)
-    monkeypatch.setattr(mod, "delete_mesa_session_snapshot", lambda *_a, **_k: None)
+    import app.services.mesa_sessions as mod
+    monkeypatch.setattr(mod, "persist_session_snapshot", lambda *_a, **_k: None)
+    monkeypatch.setattr(mod, "delete_session_snapshot", lambda *_a, **_k: None)
 
-    from app.routes.pedidos import MesaSessionManager
+    from app.services.mesa_sessions import MesaSessionManager
     mgr = MesaSessionManager()
     key = "5:tok"
     mgr.sessions[key] = {
@@ -96,11 +96,11 @@ def test_disconnect_con_carrito_vacio_y_sin_clientes_limpia_sesion(monkeypatch):
 
 def test_disconnect_con_carrito_mantiene_sesion(monkeypatch):
     """Si quedan items en el carrito, la sesión persiste aunque no haya clientes."""
-    import app.routes.pedidos as mod
-    monkeypatch.setattr(mod, "persist_mesa_session_snapshot", lambda *_a, **_k: None)
-    monkeypatch.setattr(mod, "delete_mesa_session_snapshot", lambda *_a, **_k: None)
+    import app.services.mesa_sessions as mod
+    monkeypatch.setattr(mod, "persist_session_snapshot", lambda *_a, **_k: None)
+    monkeypatch.setattr(mod, "delete_session_snapshot", lambda *_a, **_k: None)
 
-    from app.routes.pedidos import MesaSessionManager
+    from app.services.mesa_sessions import MesaSessionManager
     mgr = MesaSessionManager()
     key = "6:tok"
     mgr.sessions[key] = {
@@ -119,11 +119,11 @@ def test_disconnect_con_carrito_mantiene_sesion(monkeypatch):
 
 def test_disconnect_reasigna_host_si_se_va_el_host(monkeypatch):
     """Cuando el host se desconecta y queda otro cliente, el host cambia."""
-    import app.routes.pedidos as mod
-    monkeypatch.setattr(mod, "persist_mesa_session_snapshot", lambda *_a, **_k: None)
-    monkeypatch.setattr(mod, "delete_mesa_session_snapshot", lambda *_a, **_k: None)
+    import app.services.mesa_sessions as mod
+    monkeypatch.setattr(mod, "persist_session_snapshot", lambda *_a, **_k: None)
+    monkeypatch.setattr(mod, "delete_session_snapshot", lambda *_a, **_k: None)
 
-    from app.routes.pedidos import MesaSessionManager
+    from app.services.mesa_sessions import MesaSessionManager
     mgr = MesaSessionManager()
     key = "7:tok"
     mgr.sessions[key] = {
@@ -146,10 +146,10 @@ def test_disconnect_reasigna_host_si_se_va_el_host(monkeypatch):
 # ── 4. force_release — libera todas las sesiones de una mesa ─────────────────
 
 def test_force_release_elimina_todas_las_sesiones_de_la_mesa(monkeypatch):
-    import app.routes.pedidos as mod
-    monkeypatch.setattr(mod, "delete_mesa_session_snapshot", lambda *_a, **_k: None)
+    import app.services.mesa_sessions as mod
+    monkeypatch.setattr(mod, "delete_session_snapshot", lambda *_a, **_k: None)
 
-    from app.routes.pedidos import MesaSessionManager
+    from app.services.mesa_sessions import MesaSessionManager
     mgr = MesaSessionManager()
     mgr.sessions["10:tokA"] = {"mesa": 10, "clients": {}, "carrito": []}
     mgr.sessions["10:tokB"] = {"mesa": 10, "clients": {}, "carrito": []}
@@ -220,10 +220,10 @@ def test_transicion_estado_entregado_no_tiene_siguiente():
 def test_snapshot_mensaje_contiene_campos_requeridos(monkeypatch):
     """El mensaje _snapshot() enviado a clientes WS debe tener estos campos.
     Cualquier cambio en la estructura rompe los clientes frontend."""
-    import app.routes.pedidos as mod
-    monkeypatch.setattr(mod, "persist_mesa_session_snapshot", lambda *_a, **_k: None)
+    import app.services.mesa_sessions as mod
+    monkeypatch.setattr(mod, "persist_session_snapshot", lambda *_a, **_k: None)
 
-    from app.routes.pedidos import MesaSessionManager
+    from app.services.mesa_sessions import MesaSessionManager
     mgr = MesaSessionManager()
     key = "3:tok"
     mgr.sessions[key] = {
