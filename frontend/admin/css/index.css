@@ -176,7 +176,7 @@
 
     .dashboard-grid {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 14px;
       margin-bottom: 28px;
     }
@@ -1038,8 +1038,13 @@ body {
   box-shadow: none;
 }
 
-.metric-card:last-child {
+.metric-card:last-child,
+.metric-card:nth-child(3n) {
   border-right: 0;
+}
+
+.metric-card:nth-child(n+4) {
+  border-top: 1px solid var(--admin-line);
 }
 
 .metric-label,

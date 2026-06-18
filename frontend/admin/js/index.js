@@ -34,6 +34,11 @@
         document.getElementById("metric-top").textContent = data.producto_top?.nombre || "-";
         document.getElementById("metric-top-help").textContent =
           data.producto_top?.cantidad ? `${data.producto_top.cantidad} vendidos hoy` : "Sin ventas hoy";
+        const mesaNum = data.mesa_top?.numero;
+        document.getElementById("metric-mesa-top").textContent =
+          mesaNum != null ? `Mesa ${mesaNum}` : "-";
+        document.getElementById("metric-mesa-top-help").textContent =
+          mesaNum != null ? formatPrecio(data.mesa_top.total) : "Sin ventas hoy";
       } catch (error) {
         mostrarToast("No se pudieron cargar las métricas: " + error.message, "error");
       }
@@ -305,6 +310,25 @@
           <div class="historial-hora">Descargado ${item.hora}</div>
         </div>
       `).join("");
+    }
+
+    // ── RESUMEN DEL DÍA ─────────────────────────────────────────
+    async function descargarResumenHoy() {
+      const fecha = document.getElementById("fecha-resumen")?.value;
+      const params = fecha ? `?fecha=${fecha}` : "";
+      const fechaLabel = fecha || new Date().toISOString().split("T")[0];
+      const btn = document.getElementById("btn-resumen");
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Generando...';
+      try {
+        await downloadFile(`/reportes/resumen-hoy${params}`, `resumen_${fechaLabel}.csv`);
+        mostrarToast("Resumen descargado correctamente.", "success");
+      } catch (error) {
+        mostrarToast("Error al generar el resumen: " + error.message, "error");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = "Descargar resumen del día";
+      }
     }
 
     // ── TOAST ────────────────────────────────────────────────────

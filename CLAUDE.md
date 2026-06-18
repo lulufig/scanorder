@@ -105,12 +105,24 @@ Es un cálculo derivado en cada `GET /mesas/mapa` (no hay timers/cron en backgro
 
 ### Reportes CSV
 
-`GET /reportes/ventas` exporta un **CSV** (reemplazó al PDF de ReportLab en `refactor/reports-csv`). Genera la respuesta en memoria con `io.StringIO` + `csv.writer` y la devuelve como `Response` con:
-- BOM UTF-8 (`\xef\xbb\xbf`) para que Excel lo reconozca automáticamente con encoding correcto.
-- Separador `;` y línea `sep=;` como primera línea del archivo (convención Excel es-AR, donde `,` es separador decimal).
+Patrón común a todos los endpoints CSV: `io.StringIO` + `csv.writer`, respuesta `Response` con:
+- BOM UTF-8 (`\xef\xbb\xbf`) para que Excel lo reconozca con encoding correcto.
+- Separador `;` y línea `sep=;` como primera línea (convención Excel es-AR).
 - `media_type="text/csv; charset=utf-8-sig"`.
 
-El CSV incluye tres secciones: Resumen, Pedidos por estado y Productos más vendidos (top 10) — mismos datos y filtros que el PDF anterior. `reportlab` fue eliminado de `requirements.txt`. `dashboard` y `ventas-hoy` (JSON) no se tocaron.
+**`GET /reportes/ventas?fecha_inicio=&fecha_fin=`** — reporte por rango de fechas (tres secciones: Resumen, Pedidos por estado, Productos top 10). `reportlab` fue eliminado.
+
+**`GET /reportes/resumen-hoy?fecha=YYYY-MM-DD`** — resumen operativo de un día (por defecto hoy). Secciones: Resumen (ventas, pedidos, ticket, mesa top, producto top), Cobros por método de pago (solo si `cierres_mesa` existe), Pedidos por estado, Productos más vendidos, Ventas por hora (serie 0-23h). Disponible desde `feature/daily-dashboard`.
+
+### Dashboard (`GET /reportes/dashboard`)
+
+Devuelve JSON con métricas del día en curso. Campos:
+- `ventas_hoy`, `pedidos_hoy`, `ticket_promedio`
+- `pedidos_activos` (pendiente/confirmado/en_preparacion/listo)
+- `producto_top` (`nombre`, `cantidad`)
+- `mesa_top` (`numero`, `total`) — mesa con mayor facturación del día; `numero: null` si no hay ventas
+- `mesas_activas` (COUNT DISTINCT de mesas con pedidos abiertos)
+- `cobros_hoy` (total + desglose `metodos` desde `cierres_mesa`; defensivo: `{}` si la tabla no existe)
 
 ## Arquitectura frontend (`frontend/`)
 

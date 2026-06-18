@@ -77,6 +77,11 @@
         <div class="metric-value" id="metric-top" style="font-size:1.05rem;">—</div>
         <div class="metric-help" id="metric-top-help">Hoy</div>
       </div>
+      <div class="metric-card">
+        <div class="metric-label">Mesa top</div>
+        <div class="metric-value" id="metric-mesa-top">—</div>
+        <div class="metric-help" id="metric-mesa-top-help">Mayor venta hoy</div>
+      </div>
     </div>
 
     <section class="sales-panel fade-in" style="animation-delay:0.15s;">
@@ -106,10 +111,10 @@
         <!-- Reporte de ventas -->
         <div class="reporte-card">
           <div class="reporte-card-header">
-            <div class="reporte-icon">PDF</div>
+            <div class="reporte-icon">CSV</div>
             <div>
               <div class="reporte-titulo">Reporte de ventas</div>
-              <div class="reporte-desc">PDF con total, pedidos y productos más vendidos</div>
+              <div class="reporte-desc">CSV con total, pedidos y productos más vendidos</div>
             </div>
           </div>
           <div class="reporte-card-body">
@@ -151,6 +156,30 @@
         </div>
 
       </div>
+
+      <!-- Resumen del día -->
+      <div class="reporte-card" style="margin-top:18px; max-width:760px;">
+        <div class="reporte-card-header">
+          <div class="reporte-icon">HOY</div>
+          <div>
+            <div class="reporte-titulo">Resumen del día</div>
+            <div class="reporte-desc">CSV con ventas, cobros por método, mesa y producto top</div>
+          </div>
+        </div>
+        <div class="reporte-card-body">
+          <p style="font-size:0.85rem; color:var(--admin-muted); margin-bottom:14px;">
+            Exporta el resumen operativo completo de hoy o de un día específico.
+          </p>
+          <div class="form-group" style="margin-bottom:14px; max-width:220px;">
+            <label class="form-label" for="fecha-resumen">Fecha (por defecto: hoy)</label>
+            <input class="form-input" type="date" id="fecha-resumen" />
+          </div>
+          <button class="btn-generar" id="btn-resumen" onclick="descargarResumenHoy()" style="max-width:280px;">
+            Descargar resumen del día
+          </button>
+        </div>
+      </div>
+
     </div>
 
   </main>
