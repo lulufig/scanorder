@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, HTTPException, status, Depends, WebSocket, WebSocketDisconnect
 from typing import List, Optional
 from anyio import from_thread
@@ -15,6 +16,9 @@ from app.utils.security import decode_access_token
 from app.services.cocina_manager import manager
 from app.services.mesa_state import mesa_operational_state
 from app.services.mesa_sessions import mesa_sessions
+from app.services.notifications import notification_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/pedidos",
@@ -306,6 +310,15 @@ def create_pedido(pedido: PedidoCreate):
                 "message": f"Nuevo pedido: Mesa {mesa['numero']}",
             }
         )
+        try:
+            notification_service.notify({
+                "type": "pedido_creado",
+                "numero_mesa": mesa["numero"],
+                "total": total,
+                "id_pedido": nuevo_id,
+            })
+        except Exception as exc:
+            logger.warning("Notificación pedido_creado falló (mesa %s): %s", mesa["numero"], exc)
         return creado
 
     except HTTPException:
@@ -361,6 +374,14 @@ def solicitar_servicio(servicio: ServicioMesaCreate):
                 "message": f"{mensaje}: Mesa {mesa['numero']}",
             }
         )
+        try:
+            notification_service.notify({
+                "type": "servicio_mesa",
+                "tipo": servicio.tipo,
+                "numero_mesa": mesa["numero"],
+            })
+        except Exception as exc:
+            logger.warning("Notificación servicio_mesa falló (mesa %s): %s", mesa["numero"], exc)
 
         return {
             "message": mensaje,

@@ -78,6 +78,7 @@ services/mesa_sessions.py         MesaSessionManager + singleton `mesa_sessions`
 - `services/cocina_manager.py` ← solo FastAPI
 - `services/mesa_state.py` ← `repositories/`
 - `services/mesa_sessions.py` ← `repositories/` + `services/cocina_manager`
+- `services/notifications.py` ← solo stdlib + twilio (opcional, lazy import)
 - `routes/pedidos.py` ← `services/*` (ya no define las clases, solo las importa)
 - `routes/mesas.py` ← `services/*` (ya no importa desde `routes/pedidos`)
 
@@ -169,6 +170,42 @@ Si la primera transacción completó exitosamente, todos los pedidos ya tienen f
 ### Validación del método de pago
 
 El método de pago se valida contra una allow-list **antes de abrir conexión a la DB** (líneas ~525-530). Un método inválido devuelve 400 inmediatamente, sin costo de conexión.
+
+---
+
+## Notificaciones externas (`services/notifications.py`)
+
+Interfaz `NotificationService` con un único método:
+```python
+def notify(self, evento: dict) -> None: ...
+```
+
+`evento` siempre incluye `"type"` (`"pedido_creado"` | `"servicio_mesa"`) y `"numero_mesa"`.
+
+### Implementaciones
+
+| Clase | Estado | Activación |
+|---|---|---|
+| `TwilioWhatsAppNotifier` | Activa | Las 4 vars `TWILIO_*` presentes en `.env` |
+| `EscPosPrinterNotifier` | Stub (TODO) | Ver docstring en el archivo |
+| `_NullNotifier` | Fallback | Vars ausentes o Twilio no instalado |
+
+El singleton `notification_service` se construye al importar el módulo (`_build_notifier()`). Si Twilio no está configurado o falla la inicialización, devuelve silenciosamente `_NullNotifier` — el backend arranca igual.
+
+### Puntos de disparo
+
+Ambos en `routes/pedidos.py`, **post-commit**, en bloques `try/except` independientes:
+- `create_pedido` → `notify({"type": "pedido_creado", "numero_mesa": ..., "total": ..., "id_pedido": ...})`
+- `solicitar_servicio` → `notify({"type": "servicio_mesa", "tipo": "mozo"|"cuenta", "numero_mesa": ...})`
+
+Un fallo de notificación se loguea como `WARNING` y nunca se propaga al cliente.
+
+### Cómo agregar la impresora térmica (ESC/POS)
+
+1. Implementar `EscPosPrinterNotifier.notify()` (clase ya existe en el archivo, con TODO detallado).
+2. Elegir librería (`python-escpos` o similar) y agregarla a `requirements.txt`.
+3. En `_build_notifier()`, agregar rama que lea `PRINTER_TARGET` del env e instancie `EscPosPrinterNotifier`.
+4. Si se quieren notificaciones en paralelo (WhatsApp + impresora), envolver ambas en un `CompositeNotifier` que itere una lista de `NotificationService`.
 
 ---
 

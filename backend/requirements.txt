@@ -9,5 +9,6 @@ PyJWT[cryptography]>=2.8.0
 python-multipart>=0.0.7
 qrcode[pil]>=7.4.2
 passlib[bcrypt]>=1.7.4
+twilio>=9.0.0
 pytest>=8.0.0
 httpx>=0.26.0,<0.28
