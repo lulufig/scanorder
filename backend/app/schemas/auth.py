@@ -1,14 +1,14 @@
 from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 
-ROLES_VALIDOS = {"admin", "cocina"}
+ROLES_VALIDOS = {"admin", "mozo"}
 
 class UserRegister(BaseModel):
     """Schema para registrar un usuario nuevo."""
     nombre: str
     email: EmailStr
     password: str
-    rol: str = "cocina"
+    rol: str = "mozo"
 
     @field_validator("password")
     @classmethod

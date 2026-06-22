@@ -12,14 +12,14 @@ USE scanorder_db;
 
 -- ──────────────────────────────────────────────
 -- TABLA: usuarios
--- Usuarios del sistema (admin y cocina)
+-- Usuarios del sistema (admin y mozo)
 -- ──────────────────────────────────────────────
 CREATE TABLE usuarios (
     id_usuario  INT AUTO_INCREMENT PRIMARY KEY,
     nombre      VARCHAR(100)    NOT NULL,
     email       VARCHAR(150)    NOT NULL UNIQUE,
     password_hash VARCHAR(255)  NOT NULL,
-    rol         ENUM('admin', 'cocina') NOT NULL DEFAULT 'cocina',
+    rol         ENUM('admin', 'mozo') NOT NULL DEFAULT 'mozo',
     activo      BOOLEAN         NOT NULL DEFAULT TRUE,
     created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
