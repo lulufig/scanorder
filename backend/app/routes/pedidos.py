@@ -1,4 +1,5 @@
 import logging
+import os
 from fastapi import APIRouter, HTTPException, status, Depends, WebSocket, WebSocketDisconnect
 from typing import List, Optional
 from anyio import from_thread
@@ -11,8 +12,7 @@ from app.schemas.pedidos import (
     EstadoUpdate,
     ServicioMesaCreate,
 )
-from app.utils.dependencies import get_current_user
-from app.utils.security import decode_access_token
+from app.utils.dependencies import get_current_user, get_current_user_optional
 from app.services.cocina_manager import manager
 from app.services.mesa_state import mesa_operational_state
 from app.services.mesa_sessions import mesa_sessions
@@ -113,10 +113,12 @@ def notificar_cocina(message: dict):
 # ── WebSocket: panel de cocina ────────────────────────────────────────────────
 
 @router.websocket("/ws/cocina")
-async def websocket_cocina(websocket: WebSocket, token: str = ""):
-    """Canal en tiempo real para avisar a cocina cuando cambian los pedidos."""
-    payload = decode_access_token(token)
-    if not payload or payload.get("rol") not in {"cocina", "admin"}:
+async def websocket_cocina(websocket: WebSocket, device_token: str = ""):
+    """Canal en tiempo real para avisar a cocina cuando cambian los pedidos.
+    Requiere el device_token fijo del dispositivo cocina (COCINA_DEVICE_TOKEN en .env).
+    """
+    cocina_token = os.getenv("COCINA_DEVICE_TOKEN", "")
+    if not cocina_token or device_token != cocina_token:
         await websocket.close(code=1008)
         return
 
@@ -449,14 +451,18 @@ def listar_pedidos(
 
 @router.get("/activos-completos", response_model=List[PedidoCompletoResponse])
 def listar_pedidos_activos_completos(
-    current_user: dict = Depends(get_current_user),
+    device_token: str = "",
+    current_user: Optional[dict] = Depends(get_current_user_optional),
 ):
-    """Lista pedidos activos con detalle en una sola respuesta para cocina/admin."""
-    if current_user.get("rol") not in {"admin", "cocina"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo administración o cocina pueden consultar pedidos activos",
-        )
+    """Lista pedidos activos con detalle. Acepta JWT mozo/admin o COCINA_DEVICE_TOKEN."""
+    cocina_tok = os.getenv("COCINA_DEVICE_TOKEN", "")
+    es_dispositivo = bool(cocina_tok) and device_token == cocina_tok
+    if not es_dispositivo:
+        if current_user is None or current_user.get("rol") not in {"admin", "mozo"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo administración o mozos pueden consultar pedidos activos",
+            )
 
     connection = get_db_connection()
     if not connection:
@@ -629,10 +635,10 @@ def actualizar_estado_pedido(
     No se permiten saltos ni retrocesos.
     Requiere usuario admin o cocina.
     """
-    if current_user.get("rol") not in {"admin", "cocina"}:
+    if current_user.get("rol") not in {"admin", "mozo"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo administración o cocina pueden actualizar pedidos",
+            detail="Solo administración o mozos pueden actualizar pedidos",
         )
 
     connection = get_db_connection()

@@ -541,7 +541,7 @@ def cuenta_mesa(
 def cerrar_mesa(
     id_mesa: int,
     body: CierreMesaCreate,
-    current_user: dict = Depends(require_role("admin"))
+    current_user: dict = Depends(require_role("mozo", "admin"))
 ):
     """
     Registra el cobro de una mesa y la libera.
@@ -774,7 +774,7 @@ def liberar_mesa(
 @router.post("/{id_mesa}/atender-mozo")
 def atender_solicitud_mozo(
     id_mesa: int,
-    current_user: dict = Depends(require_role("admin"))
+    current_user: dict = Depends(require_role("mozo", "admin"))
 ):
     """Marca como atendida la solicitud de mozo de una mesa."""
     connection = get_db_connection()
