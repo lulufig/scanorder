@@ -22,7 +22,7 @@ No hay paso de build para el frontend: son archivos estáticos en `frontend/` qu
 
 ## Configuración / entorno
 
-- El backend requiere `backend/.env` (no versionado, sin plantilla `.env.example` en el repo). Variables: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `APP_NAME`, `DEBUG`, `MENU_URL`, `CORS_ORIGINS`, `CORS_ORIGIN_REGEX`.
+- El backend requiere `backend/.env` (no versionado, sin plantilla `.env.example` en el repo). Variables: `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `APP_NAME`, `DEBUG`, `MENU_URL`, `CORS_ORIGINS`, `CORS_ORIGIN_REGEX`, `COCINA_DEVICE_TOKEN`.
 - `SECRET_KEY` ausente hace que `app/utils/security.py` lance `RuntimeError` al importar el módulo (falla rápido, intencional).
 - `MENU_URL` se usa para generar las URLs embebidas en los QR y también se agrega automáticamente a los orígenes de CORS (`app/main.py`).
 - Los tests no dependen del `.env` real: `tests/conftest.py` fuerza sus propias env vars (`SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`) con `setdefault` antes de importar la app.
@@ -30,7 +30,7 @@ No hay paso de build para el frontend: son archivos estáticos en `frontend/` qu
 
 ### Migraciones (`backend/migrations/`)
 
-Orden de aplicación: `001` → `006`, secuencial, sin runner (se corren a mano contra MySQL).
+Orden de aplicación: `001` → `008`, secuencial, sin runner (se corren a mano contra MySQL).
 
 **Verificado ejecutándolas de verdad** contra una base descartable (`scanorder_migration_test`, dropeada al terminar; `scanorder_db` no se tocó):
 
@@ -44,13 +44,56 @@ Orden de aplicación: `001` → `006`, secuencial, sin runner (se corren a mano 
 - `002_menu_categorias_nuevas.sql` asume categorías ya existentes con IDs hardcodeados 1-4 (`UPDATE categorias ... WHERE id_categoria = 1`, etc.). Ni `docs/database.sql` ni ningún script del repo siembran esas filas — si esos IDs no existen, la migración no falla pero tampoco logra nada (0 filas afectadas, silencioso).
 - `001` y `004` no son redundantes entre sí pese al nombre similar de "trazabilidad": `001` corrige el tipo de la columna `estado` (bug ENUM→VARCHAR que dejaba pedidos con `estado=''`); `004` agrega las columnas de fecha por estado (`confirmado_at`, `preparacion_at`, `listo_at`, `entregado_at`) que usan `pedidos.py` y `reportes.py`. Cambios independientes sobre la misma tabla, ninguno reemplaza al otro.
 
+## Modelo de roles y autenticación (desde `refactor/roles-mozo`)
+
+### Roles de usuario (`usuarios.rol`)
+
+| Rol | ENUM | Accede a |
+|---|---|---|
+| `admin` | ✓ | Todo: gestión de mesas, productos, reportes, marcar estados, cerrar mesas |
+| `mozo` | ✓ | Marcar estados de pedido (`PATCH /pedidos/{id}/estado`), cerrar mesas (`POST /mesas/{id}/cerrar`), atender mozo (`POST /mesas/{id}/atender-mozo`), ver pedidos activos |
+
+El rol `cocina` fue eliminado del sistema de usuarios. Los usuarios existentes con `rol='cocina'` se migran a `mozo` con la migración `008_roles_mozo.sql`.
+
+### Panel de cocina — autenticación por device_token
+
+El panel de cocina (`frontend/cocina/pedidos.html`) ya **no requiere login de usuario**. Se protege con un token fijo por dispositivo:
+
+- **Variable de entorno backend**: `COCINA_DEVICE_TOKEN` en `backend/.env`. Si está vacía, el WS rechaza todas las conexiones.
+- **Variable frontend**: `window.COCINA_DEVICE_TOKEN` en el HTML de la página cocina (configurar por instalación, una vez, en `pedidos.html`).
+- **WS `/pedidos/ws/cocina`**: valida `?device_token=<valor>` contra `COCINA_DEVICE_TOKEN`. Cierra con código `1008` si no coincide.
+- **`GET /pedidos/activos-completos`**: acepta `?device_token=<valor>` como alternativa al JWT mozo/admin. Mismo token que el WS.
+- El panel de cocina es **solo lectura** (muestra pedidos via WS/polling). Los mozos marcan estados desde su panel autenticado.
+
+### `require_role` — uso variadic
+
+```python
+# Un solo rol (igual que antes)
+Depends(require_role("admin"))
+
+# Múltiples roles (cualquiera de los indicados pasa)
+Depends(require_role("mozo", "admin"))
+```
+
+### Endpoints con permisos cambiados
+
+| Endpoint | Antes | Ahora |
+|---|---|---|
+| `PATCH /pedidos/{id}/estado` | admin o cocina | admin o mozo |
+| `GET /pedidos/activos-completos` | admin o cocina | admin, mozo, o device_token |
+| `POST /mesas/{id}/cerrar` | admin | admin o mozo |
+| `POST /mesas/{id}/atender-mozo` | admin | admin o mozo |
+| `WS /pedidos/ws/cocina` | JWT (rol cocina o admin) | COCINA_DEVICE_TOKEN |
+
+---
+
 ## Arquitectura backend (`backend/app/`)
 
 - `main.py`: bootstrap de FastAPI, configuración de CORS (incluye auto-detección del origen desde `MENU_URL`) y registro de routers. No monta `/static` a propósito — los QR se sirven solo vía endpoint autenticado (`/mesas/{id}/qr`) para no exponer tokens embebidos en las imágenes.
 - `database.py`: conexión directa con `mysql-connector-python` (sin ORM, sin pool gestionado por librería — cada función abre/cierra su propia conexión).
-- `routes/`: un router por dominio (`auth`, `productos`, `mesas`, `pedidos`, `reportes`). La autorización por rol usa la dependencia `require_role("admin"|"cocina")` de `utils/dependencies.py` vía `Depends(...)` — **excepto** en `/auth/register` y en los dos endpoints WebSocket de `pedidos.py`, donde el rol/token se valida a mano leyendo headers o query params (inconsistencia de patrón conocida, no un bug).
+- `routes/`: un router por dominio (`auth`, `productos`, `mesas`, `pedidos`, `reportes`). La autorización por rol usa la dependencia `require_role(...)` de `utils/dependencies.py` vía `Depends(...)` — **excepto** en `/auth/register`, `/pedidos/ws/cocina` (device_token) y el WS de mesa (qr_token manual).
 - `utils/security.py`: hashing de passwords (bcrypt vía passlib) y JWT (encode/decode).
-- `utils/dependencies.py`: `get_current_user` (valida Bearer JWT) y `require_role(rol)`.
+- `utils/dependencies.py`: `get_current_user` (valida Bearer JWT), `get_current_user_optional` (ídem pero devuelve None si no hay token), `require_role(*roles)` (variadic: acepta uno o varios roles).
 - `utils/qr.py`: generación de PNG de QR con `qrcode[pil]`.
 
 ### Capas de servicio y repositorio (`services/`, `repositories/`)
@@ -279,4 +322,4 @@ Después de guardar el token: si `data.user.must_change_password` es `true`, red
 
 ### Próxima migración
 
-La siguiente migración incremental será `008_*.sql`.
+La siguiente migración incremental será `009_*.sql`.
