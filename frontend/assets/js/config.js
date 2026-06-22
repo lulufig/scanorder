@@ -15,10 +15,11 @@ const ROUTES = {
 };
 
 // Roles válidos — tienen que coincidir exactamente con los
-// valores que guarda el backend en la tabla usuarios.rol
+// valores que guarda el backend en la tabla usuarios.rol.
+// El panel de cocina ya NO usa rol de usuario: usa COCINA_DEVICE_TOKEN.
 const ROLES = {
-  ADMIN:  "admin",
-  COCINA: "cocina",
+  ADMIN: "admin",
+  MOZO:  "mozo",
 };
 
 // Tiempo de polling para el panel de cocina (ms)

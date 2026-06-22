@@ -11,7 +11,7 @@
 //      "id_usuario": 1,
 //      "nombre": "...",
 //      "email": "...",
-//      "rol": "admin" | "cocina",
+//      "rol": "admin" | "mozo",
 //      "activo": true
 //    }
 //  }
@@ -71,7 +71,7 @@ function getUser() {
 }
 
 /**
- * Devuelve el rol del usuario actual ("admin" | "cocina" | null).
+ * Devuelve el rol del usuario actual ("admin" | "mozo" | null).
  * @returns {string|null}
  */
 function getUserRole() {
@@ -114,8 +114,8 @@ function isLoggedIn() {
  *
  * Uso al inicio de cada página protegida:
  *   requireAuth();             → solo verifica sesión
- *   requireAuth(ROLES.ADMIN);  → verifica sesión + rol admin
- *   requireAuth(ROLES.COCINA); → verifica sesión + rol cocina
+ *   requireAuth(ROLES.ADMIN); → verifica sesión + rol admin
+ *   requireAuth(ROLES.MOZO);  → verifica sesión + rol mozo
  *
  * @param {string|null} requiredRole
  */
@@ -126,9 +126,8 @@ function requireAuth(requiredRole = null) {
   }
   if (requiredRole && getUserRole() !== requiredRole) {
     const role = getUserRole();
-    if (role === ROLES.ADMIN)       window.location.href = ROUTES.admin;
-    else if (role === ROLES.COCINA) window.location.href = ROUTES.cocina;
-    else                            window.location.href = ROUTES.login;
+    if (role === ROLES.ADMIN) window.location.href = ROUTES.admin;
+    else                      window.location.href = ROUTES.login;
     return false;
   }
   return true;

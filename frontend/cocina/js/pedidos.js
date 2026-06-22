@@ -1,12 +1,8 @@
 
-    // ── PROTECCIÓN DE RUTA ──────────────────────────────────────
-    // Solo usuarios con rol "cocina" pueden acceder
-    if (!requireAuth(ROLES.COCINA)) throw new Error();
-
-    const usuario = getUser();
-    if (usuario) {
-      document.getElementById("topbar-nombre").textContent = usuario.nombre;
-    }
+    // ── DEVICE TOKEN ─────────────────────────────────────────────
+    // El panel de cocina no requiere login de usuario. Se protege con
+    // COCINA_DEVICE_TOKEN (fijo por dispositivo, configurado en pedidos.html).
+    const DEVICE_TOKEN = window.COCINA_DEVICE_TOKEN || "";
 
     // ── ESTADO ──────────────────────────────────────────────────
     let pedidos        = { pendiente: [], confirmado: [], en_preparacion: [], listo: [] };
@@ -37,8 +33,8 @@
     // ── CARGAR PEDIDOS ───────────────────────────────────────────
     async function cargarPedidos() {
       try {
-        // GET /pedidos/activos-completos — devuelve pedidos activos con detalle
-        const lista = await fetchAPI("/pedidos/activos-completos");
+        // GET /pedidos/activos-completos — acepta device_token como alternativa a JWT
+        const lista = await fetchAPI(`/pedidos/activos-completos?device_token=${encodeURIComponent(DEVICE_TOKEN)}`, "GET", null, false);
         const conDetalle = Array.isArray(lista) ? lista : [];
 
         // Separar por estado
@@ -280,12 +276,9 @@
 
     // ── TIEMPO REAL ──────────────────────────────────────────────
     function conectarTiempoReal() {
-      const token = getToken();
-      if (!token) return;
-
       const wsProtocol = API_URL.startsWith("https") ? "wss" : "ws";
       const wsBase = API_URL.replace(/^https?:\/\//, "");
-      const socket = new WebSocket(`${wsProtocol}://${wsBase}/pedidos/ws/cocina?token=${encodeURIComponent(token)}`);
+      const socket = new WebSocket(`${wsProtocol}://${wsBase}/pedidos/ws/cocina?device_token=${encodeURIComponent(DEVICE_TOKEN)}`);
 
       socket.addEventListener("message", (event) => {
         reproducirAviso();

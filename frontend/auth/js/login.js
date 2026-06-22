@@ -2,8 +2,7 @@
     // Si ya hay sesión activa, redirigir directo al panel correspondiente
     if (isLoggedIn()) {
       const role = getUserRole();
-      if (role === ROLES.ADMIN)  window.location.href = ROUTES.admin;
-      if (role === ROLES.COCINA) window.location.href = ROUTES.cocina;
+      if (role === ROLES.ADMIN || role === ROLES.MOZO) window.location.href = ROUTES.admin;
     }
 
     // Permitir enviar con Enter desde cualquier campo
@@ -71,11 +70,9 @@
           return;
         }
 
-        // Redirigir según rol
-        if (data.user.rol === ROLES.ADMIN) {
+        // Redirigir según rol (admin y mozo van al panel de administración)
+        if (data.user.rol === ROLES.ADMIN || data.user.rol === ROLES.MOZO) {
           window.location.href = ROUTES.admin;
-        } else if (data.user.rol === ROLES.COCINA) {
-          window.location.href = ROUTES.cocina;
         } else {
           showError("Rol desconocido. Contactá al administrador.");
         }
