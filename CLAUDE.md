@@ -87,11 +87,55 @@ Depends(require_role("mozo", "admin"))
 
 ---
 
+## Flujo de autenticación completo (`feature/auth-complete`)
+
+### Creación de usuarios (solo admin)
+
+El admin crea cuentas de mozos desde `/admin/usuarios`. No hay registro público. El sistema genera una contraseña temporal aleatoria (10 caracteres alfanuméricos), la guarda hasheada con `must_change_password=TRUE` y envía un email de bienvenida.
+
+| Endpoint | Método | Rol | Descripción |
+|---|---|---|---|
+| `GET /admin/usuarios` | GET | admin | Lista usuarios (sin password_hash). Campo `debe_cambiar_password` en respuesta. |
+| `POST /admin/usuarios` | POST | admin | Crea usuario con contraseña temporal + envía email de bienvenida. |
+| `POST /admin/usuarios/{id}/reenviar-bienvenida` | POST | admin | Genera nueva contraseña temporal y reenvía email. |
+
+### Recuperación de contraseña
+
+| Endpoint | Método | Rol | Descripción |
+|---|---|---|---|
+| `POST /auth/forgot-password` | POST | Público | Genera token y envía email. Siempre devuelve 200. Rate limit: 3/email/hora (en memoria). |
+| `POST /auth/reset-password` | POST | Público | Valida token, actualiza password, marca token como usado (no se borra). |
+
+- Los tokens se guardan en `password_reset_tokens` (migración 011): 30 min de TTL, un solo uso.
+- `forgot-password` **nunca confirma** si un email existe o no.
+
+### Cambio de contraseña (autenticado)
+
+`POST /auth/cambiar-password` — requiere `password_actual` + `nueva_password`. Valida la contraseña actual antes de actualizar. Limpia `must_change_password=FALSE`. Se usa también en el primer login forzado.
+
+### Primer login forzado
+
+`GET /auth/me` hace un DB lookup y devuelve `debe_cambiar_password` (reflejo de `must_change_password` en DB). El frontend redirige al formulario de cambio si es `true`. El backend **no bloquea** otros endpoints por este flag.
+
+### Email service (`app/services/email_service.py`)
+
+Usa `smtplib` (stdlib, sin dependencias nuevas). Variables: `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `FRONTEND_URL`. Si las variables no están configuradas, los envíos se descartan silenciosamente con un `WARNING` en los logs — el backend sigue funcionando.
+
+Funciones públicas: `enviar_bienvenida(email, nombre, password_temporal)`, `enviar_reset_password(email, nombre, token)`.
+
+**La contraseña temporal nunca se loguea.** El email falla silenciosamente para no bloquear la creación del usuario.
+
+### Rate limit en `forgot-password`
+
+Implementado con un dict en memoria (`_forgot_attempts`) en `routes/auth.py`. Ventana de 3600 segundos, máximo 3 intentos por email. Se resetea al reiniciar el proceso (aceptable para este caso de uso). No requiere dependencias externas (no usa slowapi).
+
+---
+
 ## Arquitectura backend (`backend/app/`)
 
 - `main.py`: bootstrap de FastAPI, configuración de CORS (incluye auto-detección del origen desde `MENU_URL`) y registro de routers. No monta `/static` a propósito — los QR se sirven solo vía endpoint autenticado (`/mesas/{id}/qr`) para no exponer tokens embebidos en las imágenes.
 - `database.py`: conexión directa con `mysql-connector-python` (sin ORM, sin pool gestionado por librería — cada función abre/cierra su propia conexión).
-- `routes/`: un router por dominio (`auth`, `productos`, `mesas`, `pedidos`, `reportes`). La autorización por rol usa la dependencia `require_role(...)` de `utils/dependencies.py` vía `Depends(...)` — **excepto** en `/auth/register`, `/pedidos/ws/cocina` (device_token) y el WS de mesa (qr_token manual).
+- `routes/`: un router por dominio (`auth`, `admin`, `productos`, `mesas`, `pedidos`, `reportes`, `inventario`). La autorización por rol usa la dependencia `require_role(...)` de `utils/dependencies.py` vía `Depends(...)` — **excepto** en `/auth/register`, `/pedidos/ws/cocina` (device_token) y el WS de mesa (qr_token manual).
 - `utils/security.py`: hashing de passwords (bcrypt vía passlib) y JWT (encode/decode).
 - `utils/dependencies.py`: `get_current_user` (valida Bearer JWT), `get_current_user_optional` (ídem pero devuelve None si no hay token), `require_role(*roles)` (variadic: acepta uno o varios roles).
 - `utils/qr.py`: generación de PNG de QR con `qrcode[pil]`.
@@ -386,6 +430,6 @@ Después de guardar el token: si `data.user.must_change_password` es `true`, red
 
 ### Próxima migración
 
-La siguiente migración incremental será `011_*.sql`.
+La siguiente migración incremental será `012_*.sql`.
 
-`010_inventory.sql` agrega `stock_actual`/`stock_minimo` a `productos` y crea `movimientos_stock`.
+`011_auth_complete.sql` agrega tabla `password_reset_tokens` (tokens de recuperación de un solo uso, expiran en 30 min). `email` ya existía en el schema base; `must_change_password` ya existía en migración 007.

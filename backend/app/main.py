@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 # Importar rutas
 from app.routes import auth, productos, mesas, pedidos, reportes
+from app.routes.admin import router as admin_router
 from app.routes.inventario import router as inventario_router, movimientos_router
 
 # Crear instancia de FastAPI
@@ -48,6 +49,7 @@ app.add_middleware(
 
 # Registrar rutas
 app.include_router(auth.router)
+app.include_router(admin_router)
 app.include_router(productos.router)
 app.include_router(mesas.router)
 app.include_router(pedidos.router)
