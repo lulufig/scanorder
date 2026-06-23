@@ -200,6 +200,8 @@ def get_current_user_info(current_user: dict = Depends(get_current_user)):
         user = cursor.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        user["debe_cambiar_password"] = bool(user.get("debe_cambiar_password", False))
+        user["activo"] = bool(user.get("activo", True))
         return {"message": "Acceso autorizado", "user": user}
     except HTTPException:
         raise

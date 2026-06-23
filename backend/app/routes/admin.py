@@ -28,6 +28,14 @@ def _password_temporal(length: int = 10) -> str:
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
+def _normalizar_usuario(row: dict) -> dict:
+    """mysql-connector devuelve BOOLEAN como int (0/1). Castea a bool para que
+    FastAPI serialice como JSON true/false en lugar de 1/0."""
+    row["debe_cambiar_password"] = bool(row.get("debe_cambiar_password", False))
+    row["activo"] = bool(row.get("activo", True))
+    return row
+
+
 # ── GET /admin/usuarios ───────────────────────────────────────────────────────
 
 @router.get("/usuarios", dependencies=[Depends(require_role("admin"))])
@@ -46,7 +54,7 @@ def listar_usuarios():
              ORDER BY created_at DESC
             """
         )
-        return cursor.fetchall()
+        return [_normalizar_usuario(row) for row in cursor.fetchall()]
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error al listar usuarios: {exc}")
     finally:
@@ -99,7 +107,7 @@ def crear_usuario(body: UsuarioCreate):
             """,
             (nuevo_id,),
         )
-        usuario = cursor.fetchone()
+        usuario = _normalizar_usuario(cursor.fetchone())
     except HTTPException:
         connection.rollback()
         raise

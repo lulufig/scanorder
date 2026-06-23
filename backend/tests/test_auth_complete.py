@@ -261,7 +261,7 @@ class TestAdminCrearUsuario:
         cursor.execute("SELECT must_change_password FROM usuarios WHERE email = %s", (email,))
         row = cursor.fetchone()
         assert row is not None
-        assert row["must_change_password"] is True
+        assert bool(row["must_change_password"])  # MySQL devuelve 1/0, no True/False
         cursor.close()
 
         # Cleanup
