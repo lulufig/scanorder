@@ -284,11 +284,10 @@
       const pedidos = Array.isArray(data.pedidos) ? data.pedidos : [];
       title.textContent = `Mesa ${mesa.numero || "—"}`;
 
-      // Mesa pagada anticipadamente: todos los pedidos del día ya están en
-      // "entregado"/"cancelado" pero el estado operativo sigue ocupado.
-      const todosEntregados = pedidos.length > 0 &&
-        pedidos.every(p => p.estado === "entregado" || p.estado === "cancelado");
-      const pagadaPendienteEntrega = data.ocupada && todosEntregados;
+      // "Liberar mesa" solo si no quedan pedidos por cobrar (cp.id_pedido IS NULL)
+      // pero el estado operativo sigue ocupado. Si hay pedidos visibles en esta
+      // lista, son cobrables (el endpoint filtra los que ya tienen cierre).
+      const pagadaPendienteEntrega = pedidos.length === 0 && data.ocupada;
 
       body.innerHTML = `
         <div class="mesa-operacion-summary">

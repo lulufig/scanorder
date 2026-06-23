@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 # Importar rutas
 from app.routes import auth, productos, mesas, pedidos, reportes
+from app.routes.inventario import router as inventario_router, movimientos_router
 
 # Crear instancia de FastAPI
 app = FastAPI(
@@ -51,6 +52,8 @@ app.include_router(productos.router)
 app.include_router(mesas.router)
 app.include_router(pedidos.router)
 app.include_router(reportes.router)
+app.include_router(inventario_router)
+app.include_router(movimientos_router)
 
 # Los QR se entregan por /mesas/{id}/qr con autenticación de admin.
 # No se monta /static para evitar exponer tokens embebidos en imágenes QR.

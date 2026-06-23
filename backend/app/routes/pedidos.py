@@ -1,6 +1,7 @@
 import logging
 import os
 from fastapi import APIRouter, HTTPException, status, Depends, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from typing import List, Optional
 from anyio import from_thread
 
@@ -17,6 +18,11 @@ from app.services.cocina_manager import manager
 from app.services.mesa_state import mesa_operational_state
 from app.services.mesa_sessions import mesa_sessions
 from app.services.notifications import notification_service
+from app.services.inventory_service import (
+    validar_stock_batch,
+    descontar_stock_pedido,
+    InsufficientStockError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -267,6 +273,18 @@ def create_pedido(pedido: PedidoCreate):
             )
 
         observaciones = pedido.observaciones.strip() if pedido.observaciones else None
+
+        try:
+            validar_stock_batch(cursor, items)
+        except InsufficientStockError as e:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "error": "stock_insuficiente",
+                    "productos_faltantes": e.faltantes,
+                },
+            )
+
         if tiene_observaciones:
             cursor.execute(
                 "INSERT INTO pedidos (id_mesa, total, observaciones) VALUES (%s, %s, %s)",
@@ -702,6 +720,21 @@ def actualizar_estado_pedido(
             "UPDATE pedidos SET " + ", ".join(campos_update) + " WHERE id_pedido = %s",
             (*valores_update, id_pedido),
         )
+
+        # Descuenta stock al momento de la entrega (dentro de la misma transacción)
+        if body.estado == "entregado" and estado_actual != "entregado":
+            cursor.execute(
+                "SELECT id_producto, cantidad FROM detalle_pedidos WHERE id_pedido = %s",
+                (id_pedido,),
+            )
+            items_pedido = cursor.fetchall()
+            descontar_stock_pedido(
+                cursor,
+                items_pedido,
+                id_pedido,
+                current_user["user_id"],
+            )
+
         connection.commit()
 
         cursor.execute(query_pedido_actualizado, (id_pedido,))
@@ -713,8 +746,10 @@ def actualizar_estado_pedido(
         )
         return actualizado
     except HTTPException:
+        connection.rollback()
         raise
     except Exception as e:
+        connection.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al actualizar estado: {str(e)}",

@@ -264,6 +264,70 @@ Un fallo de notificación se loguea como `WARNING` y nunca se propaga al cliente
 
 ---
 
+## Control de inventario (`feature/inventory-control`)
+
+### Flujo completo
+
+```
+POST /pedidos/           →  validar_stock_batch()         # 409 si falta stock, NO descuenta
+PATCH /pedidos/{id}/estado → body.estado == "entregado"   # descuenta stock (transacción única)
+```
+
+**Reglas de negocio:**
+- Stock se valida y bloquea **antes** de crear el pedido. Si no hay stock → 409 con `productos_faltantes`.
+- Stock se descuenta **solo al marcar "entregado"** (no al crear, no al confirmar, no al preparar).
+- Cancelar un pedido **no modifica el stock** (nunca se descontó).
+- Toda modificación de stock es transaccional. Si falla a mitad, rollback completo.
+
+### `services/inventory_service.py`
+
+| Función | Descripción |
+|---|---|
+| `validar_stock_batch(cursor, items)` | Lee stock en una sola query `IN()`. Lanza `InsufficientStockError` con lista completa de faltantes. Acepta cursor del caller (participante). |
+| `descontar_stock_pedido(cursor, items, id_pedido, id_usuario)` | `SELECT ... FOR UPDATE` por ítem + `UPDATE productos SET stock_actual` + `INSERT movimientos_stock`. Acepta cursor del caller (participante). |
+| `incrementar_stock(id_producto, cantidad, motivo, id_usuario)` | Gestiona su propia transacción. Tipo `entrada`. |
+| `ajustar_stock_manual(id_producto, nuevo_stock, nuevo_minimo, motivo, id_usuario)` | Gestiona su propia transacción. Tipo `ajuste`. Calcula diferencia; si diferencia=0 no inserta movimiento. |
+| `obtener_productos_bajo_minimo()` | Read-only, conexión propia. Retorna productos con `stock_actual < stock_minimo`. |
+
+**Graceful degradation:** si `stock_actual` no existe en la tabla `productos` (migración 010 no aplicada), todas las funciones degradan en silencio sin error.
+
+### `routes/inventario.py`
+
+| Endpoint | Método | Requiere | Descripción |
+|---|---|---|---|
+| `GET /inventario/` | GET | admin | Lista todos con estado OK/BAJO/AGOTADO. Soporta `?estado=BAJO`. |
+| `GET /inventario/bajo-minimo` | GET | admin | Solo productos con déficit. |
+| `PUT /inventario/{id}` | PUT | admin | Ajuste manual de stock y mínimo. |
+| `POST /inventario/{id}/entrada` | POST | admin | Entrada de stock (compra, reposición). |
+| `GET /movimientos-stock/` | GET | admin | Historial paginado. Filtros: `producto_id`, `tipo`, `desde`, `hasta`, `page`, `limit`. |
+
+### Atomicidad en entrega
+
+En `PATCH /pedidos/{id}/estado` cuando `body.estado == "entregado"`:
+1. `UPDATE pedidos SET estado = 'entregado', entregado_at = NOW()`
+2. `SELECT id_producto, cantidad FROM detalle_pedidos WHERE id_pedido = %s`
+3. Por cada ítem: `SELECT ... FOR UPDATE` → check no negativo → `UPDATE productos SET stock_actual` → `INSERT movimientos_stock`
+4. **Un único `connection.commit()`** cubre todo.
+5. Si cualquier paso falla: `connection.rollback()` en `except HTTPException` y `except Exception`. El pedido NO cambia de estado.
+
+### `movimientos_stock` — convención de cantidades
+
+- `tipo='salida'`: `cantidad` positivo (ej. 3 unidades entregadas).
+- `tipo='entrada'`: `cantidad` positivo (ej. 5 unidades repuestas).
+- `tipo='ajuste'`: `cantidad` con signo (positivo = aumento, negativo = reducción).
+- Constraint `CHECK (cantidad != 0)` previene registros vacíos.
+
+### UI Admin
+
+`frontend/admin/inventario.html` + `frontend/admin/js/inventario.js`:
+- Tabla con columnas: Producto, Categoría, Stock actual, Stock mínimo, Estado, Acciones.
+- Badge de estado: `OK` (verde), `BAJO` (amarillo), `AGOTADO` (rojo).
+- Banner de alerta global si hay productos con estado ≠ OK.
+- Modal "Ajustar Stock" con campos `stock_actual`, `stock_minimo`, `motivo`.
+- Polling automático cada 30 s.
+
+---
+
 ## Notas para cambios futuros
 
 - Si se elimina o modifica el carrito colaborativo (`MesaSessionManager`), revisar en cascada: detección de "mesa abandonada" (depende de él), `qr_token`/`session_key` (se cruza con él), y los consumidores frontend `frontend/cliente/menu.js` y `frontend/admin/js/mesas.js`.
@@ -322,4 +386,6 @@ Después de guardar el token: si `data.user.must_change_password` es `true`, red
 
 ### Próxima migración
 
-La siguiente migración incremental será `010_*.sql`.
+La siguiente migración incremental será `011_*.sql`.
+
+`010_inventory.sql` agrega `stock_actual`/`stock_minimo` a `productos` y crea `movimientos_stock`.
