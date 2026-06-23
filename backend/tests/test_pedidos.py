@@ -19,10 +19,14 @@ def test_pedido_create_acepta_observaciones_y_qr_token():
 
 
 def test_transiciones_de_estado_en_orden():
-    assert TRANSICION_ESTADO["pendiente"] == "confirmado"
-    assert TRANSICION_ESTADO["confirmado"] == "en_preparacion"
-    assert TRANSICION_ESTADO["en_preparacion"] == "listo"
-    assert TRANSICION_ESTADO["listo"] == "entregado"
+    # entregado es alcanzable desde cualquier estado activo
+    assert "confirmado" in TRANSICION_ESTADO["pendiente"]
+    assert "entregado"  in TRANSICION_ESTADO["pendiente"]
+    assert "en_preparacion" in TRANSICION_ESTADO["confirmado"]
+    assert "entregado"      in TRANSICION_ESTADO["confirmado"]
+    assert "listo"      in TRANSICION_ESTADO["en_preparacion"]
+    assert "entregado"  in TRANSICION_ESTADO["en_preparacion"]
+    assert TRANSICION_ESTADO["listo"] == {"entregado"}
 
 
 def test_estado_update_rechaza_estado_no_permitido():

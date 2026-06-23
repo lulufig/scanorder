@@ -5,10 +5,9 @@
     const DEVICE_TOKEN = window.COCINA_DEVICE_TOKEN || "";
 
     // ── ESTADO ──────────────────────────────────────────────────
-    let pedidos        = { pendiente: [], confirmado: [], en_preparacion: [], listo: [] };
+    let pedidos        = [];
     let pollingTimer   = null;
     let primeraVez     = true;
-    let enCambioEstado = new Set(); // IDs de pedidos con acción en progreso
 
     // ── ARRANCAR POLLING ─────────────────────────────────────────
     document.addEventListener("DOMContentLoaded", () => {
@@ -37,11 +36,8 @@
         const lista = await fetchAPI(`/pedidos/activos-completos?device_token=${encodeURIComponent(DEVICE_TOKEN)}`, "GET", null, false);
         const conDetalle = Array.isArray(lista) ? lista : [];
 
-        // Separar por estado
-        pedidos.pendiente      = conDetalle.filter(p => p.estado === "pendiente");
-        pedidos.confirmado     = conDetalle.filter(p => p.estado === "confirmado");
-        pedidos.en_preparacion = conDetalle.filter(p => p.estado === "en_preparacion");
-        pedidos.listo          = conDetalle.filter(p => p.estado === "listo");
+        // Mostrar todos los pedidos no entregados ni cancelados
+        pedidos = conDetalle.filter(p => p.estado !== "entregado" && p.estado !== "cancelado");
 
         actualizarStats();
         renderColumnas();
@@ -67,44 +63,21 @@
 
     // ── STATS ────────────────────────────────────────────────────
     function actualizarStats() {
-      document.getElementById("count-pendiente").textContent   = pedidos.pendiente.length;
-      document.getElementById("count-confirmado").textContent  = pedidos.confirmado.length;
-      document.getElementById("count-preparacion").textContent = pedidos.en_preparacion.length;
-      document.getElementById("count-listo").textContent       = pedidos.listo.length;
+      document.getElementById("count-total").textContent = pedidos.length;
     }
 
     // ── RENDER DE COLUMNAS ───────────────────────────────────────
     function renderColumnas() {
-      document.getElementById("columnas").innerHTML = `
-        ${renderColumna("pendiente",      "amarillo", " Pendientes",      pedidos.pendiente)}
-        ${renderColumna("confirmado",     "rojo",     " Confirmados",     pedidos.confirmado)}
-        ${renderColumna("en_preparacion", "naranja",  " En preparación",  pedidos.en_preparacion)}
-        ${renderColumna("listo",          "verde",    " Listos",           pedidos.listo)}
-      `;
-    }
-
-    function renderColumna(estado, color, titulo, lista) {
-      const cards = lista.length === 0
-        ? `<div class="columna-empty">
-             <div class="icon">
-               ${estado === "pendiente" ? "PEN" : estado === "confirmado" ? "CONF" : estado === "en_preparacion" ? "PREP" : "LISTO"}
-             </div>
-             <p>${estado === "pendiente" ? "Sin pedidos nuevos" : estado === "confirmado" ? "Sin pedidos confirmados" : estado === "en_preparacion" ? "Nada en preparación" : "Aún no hay pedidos listos"}</p>
+      document.getElementById("columnas").innerHTML = pedidos.length === 0
+        ? `<div class="columna-empty" style="grid-column:1/-1">
+             <div class="icon">—</div>
+             <p>Sin pedidos activos</p>
            </div>`
-        : lista.map(p => renderPedidoCard(p, estado, color)).join("");
-
-      return `
-        <div class="columna">
-          <div class="columna-header">
-            <div class="columna-titulo ${color}">${titulo}</div>
-            <div class="columna-count ${color}">${lista.length}</div>
-          </div>
-          ${cards}
-        </div>`;
+        : pedidos.map(p => renderPedidoCard(p, "amarillo")).join("");
     }
 
     // ── RENDER DE CADA CARD DE PEDIDO ────────────────────────────
-    function renderPedidoCard(pedido, estado, color) {
+    function renderPedidoCard(pedido, color) {
       const hora      = pedido.fecha ? formatHora(pedido.fecha) : "—";
       const tiempo    = pedido.fecha ? calcularTiempo(pedido.fecha) : null;
       const productos = pedido.detalle || [];
@@ -118,35 +91,6 @@
         if (tiempo > 20)       { tiempoClass = "urgente"; tiempoLabel = ` ${tiempo}m`; }
         else if (tiempo > 10)  { tiempoClass = "normal";  tiempoLabel = `${tiempo}m`; }
         else                   { tiempoClass = "ok";      tiempoLabel = `${tiempo}m`; }
-      }
-
-      // Botones según estado
-      let acciones = "";
-      if (estado === "pendiente") {
-        acciones = `
-          <button class="btn-accion btn-preparar"
-                  id="btn-${pedido.id_pedido}"
-                  onclick="cambiarEstado(${pedido.id_pedido}, 'confirmado')">Confirmar
-          </button>`;
-      } else if (estado === "confirmado") {
-        acciones = `
-          <button class="btn-accion btn-preparar"
-                  id="btn-${pedido.id_pedido}"
-                  onclick="cambiarEstado(${pedido.id_pedido}, 'en_preparacion')">
-             En preparación
-          </button>`;
-      } else if (estado === "en_preparacion") {
-        acciones = `
-          <button class="btn-accion btn-listo"
-                  id="btn-${pedido.id_pedido}"
-                  onclick="cambiarEstado(${pedido.id_pedido}, 'listo')">Marcar listo
-          </button>`;
-      } else if (estado === "listo") {
-        acciones = `
-          <button class="btn-accion btn-entregar"
-                  id="btn-${pedido.id_pedido}"
-                  onclick="cambiarEstado(${pedido.id_pedido}, 'entregado')">Entregado
-          </button>`;
       }
 
       return `
@@ -184,8 +128,6 @@
               <span>Total del pedido</span>
               <span class="pedido-total-val">${formatPrecio(total)}</span>
             </div>` : ""}
-
-          ${acciones ? `<div class="pedido-actions">${acciones}</div>` : ""}
 
         </div>`;
     }
@@ -228,50 +170,6 @@
         .toLowerCase()
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "");
-    }
-
-    // ── CAMBIAR ESTADO ────────────────────────────────────────────
-    async function cambiarEstado(idPedido, nuevoEstado) {
-      if (enCambioEstado.has(idPedido)) return;
-      enCambioEstado.add(idPedido);
-
-      const btn = document.getElementById(`btn-${idPedido}`);
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner"></span>';
-      }
-
-      try {
-        // PATCH /pedidos/{id}/estado — requiere token de cocina
-        // Body: { estado: "en_preparacion" | "listo" }
-        await fetchAPI(`/pedidos/${idPedido}/estado`, "PATCH", { estado: nuevoEstado });
-
-        const labels = {
-          en_preparacion: "Pedido en preparación",
-          listo:          "Pedido marcado como listo",
-          confirmado:     "Pedido confirmado",
-          entregado:      "Pedido entregado",
-        };
-        mostrarToast(labels[nuevoEstado] || "Estado actualizado", "success");
-
-        // Recargar inmediatamente sin esperar el polling
-        await cargarPedidos();
-
-      } catch (error) {
-        mostrarToast("Error al cambiar estado: " + error.message, "error");
-        if (btn) {
-          btn.disabled = false;
-          const textos = {
-            confirmado: "Confirmar",
-            en_preparacion: " En preparación",
-            listo: "Marcar listo",
-            entregado: "Entregado",
-          };
-          btn.innerHTML = textos[nuevoEstado] || "Actualizar";
-        }
-      } finally {
-        enCambioEstado.delete(idPedido);
-      }
     }
 
     // ── TIEMPO REAL ──────────────────────────────────────────────

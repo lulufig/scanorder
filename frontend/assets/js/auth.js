@@ -110,24 +110,24 @@ function isLoggedIn() {
 
 /**
  * Protege una página: si no hay sesión redirige al login.
- * Si se pasa un rol requerido, también verifica el rol.
+ * Acepta uno o varios roles permitidos.
  *
  * Uso al inicio de cada página protegida:
- *   requireAuth();             → solo verifica sesión
- *   requireAuth(ROLES.ADMIN); → verifica sesión + rol admin
- *   requireAuth(ROLES.MOZO);  → verifica sesión + rol mozo
+ *   requireAuth(ROLES.ADMIN);               → solo admin
+ *   requireAuth(ROLES.ADMIN, ROLES.MOZO);   → admin o mozo
  *
- * @param {string|null} requiredRole
+ * @param {...string} requiredRoles
  */
-function requireAuth(requiredRole = null) {
+function requireAuth(...requiredRoles) {
   if (!isLoggedIn()) {
     window.location.href = ROUTES.login;
     return false;
   }
-  if (requiredRole && getUserRole() !== requiredRole) {
+  if (requiredRoles.length > 0 && !requiredRoles.includes(getUserRole())) {
     const role = getUserRole();
-    if (role === ROLES.ADMIN) window.location.href = ROUTES.admin;
-    else                      window.location.href = ROUTES.login;
+    if (role === ROLES.ADMIN)  window.location.href = ROUTES.admin;
+    else if (role === ROLES.MOZO) window.location.href = ROUTES.mesas;
+    else                       window.location.href = ROUTES.login;
     return false;
   }
   return true;

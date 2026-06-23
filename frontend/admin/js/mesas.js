@@ -1,6 +1,6 @@
 
     // ── PROTECCIÓN DE RUTA ──────────────────────────────────────
-    if (!requireAuth(ROLES.ADMIN)) throw new Error();
+    if (!requireAuth(ROLES.ADMIN, ROLES.MOZO)) throw new Error();
 
     const usuario = getUser();
     if (usuario) {
@@ -284,6 +284,12 @@
       const pedidos = Array.isArray(data.pedidos) ? data.pedidos : [];
       title.textContent = `Mesa ${mesa.numero || "—"}`;
 
+      // Mesa pagada anticipadamente: todos los pedidos del día ya están en
+      // "entregado"/"cancelado" pero el estado operativo sigue ocupado.
+      const todosEntregados = pedidos.length > 0 &&
+        pedidos.every(p => p.estado === "entregado" || p.estado === "cancelado");
+      const pagadaPendienteEntrega = data.ocupada && todosEntregados;
+
       body.innerHTML = `
         <div class="mesa-operacion-summary">
           <div>
@@ -300,7 +306,11 @@
             ? `<button class="btn-ghost btn-service-done" type="button" onclick="atenderMozo(${mesa.id_mesa})">Mozo atendido</button>`
             : ""
           }
-          <button class="btn-cobrar" type="button" onclick="cobrarMesa(${mesa.id_mesa})">Cobrar mesa</button>
+          ${pagadaPendienteEntrega
+            ? `<div class="cobro-alerta">Mesa cobrada. Liberá cuando se entregue el pedido.</div>
+               <button class="btn-cobrar" type="button" onclick="liberarMesa(${mesa.id_mesa})">Liberar mesa</button>`
+            : `<button class="btn-cobrar" type="button" onclick="cobrarMesa(${mesa.id_mesa})">Cobrar mesa</button>`
+          }
         </div>
         <div class="mesa-pedidos-list">
           ${pedidos.length
@@ -314,11 +324,18 @@
       const detalle = Array.isArray(pedido.detalle) ? pedido.detalle : [];
       const observaciones = (pedido.observaciones || "").trim();
       const grupos = agruparDetallePedido(detalle);
-      const accion = pedido.estado === "pendiente"
-        ? `<button class="btn-primary mesa-action-primary" type="button" onclick="avanzarPedidoMesa(${pedido.id_pedido}, 'confirmado')">Confirmar pedido</button>`
-        : pedido.estado === "listo"
-          ? `<button class="btn-primary mesa-action-primary" type="button" onclick="avanzarPedidoMesa(${pedido.id_pedido}, 'entregado')">Entregar pedido</button>`
-          : "";
+      let accion = "";
+      if (getUserRole() === ROLES.MOZO) {
+        if (pedido.estado !== "entregado" && pedido.estado !== "cancelado") {
+          accion = `<button class="btn-primary mesa-action-primary" type="button" onclick="avanzarPedidoMesa(${pedido.id_pedido}, 'entregado')">Marcar entregado</button>`;
+        }
+      } else {
+        accion = pedido.estado === "pendiente"
+          ? `<button class="btn-primary mesa-action-primary" type="button" onclick="avanzarPedidoMesa(${pedido.id_pedido}, 'confirmado')">Confirmar pedido</button>`
+          : pedido.estado === "listo"
+            ? `<button class="btn-primary mesa-action-primary" type="button" onclick="avanzarPedidoMesa(${pedido.id_pedido}, 'entregado')">Entregar pedido</button>`
+            : "";
+      }
       const estadoClase = String(pedido.estado || "").replace(/_/g, "-");
 
       return `
@@ -598,7 +615,7 @@
       }
 
       try {
-        await fetchAPI(`/mesas/${idMesa}/cerrar`, "POST", {
+        const resultado = await fetchAPI(`/mesas/${idMesa}/cerrar`, "POST", {
           metodo_pago: metodoPagoSeleccionado,
           monto_cobrado: montoCobrado,
           observaciones,
@@ -606,7 +623,11 @@
 
         cerrarCobro();
         cerrarMesaOperacion();
-        mostrarToast("Mesa cobrada y liberada correctamente.", "success");
+        if (resultado && resultado.entrega_pendiente) {
+          mostrarToast("Cobro registrado. La mesa sigue ocupada hasta que se entregue el pedido.", "success");
+        } else {
+          mostrarToast("Mesa cobrada y liberada correctamente.", "success");
+        }
         await cargarMapaMesas();
       } catch (error) {
         mostrarToast("No se pudo registrar el cobro: " + error.message, "error");
@@ -843,12 +864,13 @@
     }
 
     function conectarTiempoRealMesas() {
+      if (getUserRole() !== ROLES.ADMIN || !window.COCINA_DEVICE_TOKEN) return;
       const token = getToken();
       if (!token) return;
 
       const wsProtocol = API_URL.startsWith("https") ? "wss" : "ws";
       const wsBase = API_URL.replace(/^https?:\/\//, "");
-      socketMesas = new WebSocket(`${wsProtocol}://${wsBase}/pedidos/ws/cocina?token=${encodeURIComponent(token)}`);
+      socketMesas = new WebSocket(`${wsProtocol}://${wsBase}/pedidos/ws/cocina?device_token=${encodeURIComponent(window.COCINA_DEVICE_TOKEN)}`);
 
       socketMesas.addEventListener("message", (event) => {
         reproducirAviso();

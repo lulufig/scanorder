@@ -10,6 +10,7 @@ const API_URL = window.SCANORDER_API_URL || `${API_PROTOCOL}//${API_HOST}:8000`;
 const ROUTES = {
   login:    "/frontend/login.html",
   admin:    "/frontend/admin/index.html",
+  mesas:    "/frontend/admin/mesas.html",
   cocina:   "/frontend/cocina/pedidos.html",
   menu:     "/frontend/cliente/menu.html",
 };

@@ -195,7 +195,7 @@ def _calcular_estado_salon(
 
 
 @router.get("/mapa")
-def mapa_mesas(current_user: dict = Depends(require_role("admin"))):
+def mapa_mesas(current_user: dict = Depends(require_role("mozo", "admin"))):
     """Devuelve el estado operativo de las mesas para el mapa visual del salón."""
     connection = get_db_connection()
     if not connection:
@@ -322,7 +322,7 @@ def mapa_mesas(current_user: dict = Depends(require_role("admin"))):
 @router.get("/{id_mesa}/operacion")
 def detalle_operacion_mesa(
     id_mesa: int,
-    current_user: dict = Depends(require_role("admin"))
+    current_user: dict = Depends(require_role("mozo", "admin"))
 ):
     """Detalle operativo de una mesa para administrarla desde el mapa."""
     connection = get_db_connection()
@@ -409,7 +409,7 @@ def detalle_operacion_mesa(
 @router.get("/{id_mesa}/cuenta", response_model=CuentaMesaResponse)
 def cuenta_mesa(
     id_mesa: int,
-    current_user: dict = Depends(require_role("admin"))
+    current_user: dict = Depends(require_role("mozo", "admin"))
 ):
     """
     Devuelve los pedidos no cobrados de una mesa y el total a pagar.
@@ -603,18 +603,11 @@ def cerrar_mesa(
                 detail="No hay pedidos pendientes de cobro en esta mesa"
             )
 
-        pedidos_no_entregables = [
-            p for p in pedidos
-            if p["estado"] in ("pendiente", "confirmado", "en_preparacion")
-        ]
-        if pedidos_no_entregables:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "La mesa tiene pedidos que todavía no están listos/entregados. "
-                    "Confirmá el flujo operativo antes de cobrar."
-                )
-            )
+        # Si había pedidos sin entregar al momento del cobro, la mesa debe
+        # permanecer ocupada hasta que la comida sea físicamente entregada.
+        entrega_pendiente = any(
+            p["estado"] not in ("listo", "entregado") for p in pedidos
+        )
 
         total_consumido = sum(float(p["total"] or 0) for p in pedidos)
         monto_cobrado = float(body.monto_cobrado)
@@ -685,8 +678,11 @@ def cerrar_mesa(
         )
         cierre_row = cursor.fetchone()
 
-        mesa_operational_state.release(id_mesa)
+        # Siempre liberar la sesión QR; solo liberar el estado operativo si
+        # todos los pedidos ya estaban entregados al momento del cobro.
         mesa_sessions.force_release(int(mesa["numero"]))
+        if not entrega_pendiente:
+            mesa_operational_state.release(id_mesa)
 
         return {
             "id_cierre": id_cierre,
@@ -698,6 +694,7 @@ def cerrar_mesa(
             "vuelto": vuelto,
             "pedidos_incluidos": len(pedidos),
             "created_at": str(cierre_row["created_at"]) if cierre_row and cierre_row["created_at"] else "",
+            "entrega_pendiente": entrega_pendiente,
         }
 
     except HTTPException:
@@ -717,7 +714,7 @@ def cerrar_mesa(
 @router.post("/{id_mesa}/liberar")
 def liberar_mesa(
     id_mesa: int,
-    current_user: dict = Depends(require_role("admin"))
+    current_user: dict = Depends(require_role("mozo", "admin"))
 ):
     """Libera una mesa sin pedidos activos ni pendientes de cobro."""
     connection = get_db_connection()

@@ -35,32 +35,8 @@
     <div class="stat-item">
       <div class="stat-dot amarillo"></div>
       <div class="stat-info">
-        <div class="stat-num amarillo" id="count-pendiente">0</div>
-        <div class="stat-lbl">Pendientes</div>
-      </div>
-    </div>
-    <div class="stats-bar-divider"></div>
-    <div class="stat-item">
-      <div class="stat-dot rojo"></div>
-      <div class="stat-info">
-        <div class="stat-num rojo" id="count-confirmado">0</div>
-        <div class="stat-lbl">Confirmados</div>
-      </div>
-    </div>
-    <div class="stats-bar-divider"></div>
-    <div class="stat-item">
-      <div class="stat-dot naranja"></div>
-      <div class="stat-info">
-        <div class="stat-num naranja" id="count-preparacion">0</div>
-        <div class="stat-lbl">En preparación</div>
-      </div>
-    </div>
-    <div class="stats-bar-divider"></div>
-    <div class="stat-item">
-      <div class="stat-dot verde"></div>
-      <div class="stat-info">
-        <div class="stat-num verde" id="count-listo">0</div>
-        <div class="stat-lbl">Listos hoy</div>
+        <div class="stat-num amarillo" id="count-total">0</div>
+        <div class="stat-lbl">Pedidos activos</div>
       </div>
     </div>
     <div class="last-update" id="last-update">—</div>
@@ -81,7 +57,12 @@
   <script src="../assets/js/config.js"></script>
   <script src="../assets/js/auth.js"></script>
   <script src="../assets/js/api.js"></script>
-
+  <script>
+    // Token de dispositivo fijo para este panel de cocina.
+    // Debe coincidir con COCINA_DEVICE_TOKEN en backend/.env
+    // IMPORTANTE: debe ir ANTES de pedidos.js, que lo lee al cargarse.
+    window.COCINA_DEVICE_TOKEN = "C7vRnMUAG_hKwRUTGGSyDf2TGTOBb_NFkuxgv1iwBP0";
+  </script>
     <script src="js/pedidos.js"></script>
 </body>
 </html>

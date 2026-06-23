@@ -322,4 +322,4 @@ Después de guardar el token: si `data.user.must_change_password` es `true`, red
 
 ### Próxima migración
 
-La siguiente migración incremental será `009_*.sql`.
+La siguiente migración incremental será `010_*.sql`.

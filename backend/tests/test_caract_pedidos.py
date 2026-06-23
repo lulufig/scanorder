@@ -202,11 +202,12 @@ def test_abandonada_con_menos_de_10_minutos_no_es_abandonada():
 
 def test_transicion_estado_cubre_flujo_completo():
     from app.routes.pedidos import TRANSICION_ESTADO
+    # Cada estado activo permite avanzar al siguiente Y saltar directo a entregado
     assert TRANSICION_ESTADO == {
-        "pendiente": "confirmado",
-        "confirmado": "en_preparacion",
-        "en_preparacion": "listo",
-        "listo": "entregado",
+        "pendiente":      {"confirmado", "entregado"},
+        "confirmado":     {"en_preparacion", "entregado"},
+        "en_preparacion": {"listo", "entregado"},
+        "listo":          {"entregado"},
     }
 
 

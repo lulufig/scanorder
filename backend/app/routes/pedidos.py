@@ -28,12 +28,14 @@ router = APIRouter(
 # Cache de columnas opcionales — se verifica una sola vez por proceso
 _col_cache: dict[str, bool] = {}
 
-# Transiciones de estado permitidas en orden
+# Transiciones de estado permitidas. "entregado" es siempre alcanzable desde
+# cualquier estado activo para que el mozo pueda marcar directo sin pasar por
+# los estados intermedios (en_preparacion, listo).
 TRANSICION_ESTADO = {
-    "pendiente": "confirmado",
-    "confirmado": "en_preparacion",
-    "en_preparacion": "listo",
-    "listo": "entregado",
+    "pendiente":      {"confirmado", "entregado"},
+    "confirmado":     {"en_preparacion", "entregado"},
+    "en_preparacion": {"listo", "entregado"},
+    "listo":          {"entregado"},
 }
 
 # Re-exportar clases para compatibilidad con tests de caracterización
@@ -670,18 +672,18 @@ def actualizar_estado_pedido(
             )
 
         estado_actual = pedido["estado"]
-        siguiente_estado = TRANSICION_ESTADO.get(estado_actual)
+        estados_permitidos = TRANSICION_ESTADO.get(estado_actual)
 
-        if siguiente_estado is None:
+        if estados_permitidos is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"El pedido ya está en estado final: '{estado_actual}'",
             )
 
-        if body.estado != siguiente_estado:
+        if body.estado not in estados_permitidos:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Transición inválida. El siguiente estado para '{estado_actual}' es '{siguiente_estado}'",
+                detail=f"Transición inválida desde '{estado_actual}'",
             )
 
         campos_update = ["estado = %s"]
