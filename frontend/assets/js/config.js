@@ -8,11 +8,15 @@ const API_URL = window.SCANORDER_API_URL || `${API_PROTOCOL}//${API_HOST}:8000`;
 
 // Rutas de la aplicación
 const ROUTES = {
-  login:    "/frontend/login.html",
-  admin:    "/frontend/admin/index.html",
-  mesas:    "/frontend/admin/mesas.html",
-  cocina:   "/frontend/cocina/pedidos.html",
-  menu:     "/frontend/cliente/menu.html",
+  login:           "/frontend/login.html",
+  cambiarPassword: "/frontend/cambiar-password.html",
+  forgotPassword:  "/frontend/forgot-password.html",
+  resetPassword:   "/frontend/reset-password.html",
+  admin:           "/frontend/admin/index.html",
+  mesas:           "/frontend/admin/mesas.html",
+  adminUsuarios:   "/frontend/admin/usuarios.html",
+  cocina:          "/frontend/cocina/pedidos.html",
+  menu:            "/frontend/cliente/menu.html",
 };
 
 // Roles válidos — tienen que coincidir exactamente con los

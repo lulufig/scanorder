@@ -129,6 +129,18 @@ Funciones públicas: `enviar_bienvenida(email, nombre, password_temporal)`, `env
 
 Implementado con un dict en memoria (`_forgot_attempts`) en `routes/auth.py`. Ventana de 3600 segundos, máximo 3 intentos por email. Se resetea al reiniciar el proceso (aceptable para este caso de uso). No requiere dependencias externas (no usa slowapi).
 
+### Páginas frontend del flujo de auth
+
+| Archivo | Descripción |
+|---|---|
+| `frontend/login.html` | Login; redirige a `cambiar-password.html` si `debe_cambiar_password=true`; incluye link "¿Olvidaste tu contraseña?" |
+| `frontend/cambiar-password.html` | Formulario con campo `password_actual` + `nueva_password` + confirmación. Subtitle dinámico según si es primer login. Redirect post-cambio: admin→`admin/index.html`, mozo→`admin/mesas.html`. |
+| `frontend/forgot-password.html` | Formulario de email. Llama `POST /auth/forgot-password`. Siempre muestra "si el email existe recibirás un correo" (nunca confirma ni niega). Maneja 429 explícitamente. |
+| `frontend/reset-password.html` | Lee `?token=` de la URL. Formulario nueva/confirmar. En 400 (token expirado/usado) muestra estado de error inline con link a forgot-password. |
+| `frontend/admin/usuarios.html` | Panel admin: tabla con badge de estado (`Activo`/`Contraseña temporal`/`Inactivo`). Modal para crear usuario (nombre, email, rol). Botón "Reenviar bienvenida" por fila. Usa `requireAuth(ROLES.ADMIN)`. |
+
+`fetchAPI(endpoint, method, body, auth=false)` — el 4to parámetro `false` omite el Bearer header para endpoints públicos (`forgot-password`, `reset-password`).
+
 ---
 
 ## Arquitectura backend (`backend/app/`)

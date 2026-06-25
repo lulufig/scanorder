@@ -127,6 +127,43 @@ def crear_usuario(body: UsuarioCreate):
     return usuario
 
 
+# ── PATCH /admin/usuarios/{id}/activo ────────────────────────────────────────
+
+@router.patch("/usuarios/{id_usuario}/activo",
+              dependencies=[Depends(require_role("admin"))])
+def cambiar_estado_usuario(id_usuario: int):
+    """Alterna activo/inactivo del usuario. Devuelve el nuevo valor de activo."""
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(status_code=500, detail="Error de conexión a DB")
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT id_usuario, activo FROM usuarios WHERE id_usuario = %s",
+            (id_usuario,),
+        )
+        usuario = cursor.fetchone()
+        if not usuario:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        nuevo_estado = not bool(usuario["activo"])
+        cursor.execute(
+            "UPDATE usuarios SET activo = %s WHERE id_usuario = %s",
+            (nuevo_estado, id_usuario),
+        )
+        connection.commit()
+        return {"id_usuario": id_usuario, "activo": nuevo_estado}
+    except HTTPException:
+        connection.rollback()
+        raise
+    except Exception as exc:
+        connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al cambiar estado: {exc}")
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
 # ── POST /admin/usuarios/{id}/reenviar-bienvenida ─────────────────────────────
 
 @router.post("/usuarios/{id_usuario}/reenviar-bienvenida",

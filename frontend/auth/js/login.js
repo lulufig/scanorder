@@ -65,8 +65,8 @@
         saveToken(data.access_token);
         saveUser(data.user);
 
-        // Primer login: el admin debe cambiar su contraseña
-        if (data.user.must_change_password) {
+        // Primer login: el usuario debe cambiar su contraseña temporal
+        if (data.user.debe_cambiar_password) {
           window.location.href = "/frontend/cambiar-password.html";
           return;
         }

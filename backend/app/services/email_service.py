@@ -63,7 +63,7 @@ def enviar_bienvenida(email: str, nombre: str, password_temporal: str) -> None:
 
 def enviar_reset_password(email: str, nombre: str, token: str) -> None:
     _, _, frontend_url = _cfg()
-    reset_url = f"{frontend_url}/frontend/auth/reset-password.html?token={token}"
+    reset_url = f"{frontend_url}/frontend/reset-password.html?token={token}"
     subject = "Reseteo de contraseña — ScanOrder"
     body = (
         f"Hola {nombre},\n\n"

@@ -4,7 +4,7 @@ mysql-connector-python>=8.4.0
 python-dotenv>=1.0.0
 pydantic[email]>=2.7.0
 pydantic-settings>=2.2.0
-bcrypt==4.0.1
+bcrypt==3.2.2
 PyJWT[cryptography]>=2.8.0
 python-multipart>=0.0.7
 qrcode[pil]>=7.4.2
