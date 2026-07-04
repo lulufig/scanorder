@@ -1,6 +1,7 @@
 
     // ── PROTECCIÓN DE RUTA ──────────────────────────────────────
     if (!requireAuth(ROLES.ADMIN, ROLES.MOZO)) throw new Error();
+    applyRoleVisibility();
 
     const usuario = getUser();
     if (usuario) {
@@ -23,7 +24,13 @@
 
     // ── INICIALIZACIÓN ──────────────────────────────────────────
     document.addEventListener("DOMContentLoaded", () => {
-      cargarMesas();
+      // GET /mesas (listado + gestión de QR) es solo-admin en el backend;
+      // el mozo no ve esa sección, así que alcanza con el mapa del salón.
+      if (getUserRole() === ROLES.ADMIN) {
+        cargarMesas();
+      } else {
+        cargarMapaMesas();
+      }
       conectarTiempoRealMesas();
       mapaTimer = setInterval(cargarMapaMesas, 2500);
     });

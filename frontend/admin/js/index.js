@@ -1,6 +1,7 @@
 
     // ── PROTECCIÓN DE RUTA ──────────────────────────────────────
     if (!requireAuth(ROLES.ADMIN)) throw new Error();
+    applyRoleVisibility();
 
     const usuario = getUser();
     if (usuario) {

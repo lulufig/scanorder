@@ -2,6 +2,7 @@
     // ── PROTECCIÓN DE RUTA ──────────────────────────────────────
     // Solo admins pueden acceder a este panel
     if (!requireAuth(ROLES.ADMIN)) throw new Error();
+    applyRoleVisibility();
 
     // Mostrar nombre del usuario en sidebar
     const usuario = getUser();
