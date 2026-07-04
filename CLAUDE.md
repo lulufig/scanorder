@@ -93,10 +93,14 @@ Depends(require_role("mozo", "admin"))
 
 El admin crea cuentas de mozos desde `/admin/usuarios`. No hay registro público. El sistema genera una contraseña temporal aleatoria (10 caracteres alfanuméricos), la guarda hasheada con `must_change_password=TRUE` y envía un email de bienvenida.
 
+ABM completo (`feature/user-edit`): alta, baja lógica, modificación y consulta, los cuatro implementados.
+
 | Endpoint | Método | Rol | Descripción |
 |---|---|---|---|
 | `GET /admin/usuarios` | GET | admin | Lista usuarios (sin password_hash). Campo `debe_cambiar_password` en respuesta. |
 | `POST /admin/usuarios` | POST | admin | Crea usuario con contraseña temporal + envía email de bienvenida. |
+| `PUT /admin/usuarios/{id}` | PUT | admin | Modifica `nombre`/`email`/`rol` (todos opcionales, solo actualiza los que vienen en el body). Valida email único (excluyendo al propio usuario) y rol contra `ROLES_VALIDOS`. No permite cambiar el password — eso tiene su propio flujo (`/auth/cambiar-password`, `/auth/reset-password`). |
+| `PATCH /admin/usuarios/{id}/activo` | PATCH | admin | Alterna `activo`/`inactivo` (baja lógica, no hay DELETE físico). |
 | `POST /admin/usuarios/{id}/reenviar-bienvenida` | POST | admin | Genera nueva contraseña temporal y reenvía email. |
 
 ### Recuperación de contraseña
@@ -119,7 +123,7 @@ El admin crea cuentas de mozos desde `/admin/usuarios`. No hay registro público
 
 ### Email service (`app/services/email_service.py`)
 
-Usa `smtplib` (stdlib, sin dependencias nuevas). Variables: `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `FRONTEND_URL`. Si las variables no están configuradas, los envíos se descartan silenciosamente con un `WARNING` en los logs — el backend sigue funcionando.
+Usa `smtplib` (stdlib, sin dependencias nuevas) contra un relay SMTP de un proveedor transaccional (no un Gmail personal: Google bloquea en silencio el envío automatizado hacia destinatarios sin historial previo con el remitente, sin generar rebote ni caer en spam). Variables: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`, `FRONTEND_URL`. Si `SMTP_HOST`/`SMTP_USER`/`SMTP_PASSWORD` no están configuradas, los envíos se descartan silenciosamente con un `WARNING` en los logs — el backend sigue funcionando.
 
 Funciones públicas: `enviar_bienvenida(email, nombre, password_temporal)`, `enviar_reset_password(email, nombre, token)`.
 
@@ -129,6 +133,12 @@ Funciones públicas: `enviar_bienvenida(email, nombre, password_temporal)`, `env
 
 Implementado con un dict en memoria (`_forgot_attempts`) en `routes/auth.py`. Ventana de 3600 segundos, máximo 3 intentos por email. Se resetea al reiniciar el proceso (aceptable para este caso de uso). No requiere dependencias externas (no usa slowapi).
 
+**Rate limit de forgot-password:** implementado en memoria (diccionario Python).
+Si el servidor se reinicia, el contador se resetea y un usuario podría
+superar el límite de 3 intentos/hora entre reinicios.
+Para producción: migrar a un contador persistente en DB o Redis.
+Para el MVP académico: comportamiento aceptado y documentado.
+
 ### Páginas frontend del flujo de auth
 
 | Archivo | Descripción |
@@ -137,7 +147,7 @@ Implementado con un dict en memoria (`_forgot_attempts`) en `routes/auth.py`. Ve
 | `frontend/cambiar-password.html` | Formulario con campo `password_actual` + `nueva_password` + confirmación. Subtitle dinámico según si es primer login. Redirect post-cambio: admin→`admin/index.html`, mozo→`admin/mesas.html`. |
 | `frontend/forgot-password.html` | Formulario de email. Llama `POST /auth/forgot-password`. Siempre muestra "si el email existe recibirás un correo" (nunca confirma ni niega). Maneja 429 explícitamente. |
 | `frontend/reset-password.html` | Lee `?token=` de la URL. Formulario nueva/confirmar. En 400 (token expirado/usado) muestra estado de error inline con link a forgot-password. |
-| `frontend/admin/usuarios.html` | Panel admin: tabla con badge de estado (`Activo`/`Contraseña temporal`/`Inactivo`). Modal para crear usuario (nombre, email, rol). Botón "Reenviar bienvenida" por fila. Usa `requireAuth(ROLES.ADMIN)`. |
+| `frontend/admin/usuarios.html` | Panel admin: tabla con badge de estado (`Activo`/`Contraseña temporal`/`Inactivo`). Modal para crear usuario (nombre, email, rol) y modal separado para editar (mismos campos, precargados). Columna "Acciones" por fila con botones Editar / Reenviar bienvenida / Activar-Desactivar. Usa `requireAuth(ROLES.ADMIN)`. |
 
 `fetchAPI(endpoint, method, body, auth=false)` — el 4to parámetro `false` omite el Bearer header para endpoints públicos (`forgot-password`, `reset-password`).
 

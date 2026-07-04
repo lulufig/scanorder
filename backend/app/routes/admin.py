@@ -1,6 +1,7 @@
 import logging
 import secrets
 import string
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
@@ -21,6 +22,12 @@ class UsuarioCreate(BaseModel):
     nombre: str
     email: EmailStr
     rol: str = "mozo"
+
+
+class UsuarioUpdate(BaseModel):
+    nombre: Optional[str] = None
+    email: Optional[EmailStr] = None
+    rol: Optional[str] = None
 
 
 def _password_temporal(length: int = 10) -> str:
@@ -162,6 +169,83 @@ def cambiar_estado_usuario(id_usuario: int):
     finally:
         cursor.close()
         close_db_connection(connection)
+
+
+# ── PUT /admin/usuarios/{id} ──────────────────────────────────────────────────
+
+@router.put("/usuarios/{id_usuario}", dependencies=[Depends(require_role("admin"))])
+def actualizar_usuario(id_usuario: int, body: UsuarioUpdate):
+    """Modifica nombre/email/rol de un usuario existente. No cambia el password
+    (eso tiene su propio flujo vía /auth/cambiar-password y /auth/reset-password)."""
+    if body.rol is not None and body.rol not in ROLES_VALIDOS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Rol inválido. Debe ser uno de: {', '.join(ROLES_VALIDOS)}",
+        )
+
+    campos = {}
+    if body.nombre is not None:
+        campos["nombre"] = body.nombre
+    if body.email is not None:
+        campos["email"] = body.email
+    if body.rol is not None:
+        campos["rol"] = body.rol
+
+    if not campos:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se enviaron campos para actualizar",
+        )
+
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(status_code=500, detail="Error de conexión a DB")
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("SELECT id_usuario FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        if "email" in campos:
+            cursor.execute(
+                "SELECT id_usuario FROM usuarios WHERE email = %s AND id_usuario != %s",
+                (campos["email"], id_usuario),
+            )
+            if cursor.fetchone():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="El email ya está en uso por otro usuario",
+                )
+
+        set_clause = ", ".join(f"{campo} = %s" for campo in campos)
+        cursor.execute(
+            f"UPDATE usuarios SET {set_clause} WHERE id_usuario = %s",
+            (*campos.values(), id_usuario),
+        )
+        connection.commit()
+
+        cursor.execute(
+            """
+            SELECT id_usuario, nombre, email, rol,
+                   must_change_password AS debe_cambiar_password,
+                   activo, created_at
+              FROM usuarios WHERE id_usuario = %s
+            """,
+            (id_usuario,),
+        )
+        usuario = _normalizar_usuario(cursor.fetchone())
+    except HTTPException:
+        connection.rollback()
+        raise
+    except Exception as exc:
+        connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al actualizar usuario: {exc}")
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+    return usuario
 
 
 # ── POST /admin/usuarios/{id}/reenviar-bienvenida ─────────────────────────────

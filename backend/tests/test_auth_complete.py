@@ -5,6 +5,7 @@ Cobertura:
   Permisos (no requieren MySQL):
     - GET/POST /admin/usuarios rechaza a no-admin con 403
     - POST /admin/usuarios/{id}/reenviar-bienvenida rechaza a no-admin con 403
+    - PUT /admin/usuarios/{id} rechaza a no-admin con 403
     - POST /auth/cambiar-password rechaza sin token con 403
 
   Rate limit (no requiere MySQL, estado en memoria):
@@ -12,13 +13,16 @@ Cobertura:
     - forgot-password resetea contador por email (emails distintos no se bloquean entre sí)
 
   Unidad — email_service (SMTP mockeado, sin red):
-    - enviar_bienvenida llama a SMTP_SSL con las credenciales configuradas
-    - enviar_bienvenida descarta silenciosamente si GMAIL_USER no está configurado
+    - enviar_bienvenida llama al relay SMTP con las credenciales configuradas
+    - enviar_bienvenida descarta silenciosamente si SMTP_HOST no está configurado
     - enviar_reset_password construye la URL con el token
 
   Integración (requieren MySQL — saltan si DB_HOST no está en el entorno):
     - Admin crea usuario → existe en DB con must_change_password=True
     - GET /admin/usuarios lista usuarios sin campo password_hash
+    - PUT /admin/usuarios/{id} con nombre/email/rol → cambios persisten en DB
+    - PUT /admin/usuarios/{id} con email ya usado por otro usuario → 400
+    - PUT /admin/usuarios/{id} con rol inválido → 400
     - forgot-password con email inexistente → 200 (no revela si existe)
     - forgot-password con email existente → token guardado en DB
     - reset-password con token válido → contraseña cambiada, token marcado usado
@@ -121,6 +125,14 @@ class TestPermisosAdmin:
         r = client.post("/admin/usuarios/1/reenviar-bienvenida", headers=_auth("mozo"))
         assert r.status_code == 403
 
+    def test_editar_usuario_rechaza_mozo(self, client):
+        r = client.put(
+            "/admin/usuarios/1",
+            json={"nombre": "Hackeo"},
+            headers=_auth("mozo"),
+        )
+        assert r.status_code == 403
+
     def test_cambiar_password_rechaza_sin_token(self, client):
         r = client.post(
             "/auth/cambiar-password",
@@ -176,26 +188,33 @@ class TestEmailService:
         with (
             patch.dict(
                 os.environ,
-                {"GMAIL_USER": "sender@gmail.com", "GMAIL_APP_PASSWORD": "pass123"},
+                {
+                    "SMTP_HOST": "smtp-relay.brevo.com",
+                    "SMTP_PORT": "587",
+                    "SMTP_USER": "sender@brevo.com",
+                    "SMTP_PASSWORD": "pass123",
+                    "EMAIL_FROM": "noreply@scanorder.local",
+                },
             ),
-            patch("smtplib.SMTP_SSL") as mock_ssl,
+            patch("smtplib.SMTP") as mock_smtp,
         ):
             mock_server = MagicMock()
-            mock_ssl.return_value.__enter__ = MagicMock(return_value=mock_server)
-            mock_ssl.return_value.__exit__ = MagicMock(return_value=False)
+            mock_smtp.return_value.__enter__ = MagicMock(return_value=mock_server)
+            mock_smtp.return_value.__exit__ = MagicMock(return_value=False)
 
             from app.services import email_service
             email_service.enviar_bienvenida("mozo@test.com", "Juan", "TmpPass1!")
 
-            mock_ssl.assert_called_once_with("smtp.gmail.com", 465)
-            mock_server.login.assert_called_once_with("sender@gmail.com", "pass123")
+            mock_smtp.assert_called_once_with("smtp-relay.brevo.com", 587)
+            mock_server.starttls.assert_called_once()
+            mock_server.login.assert_called_once_with("sender@brevo.com", "pass123")
             mock_server.sendmail.assert_called_once()
             _, (from_, to_, _), _ = mock_server.sendmail.mock_calls[0]
-            assert from_ == "sender@gmail.com"
+            assert from_ == "noreply@scanorder.local"
             assert to_ == "mozo@test.com"
 
     def test_enviar_sin_credenciales_no_lanza_excepcion(self):
-        with patch.dict(os.environ, {"GMAIL_USER": "", "GMAIL_APP_PASSWORD": ""}):
+        with patch.dict(os.environ, {"SMTP_HOST": "", "SMTP_USER": "", "SMTP_PASSWORD": ""}):
             from app.services import email_service
             # No debe lanzar excepción
             email_service.enviar_bienvenida("x@x.com", "X", "pass")
@@ -209,16 +228,18 @@ class TestEmailService:
             patch.dict(
                 os.environ,
                 {
-                    "GMAIL_USER": "s@gmail.com",
-                    "GMAIL_APP_PASSWORD": "p",
+                    "SMTP_HOST": "smtp-relay.brevo.com",
+                    "SMTP_PORT": "587",
+                    "SMTP_USER": "s@brevo.com",
+                    "SMTP_PASSWORD": "p",
                     "FRONTEND_URL": "http://localhost:5500",
                 },
             ),
-            patch("smtplib.SMTP_SSL") as mock_ssl,
+            patch("smtplib.SMTP") as mock_smtp,
         ):
             mock_server = MagicMock()
-            mock_ssl.return_value.__enter__ = MagicMock(return_value=mock_server)
-            mock_ssl.return_value.__exit__ = MagicMock(return_value=False)
+            mock_smtp.return_value.__enter__ = MagicMock(return_value=mock_server)
+            mock_smtp.return_value.__exit__ = MagicMock(return_value=False)
 
             from app.services import email_service
             email_service.enviar_reset_password("u@test.com", "Luli", token)
@@ -302,6 +323,81 @@ class TestListarUsuarios:
         assert r.status_code == 200
         for u in r.json():
             assert "password_hash" not in u
+
+
+@skip_sin_db
+class TestActualizarUsuario:
+    def _crear_usuario(self, db, rol="mozo"):
+        email = f"edit_{secrets.token_hex(4)}@test.com"
+        cursor = db.cursor()
+        cursor.execute(
+            "INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES (%s,%s,%s,%s)",
+            ("Original", email, hash_password("pass1234"), rol),
+        )
+        db.commit()
+        id_usuario = cursor.lastrowid
+        cursor.close()
+        return id_usuario, email
+
+    def _cleanup(self, db, id_usuario):
+        cursor = db.cursor()
+        cursor.execute("DELETE FROM usuarios WHERE id_usuario = %s", (id_usuario,))
+        db.commit()
+        cursor.close()
+
+    def test_editar_usuario_persiste_cambios(self, client, db):
+        id_usuario, _ = self._crear_usuario(db)
+        try:
+            nuevo_email = f"editado_{secrets.token_hex(4)}@test.com"
+            r = client.put(
+                f"/admin/usuarios/{id_usuario}",
+                json={"nombre": "Editado", "email": nuevo_email, "rol": "admin"},
+                headers=_auth("admin"),
+            )
+            assert r.status_code == 200
+            data = r.json()
+            assert data["nombre"] == "Editado"
+            assert data["email"] == nuevo_email
+            assert data["rol"] == "admin"
+            assert "password_hash" not in data
+
+            cursor = db.cursor(dictionary=True)
+            cursor.execute(
+                "SELECT nombre, email, rol FROM usuarios WHERE id_usuario = %s", (id_usuario,)
+            )
+            row = cursor.fetchone()
+            assert row["nombre"] == "Editado"
+            assert row["email"] == nuevo_email
+            assert row["rol"] == "admin"
+            cursor.close()
+        finally:
+            self._cleanup(db, id_usuario)
+
+    def test_editar_email_duplicado_da_400(self, client, db):
+        id_a, email_a = self._crear_usuario(db)
+        id_b, _ = self._crear_usuario(db)
+        try:
+            r = client.put(
+                f"/admin/usuarios/{id_b}",
+                json={"email": email_a},
+                headers=_auth("admin"),
+            )
+            assert r.status_code == 400
+        finally:
+            self._cleanup(db, id_a)
+            self._cleanup(db, id_b)
+
+    def test_editar_rol_invalido_da_400(self, client, db):
+        id_usuario, _ = self._crear_usuario(db)
+        try:
+            r = client.put(
+                f"/admin/usuarios/{id_usuario}",
+                json={"rol": "super-admin"},
+                headers=_auth("admin"),
+            )
+            assert r.status_code == 400
+        finally:
+            self._cleanup(db, id_usuario)
 
 
 @skip_sin_db

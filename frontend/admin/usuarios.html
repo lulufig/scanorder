@@ -34,14 +34,16 @@
     .badge-inactivo { background: #f3f4f6; color: #6b7280; }
 
     /* Botones acción en tabla */
-    .btn-reenviar, .btn-toggle {
+    .acciones-cell { display: flex; gap: .4rem; flex-wrap: wrap; }
+    .btn-editar, .btn-reenviar, .btn-toggle {
       background: transparent; border: 1px solid #D8C8B7;
       color: #7A5C3A; padding: .3rem .7rem; border-radius: 6px;
       cursor: pointer; font-size: .78rem; font-weight: 700;
       transition: all .15s;
     }
+    .btn-editar:hover { border-color: #7A5C3A; background: #fdf5e6; }
     .btn-reenviar:hover { border-color: #B91C1C; color: #B91C1C; }
-    .btn-reenviar:disabled, .btn-toggle:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-editar:disabled, .btn-reenviar:disabled, .btn-toggle:disabled { opacity: .5; cursor: not-allowed; }
     .btn-toggle.desactivar:hover { border-color: #B91C1C; color: #B91C1C; }
     .btn-toggle.activar { border-color: #15803d; color: #15803d; }
     .btn-toggle.activar:hover { background: #f0fdf4; }
@@ -149,11 +151,10 @@
             <th>Rol</th>
             <th>Estado</th>
             <th>Acciones</th>
-            <th>Estado</th>
           </tr>
         </thead>
         <tbody id="tabla-body">
-          <tr><td colspan="6" class="empty-state">Cargando...</td></tr>
+          <tr><td colspan="5" class="empty-state">Cargando...</td></tr>
         </tbody>
       </table>
     </div>
@@ -190,6 +191,33 @@
     </div>
   </div>
 
+  <!-- ===== MODAL EDITAR USUARIO ===== -->
+  <div class="modal-overlay" id="modal-editar">
+    <div class="modal-box">
+      <h3>Editar usuario</h3>
+      <div id="modal-editar-error" class="modal-error"></div>
+      <div>
+        <label for="e-nombre">Nombre completo</label>
+        <input type="text" id="e-nombre" autocomplete="off">
+      </div>
+      <div>
+        <label for="e-email">Correo electrónico</label>
+        <input type="email" id="e-email" autocomplete="off">
+      </div>
+      <div>
+        <label for="e-rol">Rol</label>
+        <select id="e-rol">
+          <option value="mozo">Mozo</option>
+          <option value="admin">Administrador</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="cerrarModalEditar()">Cancelar</button>
+        <button class="btn-crear" id="btn-editar-confirm" onclick="guardarEdicion()">Guardar cambios</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 
@@ -212,14 +240,14 @@
         renderTabla();
       } catch (e) {
         document.getElementById("tabla-body").innerHTML =
-          `<tr><td colspan="6" class="empty-state">Error al cargar usuarios: ${e.message}</td></tr>`;
+          `<tr><td colspan="5" class="empty-state">Error al cargar usuarios: ${e.message}</td></tr>`;
       }
     }
 
     function renderTabla() {
       const tbody = document.getElementById("tabla-body");
       if (!_usuarios.length) {
-        tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No hay usuarios registrados.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No hay usuarios registrados.</td></tr>`;
         return;
       }
       tbody.innerHTML = _usuarios.map(u => `
@@ -229,18 +257,22 @@
           <td><span class="badge badge-${u.rol}">${u.rol}</span></td>
           <td>${estadoBadge(u)}</td>
           <td>
-            <button class="btn-reenviar" onclick="reenviarBienvenida(${u.id_usuario}, this)"
-              title="Genera nueva contraseña temporal y reenvía el email"
-              ${!u.activo ? "disabled" : ""}>
-              Reenviar bienvenida
-            </button>
-          </td>
-          <td>
-            <button class="btn-toggle ${u.activo ? 'desactivar' : 'activar'}"
-              onclick="toggleActivo(${u.id_usuario}, this)"
-              title="${u.activo ? 'Desactivar usuario' : 'Reactivar usuario'}">
-              ${u.activo ? "Desactivar" : "Reactivar"}
-            </button>
+            <div class="acciones-cell">
+              <button class="btn-editar" onclick="abrirModalEditar(${u.id_usuario})"
+                title="Editar nombre, email o rol">
+                Editar
+              </button>
+              <button class="btn-reenviar" onclick="reenviarBienvenida(${u.id_usuario}, this)"
+                title="Genera nueva contraseña temporal y reenvía el email"
+                ${!u.activo ? "disabled" : ""}>
+                Reenviar bienvenida
+              </button>
+              <button class="btn-toggle ${u.activo ? 'desactivar' : 'activar'}"
+                onclick="toggleActivo(${u.id_usuario}, this)"
+                title="${u.activo ? 'Desactivar usuario' : 'Reactivar usuario'}">
+                ${u.activo ? "Desactivar" : "Reactivar"}
+              </button>
+            </div>
           </td>
         </tr>
       `).join("");
@@ -281,7 +313,7 @@
     });
 
     document.addEventListener("keydown", e => {
-      if (e.key === "Escape") cerrarModal();
+      if (e.key === "Escape") { cerrarModal(); cerrarModalEditar(); }
     });
 
     async function crearUsuario() {
@@ -311,6 +343,64 @@
       } finally {
         btn.disabled = false;
         btn.textContent = "Crear usuario";
+      }
+    }
+
+    // ── Editar usuario ─────────────────────────────────────────────────────────
+
+    let _editandoId = null;
+
+    function abrirModalEditar(id) {
+      const u = _usuarios.find(x => x.id_usuario === id);
+      if (!u) return;
+      _editandoId = id;
+      document.getElementById("e-nombre").value = u.nombre;
+      document.getElementById("e-email").value  = u.email;
+      document.getElementById("e-rol").value    = u.rol;
+      document.getElementById("modal-editar-error").classList.remove("visible");
+      document.getElementById("btn-editar-confirm").disabled = false;
+      document.getElementById("btn-editar-confirm").textContent = "Guardar cambios";
+      document.getElementById("modal-editar").classList.add("open");
+      setTimeout(() => document.getElementById("e-nombre").focus(), 50);
+    }
+
+    function cerrarModalEditar() {
+      document.getElementById("modal-editar").classList.remove("open");
+      _editandoId = null;
+    }
+
+    document.getElementById("modal-editar").addEventListener("click", e => {
+      if (e.target === e.currentTarget) cerrarModalEditar();
+    });
+
+    async function guardarEdicion() {
+      const nombre = document.getElementById("e-nombre").value.trim();
+      const email  = document.getElementById("e-email").value.trim();
+      const rol    = document.getElementById("e-rol").value;
+      const errEl  = document.getElementById("modal-editar-error");
+
+      errEl.classList.remove("visible");
+
+      if (!nombre) { errEl.textContent = "El nombre es obligatorio."; errEl.classList.add("visible"); return; }
+      if (!email || !email.includes("@")) { errEl.textContent = "Ingresá un email válido."; errEl.classList.add("visible"); return; }
+
+      const btn = document.getElementById("btn-editar-confirm");
+      btn.disabled = true;
+      btn.textContent = "Guardando...";
+
+      try {
+        const actualizado = await fetchAPI(`/admin/usuarios/${_editandoId}`, "PUT", { nombre, email, rol });
+        const idx = _usuarios.findIndex(x => x.id_usuario === _editandoId);
+        if (idx !== -1) _usuarios[idx] = { ..._usuarios[idx], ...actualizado };
+        renderTabla();
+        cerrarModalEditar();
+        showToast("Usuario actualizado.", "ok");
+      } catch (e) {
+        errEl.textContent = e.message || "No se pudo actualizar el usuario.";
+        errEl.classList.add("visible");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Guardar cambios";
       }
     }
 

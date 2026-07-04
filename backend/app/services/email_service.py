@@ -1,13 +1,21 @@
 """
 Servicio de email para ScanOrder.
-Usa smtplib (stdlib) + Gmail SMTP con App Password.
+Usa smtplib (stdlib) contra un relay SMTP de un proveedor transaccional
+(Brevo, SendGrid, Mailgun, etc.) en vez de un Gmail personal: un Gmail
+personal enviando por script puede ser bloqueado en silencio por los
+filtros antiabuso de Google hacia destinatarios sin historial previo con
+el remitente, sin generar rebote ni caer en spam (queda indetectable).
 
 Variables de entorno requeridas:
-  GMAIL_USER          — dirección Gmail del remitente
-  GMAIL_APP_PASSWORD  — App Password de Google (no la contraseña normal)
-  FRONTEND_URL        — URL base del frontend (para links en los emails)
+  SMTP_HOST      — host del relay SMTP del proveedor (ej. smtp-relay.brevo.com)
+  SMTP_PORT      — puerto SMTP, típicamente 587 (STARTTLS)
+  SMTP_USER      — usuario/login SMTP que da el proveedor
+  SMTP_PASSWORD  — contraseña/API key SMTP que da el proveedor
+  EMAIL_FROM     — dirección remitente que verá el destinatario (debe estar
+                   verificada en el proveedor); si no se define, se usa SMTP_USER
+  FRONTEND_URL   — URL base del frontend (para links en los emails)
 
-Si GMAIL_USER o GMAIL_APP_PASSWORD no están configuradas, los envíos se
+Si SMTP_HOST, SMTP_USER o SMTP_PASSWORD no están configuradas, los envíos se
 loguean como WARNING y se descartan silenciosamente (el backend sigue funcionando).
 """
 import logging
@@ -19,36 +27,41 @@ from email.mime.text import MIMEText
 logger = logging.getLogger(__name__)
 
 
-def _cfg() -> tuple[str, str, str]:
-    """Retorna (gmail_user, app_password, frontend_url) desde el entorno."""
+def _cfg() -> tuple[str, int, str, str, str, str]:
+    """Retorna (host, port, user, password, from_addr, frontend_url) desde el entorno."""
+    user = os.getenv("SMTP_USER", "")
     return (
-        os.getenv("GMAIL_USER", ""),
-        os.getenv("GMAIL_APP_PASSWORD", ""),
+        os.getenv("SMTP_HOST", ""),
+        int(os.getenv("SMTP_PORT", "587")),
+        user,
+        os.getenv("SMTP_PASSWORD", ""),
+        os.getenv("EMAIL_FROM", "") or user,
         os.getenv("FRONTEND_URL", "http://localhost:5500"),
     )
 
 
 def _enviar(to: str, subject: str, body: str) -> None:
-    gmail_user, app_password, _ = _cfg()
-    if not gmail_user or not app_password:
+    host, port, user, password, from_addr, _ = _cfg()
+    if not host or not user or not password:
         logger.warning("Email no configurado — descartando mensaje para %s: %s", to, subject)
         return
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = gmail_user
+        msg["From"] = from_addr
         msg["To"] = to
         msg.attach(MIMEText(body, "plain", "utf-8"))
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(gmail_user, app_password)
-            server.sendmail(gmail_user, to, msg.as_string())
+        with smtplib.SMTP(host, port) as server:
+            server.starttls()
+            server.login(user, password)
+            server.sendmail(from_addr, to, msg.as_string())
     except Exception as exc:
         logger.warning("Error enviando email a %s: %s", to, exc)
 
 
 def enviar_bienvenida(email: str, nombre: str, password_temporal: str) -> None:
-    _, _, frontend_url = _cfg()
+    *_, frontend_url = _cfg()
     subject = "Tu cuenta en ScanOrder fue creada"
     body = (
         f"Hola {nombre},\n\n"
@@ -62,7 +75,7 @@ def enviar_bienvenida(email: str, nombre: str, password_temporal: str) -> None:
 
 
 def enviar_reset_password(email: str, nombre: str, token: str) -> None:
-    _, _, frontend_url = _cfg()
+    *_, frontend_url = _cfg()
     reset_url = f"{frontend_url}/frontend/reset-password.html?token={token}"
     subject = "Reseteo de contraseña — ScanOrder"
     body = (
