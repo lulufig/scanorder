@@ -28,12 +28,21 @@
       try {
         // GET /productos — requiere token (auth=true por defecto)
         const data = await fetchAPI("/productos");
-        todosLosProductos = Array.isArray(data) ? data : [];
+        todosLosProductos = ordenarProductos(Array.isArray(data) ? data : []);
+        actualizarFiltroCategorias(todosLosProductos);
         actualizarStats(todosLosProductos);
-        renderTabla(todosLosProductos);
+        filtrarTabla();
       } catch (error) {
         mostrarError("No se pudo cargar la lista de productos: " + error.message);
       }
+    }
+
+    function ordenarProductos(productos) {
+      return [...productos].sort((a, b) => {
+        const idA = Number(a.id_producto) || 0;
+        const idB = Number(b.id_producto) || 0;
+        return idB - idA;
+      });
     }
 
     // ── STATS ───────────────────────────────────────────────────
@@ -54,7 +63,7 @@
       if (productos.length === 0) {
         container.innerHTML = `
           <div class="empty-state">
-            <div class="icon">IMG</div>
+            <div class="icon">...</div>
             <p>No hay productos todavía. ¡Agregá el primero!</p>
           </div>`;
         return;
@@ -65,8 +74,8 @@
           <td>
             ${p.imagen_url
               ? `<img src="${escapeHtml(p.imagen_url)}" class="product-img" alt="${escapeHtml(p.nombre)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
-                 <div class="product-img-placeholder" style="display:none;">IMG</div>`
-              : `<div class="product-img-placeholder">IMG</div>`
+                 <div class="product-img-placeholder" style="display:none;" aria-label="Sin imagen"></div>`
+              : `<div class="product-img-placeholder" aria-label="Sin imagen"></div>`
             }
           </td>
           <td>
@@ -74,18 +83,20 @@
             <div class="product-desc">${escapeHtml(p.descripcion || '—')}</div>
           </td>
           <td>
-            <span class="badge badge-cat">${escapeHtml(p.categoria || '—')}</span>
-            ${p.subcategoria ? `<div class="product-desc">${escapeHtml(p.subcategoria)}</div>` : ""}
+            <div class="category-stack">
+              <span class="category-main">${escapeHtml(p.categoria || '—')}</span>
+              ${p.subcategoria ? `<span class="category-sub">${escapeHtml(p.subcategoria)}</span>` : ""}
+            </div>
           </td>
           <td class="price-cell">$${Number(p.precio).toFixed(2)}</td>
           <td>
             ${p.disponible
-              ? '<span class="badge badge-green">Disponible</span>'
-              : '<span class="badge badge-gray">No disponible</span>'
+              ? '<span class="status-badge status-available"><span class="status-dot"></span>Disponible</span>'
+              : '<span class="status-badge status-unavailable"><span class="status-dot"></span>No disponible</span>'
             }
           </td>
           <td>
-            <div style="display:flex; gap:8px;">
+            <div class="table-actions">
               <button class="btn-edit"   onclick="abrirModalEditar(${p.id_producto})">Editar</button>
               <button class="btn-delete" onclick="pedirConfirmacion(${p.id_producto}, '${escapeHtml(p.nombre)}')">Eliminar</button>
             </div>
@@ -95,9 +106,17 @@
 
       container.innerHTML = `
         <table>
+          <colgroup>
+            <col class="col-img">
+            <col class="col-producto">
+            <col class="col-categoria">
+            <col class="col-precio">
+            <col class="col-estado">
+            <col class="col-acciones">
+          </colgroup>
           <thead>
             <tr>
-              <th style="width:60px;">Imagen</th>
+              <th>Imagen</th>
               <th>Producto</th>
               <th>Categoría</th>
               <th>Precio</th>
@@ -112,13 +131,40 @@
     // ── FILTRO DE BÚSQUEDA ──────────────────────────────────────
     function filtrarTabla() {
       const q = document.getElementById("search-input").value.toLowerCase();
+      const categoria = document.getElementById("category-filter")?.value || "";
       const filtrados = todosLosProductos.filter(p =>
-        p.nombre.toLowerCase().includes(q) ||
-        (p.descripcion || "").toLowerCase().includes(q) ||
-        (p.categoria   || "").toLowerCase().includes(q) ||
-        (p.subcategoria || "").toLowerCase().includes(q)
+        (!categoria || (p.categoria || "") === categoria) &&
+        (
+          (p.nombre || "").toLowerCase().includes(q) ||
+          (p.descripcion || "").toLowerCase().includes(q) ||
+          (p.categoria   || "").toLowerCase().includes(q) ||
+          (p.subcategoria || "").toLowerCase().includes(q)
+        )
       );
       renderTabla(filtrados);
+    }
+
+    function actualizarFiltroCategorias(productos) {
+      const select = document.getElementById("category-filter");
+      if (!select) return;
+
+      const seleccionActual = select.value;
+      const categorias = [...new Set(
+        productos
+          .map(p => p.categoria)
+          .filter(Boolean)
+      )].sort((a, b) => a.localeCompare(b, "es"));
+
+      select.innerHTML = `
+        <option value="">Todas las categorias</option>
+        ${categorias.map(categoria => (
+          `<option value="${escapeHtml(categoria)}">${escapeHtml(categoria)}</option>`
+        )).join("")}
+      `;
+
+      if (categorias.includes(seleccionActual)) {
+        select.value = seleccionActual;
+      }
     }
 
     // ── MODAL CREAR ─────────────────────────────────────────────

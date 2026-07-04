@@ -17,13 +17,13 @@
     <div class="sidebar-logo">Maven<span>Burger</span></div>
     
     <div class="sidebar-section">Reportes</div>
-    <a href="index.html" class="sidebar-link"> Reportes</a>
+    <a href="index.html" class="sidebar-link">Reportes</a>
     
     <div class="sidebar-section">Gestión</div>
-    <a href="mesas.html"      class="sidebar-link"> Mesas</a>
-    <a href="productos.html"  class="sidebar-link active"> Productos</a>
-    <a href="inventario.html" class="sidebar-link"> Inventario</a>
-    <a href="usuarios.html"   class="sidebar-link"> Usuarios</a>
+    <a href="mesas.html"      class="sidebar-link">Mesas</a>
+    <a href="productos.html"  class="sidebar-link active">Productos</a>
+    <a href="inventario.html" class="sidebar-link">Inventario</a>
+    <a href="usuarios.html"   class="sidebar-link">Usuarios</a>
 
     <div class="sidebar-bottom">
       <div class="user-info">
@@ -44,7 +44,8 @@
         <p class="page-subtitle">Gestioná el menú de Maven Burger</p>
       </div>
       <button class="btn-primary" onclick="abrirModalCrear()">
-         Agregar producto
+        <span class="btn-plus" aria-hidden="true">+</span>
+        Agregar producto
       </button>
     </div>
 
@@ -67,14 +68,21 @@
     <!-- Tabla -->
     <div class="table-card">
       <div class="table-toolbar">
-        <input
-          type="text"
-          class="search-input"
-          placeholder="Buscar producto..."
-          id="search-input"
-          oninput="filtrarTabla()"
-        />
-        <span style="font-size:0.8rem; color:#a89880;" id="count-label"></span>
+        <div class="search-field">
+          <input
+            type="text"
+            class="search-input"
+            placeholder="Buscar producto..."
+            id="search-input"
+            oninput="filtrarTabla()"
+          />
+        </div>
+        <div class="filter-field">
+          <select class="filter-select" id="category-filter" onchange="filtrarTabla()">
+            <option value="">Todas las categorias</option>
+          </select>
+          <span id="count-label" aria-live="polite"></span>
+        </div>
       </div>
 
       <div id="tabla-container">
@@ -156,12 +164,11 @@
   <!-- ===== MODAL CONFIRMAR ELIMINAR ===== -->
   <div class="confirm-overlay" id="confirm-overlay">
     <div class="confirm-box">
-      <div class="confirm-icon">!</div>
       <div class="confirm-title">¿Eliminar producto?</div>
       <p class="confirm-msg" id="confirm-msg">Esta acción no se puede deshacer.</p>
       <div class="confirm-actions">
         <button class="btn-cancel" onclick="cerrarConfirm()">Cancelar</button>
-        <button class="btn-danger" id="btn-confirm-delete" onclick="confirmarEliminar()">Sí, eliminar</button>
+        <button class="btn-danger" id="btn-confirm-delete" onclick="confirmarEliminar()">Eliminar</button>
       </div>
     </div>
   </div>
