@@ -721,8 +721,10 @@ def actualizar_estado_pedido(
             (*valores_update, id_pedido),
         )
 
-        # Descuenta stock al momento de la entrega (dentro de la misma transacción)
-        if body.estado == "entregado" and estado_actual != "entregado":
+        # Descuenta stock cuando el pedido deja de estar pendiente. Asi el
+        # inventario refleja lo que ya fue aceptado por salon/cocina, sin
+        # esperar al cobro o a la entrega final.
+        if estado_actual == "pendiente" and body.estado in {"confirmado", "entregado"}:
             cursor.execute(
                 "SELECT id_producto, cantidad FROM detalle_pedidos WHERE id_pedido = %s",
                 (id_pedido,),

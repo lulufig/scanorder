@@ -20,7 +20,15 @@
     };
 
     // ── INICIALIZACIÓN ──────────────────────────────────────────
-    document.addEventListener("DOMContentLoaded", cargarProductos);
+    document.addEventListener("DOMContentLoaded", () => {
+      cargarProductos();
+
+      const categoriaSelect = document.getElementById("f-categoria");
+      if (categoriaSelect) {
+        categoriaSelect.addEventListener("change", () => actualizarSubcategoriasAdmin(""));
+      }
+      actualizarSubcategoriasAdmin("");
+    });
 
     // ── CARGAR PRODUCTOS ────────────────────────────────────────
     async function cargarProductos() {
@@ -271,7 +279,7 @@
         mostrarToast("Error al eliminar: " + error.message, "error");
       } finally {
         btn.disabled = false;
-        btn.textContent = "Sí, eliminar";
+        btn.textContent = "Eliminar";
       }
     }
 
@@ -339,14 +347,6 @@
       `;
       select.value = valorSeleccionado;
     }
-
-    document.addEventListener("DOMContentLoaded", () => {
-      const categoriaSelect = document.getElementById("f-categoria");
-      if (categoriaSelect) {
-        categoriaSelect.addEventListener("change", () => actualizarSubcategoriasAdmin(""));
-      }
-      actualizarSubcategoriasAdmin("");
-    });
 
     // Previene XSS al insertar texto en el HTML
     function escapeHtml(str) {
