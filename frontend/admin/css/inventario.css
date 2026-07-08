@@ -1,0 +1,89 @@
+/* ============================================================
+   ScanOrder Admin — Inventario
+   Estilos propios de esta página. El shell (sidebar, layout,
+   modales, tablas base) vive en admin-shell.css.
+   ============================================================ */
+
+.inv-table-wrap {
+  overflow-x: auto;
+}
+
+.stock-num {
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.badge-ok      { color: var(--state-libre-text);     background: var(--state-libre-bg); }
+.badge-bajo    { color: var(--state-esperando-text); background: var(--state-esperando-bg); }
+.badge-agotado { color: var(--state-alerta-text);    background: var(--state-alerta-bg); }
+
+.alerta-banner {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  background: var(--state-alerta-bg);
+  color: var(--state-alerta-text);
+  border: 1px solid var(--state-alerta-border);
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-bottom: 18px;
+}
+
+.alerta-banner [data-lucide] {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+
+.alerta-banner.visible {
+  display: flex;
+}
+
+.inv-filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.inv-filters select,
+.inv-filters input {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--gray-800);
+  font-size: 0.87rem;
+}
+
+.btn-ajustar {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--gray-600);
+  padding: 5px 11px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.btn-ajustar:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btn-guardar {
+  background: var(--color-primary);
+  color: var(--gray-0);
+  border: none;
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.btn-guardar:hover {
+  background: var(--color-primary-hover);
+}

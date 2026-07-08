@@ -1,0 +1,70 @@
+/* ============================================================
+   ScanOrder Admin — Usuarios
+   Estilos propios de esta página. El shell (sidebar, layout,
+   modales, tablas base, toast) vive en admin-shell.css.
+   ============================================================ */
+
+.usu-table-wrap {
+  overflow-x: auto;
+}
+
+.badge-admin    { color: var(--state-esperando-text); background: var(--state-esperando-bg); }
+.badge-mozo     { color: var(--state-ocupada-text);   background: var(--state-ocupada-bg); }
+.badge-temp     { color: var(--state-alerta-text);    background: var(--state-alerta-bg); }
+.badge-ok       { color: var(--state-libre-text);     background: var(--state-libre-bg); }
+.badge-inactivo { color: var(--gray-500);             background: var(--gray-100); }
+
+.acciones-cell {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn-editar,
+.btn-reenviar,
+.btn-toggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--gray-600);
+  padding: 5px 11px;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 600;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.btn-editar:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.btn-reenviar:hover { border-color: var(--state-esperando-text); color: var(--state-esperando-text); }
+.btn-editar:disabled, .btn-reenviar:disabled, .btn-toggle:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-toggle.desactivar:hover { border-color: var(--state-alerta-text); color: var(--state-alerta-text); }
+.btn-toggle.activar { border-color: var(--state-libre-border); color: var(--state-libre-text); }
+.btn-toggle.activar:hover { background: var(--state-libre-bg); }
+
+.btn-nuevo {
+  background: var(--color-primary);
+  color: var(--gray-0);
+  border: none;
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 0.86rem;
+  font-weight: 600;
+  transition: background 0.15s ease;
+}
+
+.btn-nuevo:hover {
+  background: var(--color-primary-hover);
+}
+
+.btn-crear {
+  background: var(--color-primary);
+  color: var(--gray-0);
+  border: none;
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.btn-crear:hover { background: var(--color-primary-hover); }
+.btn-crear:disabled { opacity: 0.6; cursor: not-allowed; }
