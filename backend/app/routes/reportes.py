@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException, Response, status, Depends, Query
 
@@ -276,6 +276,73 @@ def dashboard_metricas(current_user: dict = Depends(require_role("admin"))):
                     "total": float(row["total"]),
                 }
 
+        # Estado completo de los pedidos de hoy (incluye entregado/cancelado,
+        # a diferencia de "pedidos_activos" que solo cubre los en curso).
+        cursor.execute(
+            """
+            SELECT estado, COUNT(*) AS cantidad
+            FROM pedidos
+            WHERE DATE(created_at) = CURDATE()
+            GROUP BY estado
+            """
+        )
+        estados_hoy = {row["estado"]: row["cantidad"] for row in cursor.fetchall()}
+
+        # Categoría más vendida del día (por cantidad de items).
+        cursor.execute(
+            f"""
+            SELECT c.nombre AS categoria, SUM(dp.cantidad) AS cantidad
+            FROM detalle_pedidos dp
+            JOIN productos p ON p.id_producto = dp.id_producto
+            JOIN categorias c ON c.id_categoria = p.id_categoria
+            JOIN pedidos pe ON pe.id_pedido = dp.id_pedido
+            WHERE DATE({fecha_venta.replace("created_at", "pe.created_at").replace("confirmado_at", "pe.confirmado_at")}) = CURDATE()
+              AND pe.estado IN ({ESTADOS_VENTA_SQL})
+            GROUP BY c.id_categoria, c.nombre
+            ORDER BY cantidad DESC
+            LIMIT 1
+            """
+        )
+        categoria_top_row = cursor.fetchone()
+
+        categoria_top = None
+        if categoria_top_row:
+            cursor.execute(
+                f"""
+                SELECT COALESCE(SUM(dp.cantidad), 0) AS total_items
+                FROM detalle_pedidos dp
+                JOIN pedidos pe ON pe.id_pedido = dp.id_pedido
+                WHERE DATE({fecha_venta.replace("created_at", "pe.created_at").replace("confirmado_at", "pe.confirmado_at")}) = CURDATE()
+                  AND pe.estado IN ({ESTADOS_VENTA_SQL})
+                """
+            )
+            total_items_row = cursor.fetchone()
+            total_items = int(total_items_row["total_items"]) if total_items_row else 0
+            cantidad_categoria = int(categoria_top_row["cantidad"])
+            categoria_top = {
+                "nombre": categoria_top_row["categoria"],
+                "cantidad": cantidad_categoria,
+                "porcentaje": round((cantidad_categoria / total_items) * 100, 1) if total_items else 0.0,
+            }
+
+        # Tiempo promedio de preparación (confirmado -> listo). Requiere
+        # las columnas de trazabilidad de la migración 004; si no existen,
+        # se omite en vez de estimar un número.
+        tiempo_prep_promedio_min = None
+        if pedidos_tiene_columna(cursor, "confirmado_at") and pedidos_tiene_columna(cursor, "listo_at"):
+            cursor.execute(
+                """
+                SELECT AVG(TIMESTAMPDIFF(MINUTE, confirmado_at, listo_at)) AS minutos
+                FROM pedidos
+                WHERE DATE(confirmado_at) = CURDATE()
+                  AND confirmado_at IS NOT NULL
+                  AND listo_at IS NOT NULL
+                """
+            )
+            tiempo_row = cursor.fetchone()
+            if tiempo_row and tiempo_row["minutos"] is not None:
+                tiempo_prep_promedio_min = round(float(tiempo_row["minutos"]), 1)
+
         return {
             "ventas_hoy": float(ventas["ventas_hoy"]),
             "pedidos_hoy": int(resumen["pedidos_hoy"]),
@@ -286,7 +353,17 @@ def dashboard_metricas(current_user: dict = Depends(require_role("admin"))):
                 "en_preparacion": estados.get("en_preparacion", 0),
                 "listo": estados.get("listo", 0),
             },
+            "estado_pedidos_hoy": {
+                "pendiente": estados_hoy.get("pendiente", 0),
+                "confirmado": estados_hoy.get("confirmado", 0),
+                "en_preparacion": estados_hoy.get("en_preparacion", 0),
+                "listo": estados_hoy.get("listo", 0),
+                "entregado": estados_hoy.get("entregado", 0),
+                "cancelado": estados_hoy.get("cancelado", 0),
+            },
             "producto_top": producto_top or {"nombre": "—", "cantidad": 0},
+            "categoria_top": categoria_top,
+            "tiempo_prep_promedio_min": tiempo_prep_promedio_min,
             "mesa_top": (
                 {"numero": int(mesa_top["numero_mesa"]), "total": float(mesa_top["total_consumido"])}
                 if mesa_top else {"numero": None, "total": 0.0}
@@ -546,6 +623,63 @@ def ventas_hoy_por_hora(current_user: dict = Depends(require_role("admin"))):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener ventas por hora: {str(e)}"
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
+@router.get("/ventas-semana")
+def ventas_ultima_semana(current_user: dict = Depends(require_role("admin"))):
+    """
+    Retorna la serie de ventas de los ultimos 7 dias (incluye hoy) para el
+    grafico de tendencia semanal del dashboard.
+    """
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos"
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+        fecha_venta = fecha_venta_sql(cursor)
+        cursor.execute(
+            f"""
+            SELECT
+                DATE({fecha_venta}) AS fecha,
+                COUNT(*) AS pedidos,
+                COALESCE(SUM(total), 0) AS ventas
+            FROM pedidos
+            WHERE estado IN ({ESTADOS_VENTA_SQL})
+              AND DATE({fecha_venta}) BETWEEN DATE_SUB(CURDATE(), INTERVAL 6 DAY) AND CURDATE()
+            GROUP BY DATE({fecha_venta})
+            """
+        )
+        ventas_por_dia = {row["fecha"].isoformat(): row for row in cursor.fetchall()}
+
+        hoy = date.today()
+        serie = []
+        for offset in range(6, -1, -1):
+            fecha_iso = (hoy - timedelta(days=offset)).isoformat()
+            row = ventas_por_dia.get(fecha_iso)
+            serie.append({
+                "fecha": fecha_iso,
+                "ventas": float(row["ventas"]) if row else 0.0,
+                "pedidos": int(row["pedidos"]) if row else 0,
+            })
+
+        return {
+            "total_ventas": sum(item["ventas"] for item in serie),
+            "total_pedidos": sum(item["pedidos"] for item in serie),
+            "serie": serie,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener ventas de la semana: {str(e)}"
         )
     finally:
         cursor.close()
