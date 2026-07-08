@@ -55,3 +55,4 @@ class CierreMesaResponse(BaseModel):
     vuelto: float
     pedidos_incluidos: int
     created_at: str
+    entrega_pendiente: bool = False

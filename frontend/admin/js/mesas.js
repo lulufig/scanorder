@@ -291,10 +291,11 @@
       const pedidos = Array.isArray(data.pedidos) ? data.pedidos : [];
       title.textContent = `Mesa ${mesa.numero || "—"}`;
 
-      // "Liberar mesa" solo si no quedan pedidos por cobrar (cp.id_pedido IS NULL)
-      // pero el estado operativo sigue ocupado. Si hay pedidos visibles en esta
-      // lista, son cobrables (el endpoint filtra los que ya tienen cierre).
-      const pagadaPendienteEntrega = pedidos.length === 0 && data.ocupada;
+      // "Liberar mesa" cuando ya no queda nada por cobrar (data.cobrada, calculado
+      // en el backend contra cierre_pedidos) pero el estado operativo sigue
+      // ocupado. Cobro y entrega son ejes independientes: puede haber pedidos
+      // sin entregar (mesa.tiene_pedidos_sin_entregar) y aun así liberarse.
+      const puedeLiberar = data.cobrada && data.ocupada;
 
       body.innerHTML = `
         <div class="mesa-operacion-summary">
@@ -312,8 +313,11 @@
             ? `<button class="btn-ghost btn-service-done" type="button" onclick="atenderMozo(${mesa.id_mesa})">Mozo atendido</button>`
             : ""
           }
-          ${pagadaPendienteEntrega
-            ? `<div class="cobro-alerta">Mesa cobrada. Liberá cuando se entregue el pedido.</div>
+          ${puedeLiberar
+            ? `${data.tiene_pedidos_sin_entregar
+                ? `<div class="cobro-alerta">Mesa cobrada. Quedan pedidos por entregar en cocina.</div>`
+                : ""
+              }
                <button class="btn-cobrar" type="button" onclick="liberarMesa(${mesa.id_mesa})">Liberar mesa</button>`
             : `<button class="btn-cobrar" type="button" onclick="cobrarMesa(${mesa.id_mesa})">Cobrar mesa</button>`
           }
@@ -630,7 +634,7 @@
         cerrarCobro();
         cerrarMesaOperacion();
         if (resultado && resultado.entrega_pendiente) {
-          mostrarToast("Cobro registrado. La mesa sigue ocupada hasta que se entregue el pedido.", "success");
+          mostrarToast("Cobro registrado y mesa liberada. Quedan pedidos por entregar en cocina.", "success");
         } else {
           mostrarToast("Mesa cobrada y liberada correctamente.", "success");
         }

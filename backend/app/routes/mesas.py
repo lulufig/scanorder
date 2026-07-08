@@ -63,6 +63,60 @@ def obtener_inicio_ciclo_mesa(cursor, id_mesa: int):
     return row.get("ultimo_cierre")
 
 
+def contar_pedidos_sin_cobrar(cursor, id_mesa: int, inicio_ciclo) -> int:
+    """
+    Pedidos del ciclo actual (desde el último cierre, o desde hoy si no hay
+    ninguno) que todavía no están vinculados a un cierre. Mismo criterio que
+    usan cerrar_mesa (el SELECT ... FOR UPDATE) y liberar_mesa, para que
+    "puede cobrarse" y "puede liberarse" nunca queden desincronizados.
+    """
+    if tabla_existe(cursor, "cierre_pedidos"):
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM pedidos p
+            LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido
+            WHERE p.id_mesa = %s
+              AND p.estado NOT IN ('cancelado')
+              AND cp.id_pedido IS NULL
+              AND p.created_at >= COALESCE(%s, CURDATE())
+            """,
+            (id_mesa, inicio_ciclo)
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM pedidos
+            WHERE id_mesa = %s
+              AND estado NOT IN ('entregado', 'cancelado')
+            """,
+            (id_mesa,)
+        )
+    row = cursor.fetchone()
+    return int((row or {}).get("total") or 0)
+
+
+def contar_pedidos_sin_entregar(cursor, id_mesa: int, inicio_ciclo) -> int:
+    """
+    Pedidos del ciclo actual que aún no llegaron a 'entregado', sin importar
+    si ya fueron cobrados. Cobro y entrega son ejes independientes: un pedido
+    puede estar cobrado y seguir apareciendo acá hasta que cocina lo entregue.
+    """
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM pedidos
+        WHERE id_mesa = %s
+          AND estado NOT IN ('entregado', 'cancelado')
+          AND created_at >= COALESCE(%s, CURDATE())
+        """,
+        (id_mesa, inicio_ciclo)
+    )
+    row = cursor.fetchone()
+    return int((row or {}).get("total") or 0)
+
+
 @router.post("/", response_model=MesaResponse, status_code=status.HTTP_201_CREATED)
 def create_mesa(
     mesa: MesaCreate,
@@ -342,18 +396,24 @@ def detalle_operacion_mesa(
         if not mesa:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
 
-        campos_observaciones = ", observaciones" if tabla_tiene_columna(cursor, "pedidos", "observaciones") else ", NULL AS observaciones"
-        campo_subcategoria = ", p.subcategoria" if tabla_tiene_columna(cursor, "productos", "subcategoria") else ", NULL AS subcategoria"
+        campos_observaciones = ", p.observaciones" if tabla_tiene_columna(cursor, "pedidos", "observaciones") else ", NULL AS observaciones"
+        campo_subcategoria = ", p2.subcategoria" if tabla_tiene_columna(cursor, "productos", "subcategoria") else ", NULL AS subcategoria"
+        inicio_ciclo = obtener_inicio_ciclo_mesa(cursor, id_mesa)
+        tiene_cierres = tabla_existe(cursor, "cierre_pedidos")
+        campo_cobrado = "(cp.id_pedido IS NOT NULL) AS cobrado" if tiene_cierres else "FALSE AS cobrado"
+        join_cierre = "LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido" if tiene_cierres else ""
+
         cursor.execute(
             """
-            SELECT id_pedido, id_mesa, estado, total, created_at AS fecha,
-                   TIMESTAMPDIFF(MINUTE, created_at, NOW()) AS minutos_espera
-                   """ + campos_observaciones + """
-            FROM pedidos
-            WHERE id_mesa = %s
-              AND estado IN ('pendiente', 'confirmado', 'en_preparacion', 'listo', 'entregado')
-              AND DATE(created_at) = CURDATE()
-            ORDER BY created_at DESC
+            SELECT p.id_pedido, p.id_mesa, p.estado, p.total, p.created_at AS fecha,
+                   TIMESTAMPDIFF(MINUTE, p.created_at, NOW()) AS minutos_espera,
+                   """ + campo_cobrado + campos_observaciones + """
+            FROM pedidos p
+            """ + join_cierre + """
+            WHERE p.id_mesa = %s
+              AND p.estado IN ('pendiente', 'confirmado', 'en_preparacion', 'listo', 'entregado')
+              AND DATE(p.created_at) = CURDATE()
+            ORDER BY p.created_at DESC
             LIMIT 8
             """,
             (id_mesa,)
@@ -361,18 +421,19 @@ def detalle_operacion_mesa(
         pedidos = cursor.fetchall()
 
         for pedido in pedidos:
+            pedido["cobrado"] = bool(pedido.get("cobrado"))
             cursor.execute(
                 """
                 SELECT
                     dp.id_producto,
-                    p.nombre,
+                    p2.nombre,
                     dp.cantidad,
                     dp.subtotal,
                     c.nombre AS categoria
                 """ + campo_subcategoria + """
                 FROM detalle_pedidos dp
-                JOIN productos p ON p.id_producto = dp.id_producto
-                LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
+                JOIN productos p2 ON p2.id_producto = dp.id_producto
+                LEFT JOIN categorias c ON c.id_categoria = p2.id_categoria
                 WHERE dp.id_pedido = %s
                 """,
                 (pedido["id_pedido"],)
@@ -386,12 +447,18 @@ def detalle_operacion_mesa(
             }.get(pedido["estado"])
 
         estado_operativo = mesa_operational_state.snapshot().get(id_mesa) or {}
+        pedidos_sin_cobrar = contar_pedidos_sin_cobrar(cursor, id_mesa, inicio_ciclo)
+        pedidos_sin_entregar = contar_pedidos_sin_entregar(cursor, id_mesa, inicio_ciclo)
         return {
             "mesa": mesa,
             "pedidos": pedidos,
             "cuenta_solicitada": bool(estado_operativo.get("cuenta_solicitada")),
             "mozo_solicitado": bool(estado_operativo.get("mozo_solicitado")),
             "ocupada": bool(estado_operativo.get("ocupada")),
+            # "Cobrada" = no queda ningún pedido del ciclo actual sin vincular a
+            # un cierre. Independiente de si esos pedidos ya se entregaron.
+            "cobrada": pedidos_sin_cobrar == 0,
+            "tiene_pedidos_sin_entregar": pedidos_sin_entregar > 0,
         }
 
     except HTTPException:
@@ -544,7 +611,10 @@ def cerrar_mesa(
     current_user: dict = Depends(require_role("mozo", "admin"))
 ):
     """
-    Registra el cobro de una mesa y la libera.
+    Registra el cobro de una mesa y la libera siempre, sin importar si sus
+    pedidos ya fueron entregados. "Cobrado" y "entregado" son ejes
+    independientes: los pedidos conservan su estado real de cocina y se
+    entregan (con descuento de stock) vía PATCH /pedidos/{id}/estado.
     Operación atómica: SELECT FOR UPDATE garantiza que dos cierres simultáneos
     no puedan cobrar los mismos pedidos.
     """
@@ -603,8 +673,9 @@ def cerrar_mesa(
                 detail="No hay pedidos pendientes de cobro en esta mesa"
             )
 
-        # Si había pedidos sin entregar al momento del cobro, la mesa debe
-        # permanecer ocupada hasta que la comida sea físicamente entregada.
+        # Informativo para el frontend: había pedidos sin entregar al momento
+        # del cobro. Cobro y entrega son ejes independientes — esto NO impide
+        # liberar la mesa ni cambia el estado de cocina de esos pedidos.
         entrega_pendiente = any(
             p["estado"] not in ("listo", "entregado") for p in pedidos
         )
@@ -641,7 +712,6 @@ def cerrar_mesa(
             )
         )
         id_cierre = cursor.lastrowid
-        pedidos_ids = [p["id_pedido"] for p in pedidos]
 
         for pedido in pedidos:
             cursor.execute(
@@ -652,21 +722,10 @@ def cerrar_mesa(
                 (id_cierre, pedido["id_pedido"], float(pedido["total"] or 0))
             )
 
-        # Los pedidos listos se cierran como entregados al registrar el cobro.
-        # Nunca se avanza automáticamente un pedido pendiente o en preparación.
-        placeholders = ", ".join(["%s"] * len(pedidos_ids))
-        if tabla_tiene_columna(cursor, "pedidos", "entregado_at"):
-            cursor.execute(
-                f"UPDATE pedidos SET estado = 'entregado', entregado_at = COALESCE(entregado_at, NOW()) "
-                f"WHERE id_pedido IN ({placeholders}) AND estado NOT IN ('entregado', 'cancelado')",
-                pedidos_ids
-            )
-        else:
-            cursor.execute(
-                f"UPDATE pedidos SET estado = 'entregado' "
-                f"WHERE id_pedido IN ({placeholders}) AND estado NOT IN ('entregado', 'cancelado')",
-                pedidos_ids
-            )
+        # Cobrar NO toca el estado de cocina de los pedidos ni el stock.
+        # Los pedidos conservan su estado real (pendiente/en_preparacion/listo)
+        # hasta que el mozo los entregue de verdad vía
+        # PATCH /pedidos/{id}/estado, que es el único lugar que descuenta stock.
 
         connection.commit()
 
@@ -678,11 +737,10 @@ def cerrar_mesa(
         )
         cierre_row = cursor.fetchone()
 
-        # Siempre liberar la sesión QR; solo liberar el estado operativo si
-        # todos los pedidos ya estaban entregados al momento del cobro.
+        # Cobrar libera la mesa siempre, tenga o no pedidos sin entregar: la
+        # ocupación del salón depende de si se cobró, no de si cocina terminó.
         mesa_sessions.force_release(int(mesa["numero"]))
-        if not entrega_pendiente:
-            mesa_operational_state.release(id_mesa)
+        mesa_operational_state.release(id_mesa)
 
         return {
             "id_cierre": id_cierre,
@@ -730,31 +788,7 @@ def liberar_mesa(
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
         inicio_ciclo = obtener_inicio_ciclo_mesa(cursor, id_mesa)
-        if tabla_existe(cursor, "cierre_pedidos"):
-            cursor.execute(
-                """
-                SELECT COUNT(*) AS total
-                FROM pedidos p
-                LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido
-                WHERE p.id_mesa = %s
-                  AND p.estado NOT IN ('cancelado')
-                  AND cp.id_pedido IS NULL
-                  AND p.created_at >= COALESCE(%s, CURDATE())
-                """,
-                (id_mesa, inicio_ciclo)
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT COUNT(*) AS total
-                FROM pedidos
-                WHERE id_mesa = %s
-                  AND estado NOT IN ('entregado', 'cancelado')
-                """,
-                (id_mesa,)
-            )
-        pendientes = cursor.fetchone()
-        if int((pendientes or {}).get("total") or 0) > 0:
+        if contar_pedidos_sin_cobrar(cursor, id_mesa, inicio_ciclo) > 0:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="La mesa tiene pedidos sin cobrar. Usá Cobrar mesa para liberarla."
