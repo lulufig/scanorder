@@ -2,7 +2,8 @@
 # Script de arranque del contenedor app.
 # 1. Espera a que MySQL esté listo.
 # 2. Carga el schema base (docs/database.sql) si la tabla usuarios no existe.
-# 3. Aplica la migración 007 (idempotente).
+# 3. Aplica las migraciones incrementales posteriores al schema base (007+),
+#    en orden y de forma idempotente.
 # 4. Crea el usuario admin inicial si la tabla está vacía.
 # 5. Lanza uvicorn.
 
@@ -36,11 +37,26 @@ else
   echo "[init] Schema ya presente — saltando carga inicial."
 fi
 
-# Migración 007: must_change_password (idempotente)
-echo "[init] Aplicando migración 007..."
-mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" \
-  < /app/migrations/007_must_change_password.sql
-echo "[init] Migración 007 aplicada."
+# Migraciones incrementales (007+): docs/database.sql ya consolida 001-006
+# (ver CLAUDE.md). Se aplican todas las posteriores, en orden y de forma
+# idempotente, así una instalación limpia — y también un contenedor que se
+# reinicia sobre un volumen ya existente al actualizar a una imagen con
+# migraciones nuevas — quedan al día sin tener que listar cada archivo acá.
+echo "[init] Aplicando migraciones incrementales (007+)..."
+for migracion in $(ls /app/migrations/*.sql | sort); do
+  archivo=$(basename "$migracion")
+  case "$archivo" in
+    00[1-6]_*)
+      continue
+      ;;
+  esac
+  echo "[init]   -> ${archivo}"
+  if ! mysql -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" < "$migracion"; then
+    echo "[init] ERROR: falló la migración ${archivo}. Abortando arranque." >&2
+    exit 1
+  fi
+done
+echo "[init] Migraciones incrementales aplicadas."
 
 # Crear admin inicial si no hay usuarios
 echo "[init] Verificando usuario admin..."
