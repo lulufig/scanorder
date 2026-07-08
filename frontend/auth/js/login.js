@@ -26,6 +26,16 @@
       document.getElementById("error-box").classList.remove("visible");
     }
 
+    function togglePassword() {
+      const input = document.getElementById("password");
+      const btn = document.getElementById("toggle-password");
+      const mostrando = input.type === "text";
+      input.type = mostrando ? "password" : "text";
+      btn.querySelector(".icon-show").style.display = mostrando ? "" : "none";
+      btn.querySelector(".icon-hide").style.display = mostrando ? "none" : "";
+      btn.setAttribute("aria-label", mostrando ? "Mostrar contraseña" : "Ocultar contraseña");
+    }
+
     function setLoading(loading) {
       const btn = document.getElementById("btn-login");
       if (loading) {
