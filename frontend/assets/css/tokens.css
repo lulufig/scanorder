@@ -1,0 +1,137 @@
+/*
+  ScanOrder — sistema de diseño compartido.
+  Tokens de color, tipografía, espaciado y sombras usados en todas las
+  áreas del frontend (login, panel admin, menú cliente).
+  No es un framework: son custom properties + un reset mínimo.
+*/
+
+:root {
+  /* ---- Marca ---- */
+  --brand-50:  #EFF6F8;
+  --brand-100: #DCEEF1;
+  --brand-200: #B7DCE3;
+  --brand-300: #86C2CE;
+  --brand-400: #4A9CAD;
+  --brand-500: #1F7A8C;
+  --brand-600: #166273;
+  --brand-700: #124F5D;
+  --brand-800: #103F4A;
+  --brand-900: #0C2E37;
+
+  --color-primary: var(--brand-600);
+  --color-primary-hover: var(--brand-700);
+  --color-primary-soft: var(--brand-50);
+  --color-primary-border: var(--brand-200);
+
+  /* ---- Neutros ---- */
+  --gray-0:   #FFFFFF;
+  --gray-50:  #F8FAFC;
+  --gray-100: #F1F5F9;
+  --gray-200: #E2E8F0;
+  --gray-300: #CBD5E1;
+  --gray-400: #94A3B8;
+  --gray-500: #64748B;
+  --gray-600: #475569;
+  --gray-700: #334155;
+  --gray-800: #1E293B;
+  --gray-900: #0F172A;
+
+  --color-surface: var(--gray-0);
+  --color-bg: var(--gray-50);
+  --color-border: var(--gray-200);
+  --color-text: var(--gray-800);
+  --color-text-muted: var(--gray-500);
+  --color-text-inverse: var(--gray-0);
+
+  /* ---- Estados semánticos (mesas / pedidos / stock) ---- */
+  --state-libre-text: #15803D;
+  --state-libre-bg: #ECFDF3;
+  --state-libre-border: #A7E3BE;
+  --state-libre-dot: #22C55E;
+
+  --state-ocupada-text: #1D4E89;
+  --state-ocupada-bg: #EAF1FB;
+  --state-ocupada-border: #AFC9EA;
+  --state-ocupada-dot: #2E6FC7;
+
+  --state-pidiendo-text: var(--brand-700);
+  --state-pidiendo-bg: var(--brand-50);
+  --state-pidiendo-border: var(--brand-200);
+  --state-pidiendo-dot: var(--brand-500);
+
+  --state-esperando-text: #B45309;
+  --state-esperando-bg: #FEF6E7;
+  --state-esperando-border: #F3D18E;
+  --state-esperando-dot: #E8A317;
+
+  --state-alerta-text: #B91C1C;
+  --state-alerta-bg: #FDECEC;
+  --state-alerta-border: #F0AFAF;
+  --state-alerta-dot: #E23B3B;
+
+  /* ---- Tipografía ---- */
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* ---- Forma ---- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* ---- Sombra (sutil, sin halos) ---- */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-focus: 0 0 0 3px rgba(31, 122, 140, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Utilidades compartidas: badges de estado, íconos, botones base ---- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  line-height: 1.4;
+}
+
+.badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.badge-libre     { color: var(--state-libre-text);     background: var(--state-libre-bg);     border-color: var(--state-libre-border); }
+.badge-ocupada   { color: var(--state-ocupada-text);   background: var(--state-ocupada-bg);   border-color: var(--state-ocupada-border); }
+.badge-pidiendo  { color: var(--state-pidiendo-text);  background: var(--state-pidiendo-bg);  border-color: var(--state-pidiendo-border); }
+.badge-esperando { color: var(--state-esperando-text); background: var(--state-esperando-bg); border-color: var(--state-esperando-border); }
+.badge-alerta    { color: var(--state-alerta-text);    background: var(--state-alerta-bg);    border-color: var(--state-alerta-border); }
+
+.badge-libre     .badge-dot { background: var(--state-libre-dot); }
+.badge-ocupada   .badge-dot { background: var(--state-ocupada-dot); }
+.badge-pidiendo  .badge-dot { background: var(--state-pidiendo-dot); }
+.badge-esperando .badge-dot { background: var(--state-esperando-dot); }
+.badge-alerta    .badge-dot { background: var(--state-alerta-dot); }
+
+[data-lucide] {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2;
+  vertical-align: middle;
+}
