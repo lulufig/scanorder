@@ -5,25 +5,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ScanOrder — Panel Admin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-
-    <link rel="stylesheet" href="css/index.css" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/css/tokens.css" />
+  <link rel="stylesheet" href="css/admin-shell.css" />
+  <link rel="stylesheet" href="css/index.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 
 <body>
 
+  <!-- ===== BARRA MÓVIL (solo visible en pantallas chicas) ===== -->
+  <div class="mobile-topbar">
+    <button class="mobile-menu-btn" type="button" onclick="toggleSidebar()" aria-label="Abrir menú">
+      <i data-lucide="menu"></i>
+    </button>
+    <div class="mobile-topbar-logo">ScanOrder</div>
+  </div>
+  <div class="sidebar-overlay" onclick="closeSidebar()"></div>
+
   <!-- ===== SIDEBAR ===== -->
   <aside class="sidebar">
-    <div class="sidebar-logo">Maven<span>Burger</span></div>
-  
+    <div class="sidebar-logo">ScanOrder</div>
+
     <div class="sidebar-section" data-role="admin">Reportes</div>
-    <a href="index.html" class="sidebar-link active" data-role="admin"> Reportes</a>
+    <a href="index.html" class="sidebar-link active" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
 
     <div class="sidebar-section">Gestión</div>
-    <a href="mesas.html"      class="sidebar-link"> Mesas</a>
-    <a href="productos.html"  class="sidebar-link" data-role="admin"> Productos</a>
-    <a href="inventario.html" class="sidebar-link" data-role="admin"> Inventario</a>
-    <a href="usuarios.html"   class="sidebar-link" data-role="admin"> Usuarios</a>
+    <a href="mesas.html"      class="sidebar-link"><i data-lucide="layout-grid"></i>Mesas</a>
+    <a href="productos.html"  class="sidebar-link" data-role="admin"><i data-lucide="utensils"></i>Productos</a>
+    <a href="inventario.html" class="sidebar-link" data-role="admin"><i data-lucide="package"></i>Inventario</a>
+    <a href="usuarios.html"   class="sidebar-link" data-role="admin"><i data-lucide="users"></i>Usuarios</a>
 
     <div class="sidebar-bottom">
       <div class="user-info">
@@ -50,134 +62,260 @@
       </div>
     </div>
 
-    <!-- Accesos rápidos -->
-    <div class="dashboard-grid fade-in" style="animation-delay:0.05s;">
-      <div class="metric-card">
-        <div class="metric-label">Ventas hoy</div>
-        <div class="metric-value red" id="metric-ventas-hoy">—</div>
-        <div class="metric-help">Pedidos listos/entregados</div>
+    <!-- Stat cards -->
+    <div class="stat-cards fade-in" style="animation-delay:0.05s;">
+      <div class="stat-card stat-card-primary">
+        <div class="stat-card-head">
+          <div class="stat-card-icon"><i data-lucide="wallet"></i></div>
+          <div class="stat-card-label">Ventas del día</div>
+        </div>
+        <div class="stat-card-value-row">
+          <div class="stat-card-value" id="metric-ventas-hoy">—</div>
+          <span class="stat-card-compare" id="compare-ventas-hoy"></span>
+        </div>
       </div>
-      <div class="metric-card">
-        <div class="metric-label">Pedidos hoy</div>
-        <div class="metric-value" id="metric-pedidos-hoy">—</div>
-        <div class="metric-help">Total creados</div>
+      <div class="stat-card">
+        <div class="stat-card-head">
+          <div class="stat-card-icon"><i data-lucide="receipt"></i></div>
+          <div class="stat-card-label">Pedidos del día</div>
+        </div>
+        <div class="stat-card-value-row">
+          <div class="stat-card-value" id="metric-pedidos-hoy">—</div>
+          <span class="stat-card-compare" id="compare-pedidos-hoy"></span>
+        </div>
       </div>
-      <div class="metric-card">
-        <div class="metric-label">Ticket promedio</div>
-        <div class="metric-value" id="metric-ticket">—</div>
-        <div class="metric-help">Venta promedio</div>
+      <div class="stat-card">
+        <div class="stat-card-head">
+          <div class="stat-card-icon"><i data-lucide="receipt-text"></i></div>
+          <div class="stat-card-label">Ticket promedio</div>
+        </div>
+        <div class="stat-card-value-row">
+          <div class="stat-card-value" id="metric-ticket">—</div>
+          <span class="stat-card-compare" id="compare-ticket"></span>
+        </div>
       </div>
-      <div class="metric-card">
-        <div class="metric-label">Mesas activas</div>
-        <div class="metric-value" id="metric-mesas">—</div>
-        <div class="metric-help">Con pedidos abiertos</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-label">Producto top</div>
-        <div class="metric-value" id="metric-top" style="font-size:1.05rem;">—</div>
-        <div class="metric-help" id="metric-top-help">Hoy</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-label">Mesa top</div>
-        <div class="metric-value" id="metric-mesa-top">—</div>
-        <div class="metric-help" id="metric-mesa-top-help">Mayor venta hoy</div>
+      <div class="stat-card">
+        <div class="stat-card-head">
+          <div class="stat-card-icon"><i data-lucide="flame"></i></div>
+          <div class="stat-card-label">Pedidos activos ahora</div>
+        </div>
+        <div class="stat-card-value-row">
+          <div class="stat-card-value" id="metric-activos">—</div>
+          <span class="stat-card-compare" id="compare-activos"></span>
+        </div>
       </div>
     </div>
 
-    <section class="sales-panel fade-in" style="animation-delay:0.15s;">
-      <div class="sales-panel-head">
-        <div>
-          <div class="panel-kicker">Ventas por hora</div>
-          <h2 class="panel-title">Movimiento de hoy</h2>
-          <p class="panel-subtitle">El gráfico se actualiza cuando un pedido entra al flujo de venta.</p>
+    <!-- Gráfico principal + panel secundario -->
+    <div class="dash-main-grid fade-in" style="animation-delay:0.1s;">
+
+      <section class="chart-panel">
+        <div class="chart-panel-head">
+          <div>
+            <div class="panel-kicker">Ventas por hora</div>
+            <h2 class="panel-title">Movimiento de hoy</h2>
+          </div>
+          <div class="chart-summary">
+            <span id="chart-total">—</span>
+            <small id="chart-orders">—</small>
+          </div>
         </div>
-        <div class="chart-summary">
-          <span id="chart-total">—</span>
-          <small id="chart-orders">—</small>
+        <div class="chart-shell">
+          <canvas id="ventas-chart"></canvas>
+          <div class="chart-empty" id="chart-empty">Todavía no hay ventas confirmadas hoy.</div>
         </div>
-      </div>
-      <div class="chart-shell">
-        <canvas id="ventas-chart" height="260"></canvas>
-        <div class="chart-empty" id="chart-empty">Todavía no hay ventas confirmadas hoy.</div>
-      </div>
-    </section>
+      </section>
+
+      <aside class="side-panel">
+
+        <div class="side-card">
+          <div class="side-card-title">Cobros por método de pago</div>
+          <div class="donut-shell">
+            <canvas id="cobros-chart"></canvas>
+            <div class="donut-empty" id="donut-empty">Sin cobros registrados hoy.</div>
+          </div>
+          <div class="donut-legend" id="donut-legend"></div>
+        </div>
+
+        <div class="side-card highlight-card">
+          <div class="highlight-icon"><i data-lucide="trophy"></i></div>
+          <div class="highlight-body">
+            <div class="side-card-title">Producto más vendido</div>
+            <div class="highlight-value" id="metric-top">—</div>
+            <div class="highlight-help" id="metric-top-help">Hoy</div>
+          </div>
+        </div>
+
+        <div class="side-card highlight-card">
+          <div class="highlight-icon"><i data-lucide="layout-grid"></i></div>
+          <div class="highlight-body">
+            <div class="side-card-title">Mesa que más facturó</div>
+            <div class="highlight-value" id="metric-mesa-top">—</div>
+            <div class="highlight-help" id="metric-mesa-top-help">Mayor venta hoy</div>
+          </div>
+        </div>
+
+      </aside>
+
+    </div>
+
+    <!-- Estado de pedidos + tendencia semanal -->
+    <div class="dash-main-grid dash-main-grid-reverse fade-in" style="animation-delay:0.12s;">
+
+      <aside class="side-panel">
+
+        <div class="side-card">
+          <div class="side-card-title">Estado de pedidos (hoy)</div>
+          <div class="donut-shell">
+            <canvas id="estados-chart"></canvas>
+            <div class="donut-empty" id="estados-empty">Sin pedidos registrados hoy.</div>
+          </div>
+          <div class="donut-legend" id="estados-legend"></div>
+        </div>
+
+        <div class="side-card highlight-card">
+          <div class="highlight-icon"><i data-lucide="tag"></i></div>
+          <div class="highlight-body">
+            <div class="side-card-title">Categoría más vendida</div>
+            <div class="highlight-value" id="metric-categoria-top">—</div>
+            <div class="highlight-help" id="metric-categoria-top-help">Hoy</div>
+          </div>
+        </div>
+
+        <div class="side-card highlight-card" id="card-tiempo-prep" style="display:none;">
+          <div class="highlight-icon"><i data-lucide="timer"></i></div>
+          <div class="highlight-body">
+            <div class="side-card-title">Tiempo promedio de preparación</div>
+            <div class="highlight-value" id="metric-tiempo-prep">—</div>
+            <div class="highlight-help">Confirmado → listo, hoy</div>
+          </div>
+        </div>
+
+      </aside>
+
+      <section class="chart-panel">
+        <div class="chart-panel-head">
+          <div>
+            <div class="panel-kicker">Tendencia semanal</div>
+            <h2 class="panel-title">Ventas de los últimos 7 días</h2>
+          </div>
+          <div class="chart-summary">
+            <span id="semana-total">—</span>
+            <small id="semana-orders">—</small>
+          </div>
+        </div>
+        <div class="chart-shell">
+          <canvas id="semana-chart"></canvas>
+          <div class="chart-empty" id="semana-empty">Todavía no hay ventas esta semana.</div>
+        </div>
+      </section>
+
+    </div>
 
     <!-- Sección Reportes -->
     <div id="seccion-reportes" class="fade-in" style="animation-delay:0.2s;">
-      <div class="section-title"> Reportes de ventas</div>
+      <div class="section-title">Reportes de ventas</div>
 
-      <div class="reportes-grid reportes-grid-single">
+      <div class="reportes-grid">
 
-        <!-- Reporte de ventas -->
-        <div class="reporte-card">
+        <!-- Calendario -->
+        <div class="reporte-card calendar-card">
           <div class="reporte-card-header">
-            <div class="reporte-icon">CSV</div>
+            <div class="reporte-icon"><i data-lucide="calendar-days"></i></div>
             <div>
-              <div class="reporte-titulo">Reporte de ventas</div>
-              <div class="reporte-desc">CSV con total, pedidos y productos más vendidos</div>
+              <div class="reporte-titulo">Calendario</div>
+              <div class="reporte-desc">Elegí un día para completar las fechas de los reportes</div>
             </div>
           </div>
           <div class="reporte-card-body">
-
-            <!-- Atajos de fecha -->
-            <div class="atajos-fecha">
-              <button class="atajo-btn" onclick="setAtajo('hoy')">Hoy</button>
-              <button class="atajo-btn" onclick="setAtajo('semana')">Esta semana</button>
-              <button class="atajo-btn" onclick="setAtajo('mes')">Este mes</button>
-              <button class="atajo-btn" onclick="setAtajo('mes_anterior')">Mes anterior</button>
+            <div class="cal-header">
+              <button class="cal-nav" type="button" onclick="calendarPrevMonth()" aria-label="Mes anterior"><i data-lucide="chevron-left"></i></button>
+              <span class="cal-month-label" id="cal-month-label">—</span>
+              <button class="cal-nav" type="button" onclick="calendarNextMonth()" aria-label="Mes siguiente"><i data-lucide="chevron-right"></i></button>
             </div>
-
-            <!-- Fechas -->
-            <div class="fechas-row">
-              <div class="form-group">
-                <label class="form-label" for="fecha-inicio">Fecha inicio</label>
-                <input class="form-input" type="date" id="fecha-inicio" />
-              </div>
-              <div class="form-group">
-                <label class="form-label" for="fecha-fin">Fecha fin</label>
-                <input class="form-input" type="date" id="fecha-fin" />
-              </div>
+            <div class="cal-weekdays">
+              <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
             </div>
-
-            <!-- Botón generar -->
-            <button class="btn-generar" id="btn-ventas" onclick="generarReporteVentas()">Generar reporte de ventas
-            </button>
-
-            <!-- Historial de esta sesión -->
-            <div class="historial" id="historial-ventas">
-              <div class="historial-titulo">Últimas descargas</div>
-              <div class="historial-empty" id="historial-ventas-empty">
-                Aún no generaste ningún reporte en esta sesión.
-              </div>
-              <div id="historial-ventas-lista"></div>
+            <div class="cal-grid" id="cal-grid"></div>
+            <div class="cal-footer">
+              <button class="cal-hoy-btn" type="button" onclick="calendarIrHoy()">Ir a hoy</button>
+              <span class="cal-selected-label" id="cal-selected-label">Sin selección</span>
             </div>
-
           </div>
         </div>
 
-      </div>
+        <!-- Reporte de ventas + Resumen del día, apilados a la derecha -->
+        <div class="reportes-stack">
 
-      <!-- Resumen del día -->
-      <div class="reporte-card" style="margin-top:18px; max-width:760px;">
-        <div class="reporte-card-header">
-          <div class="reporte-icon">HOY</div>
-          <div>
-            <div class="reporte-titulo">Resumen del día</div>
-            <div class="reporte-desc">CSV con ventas, cobros por método, mesa y producto top</div>
+          <!-- Reporte de ventas -->
+          <div class="reporte-card">
+            <div class="reporte-card-header">
+              <div class="reporte-icon"><i data-lucide="file-down"></i></div>
+              <div>
+                <div class="reporte-titulo">Reporte de ventas</div>
+                <div class="reporte-desc">CSV con total, pedidos y productos más vendidos por rango de fechas</div>
+              </div>
+            </div>
+            <div class="reporte-card-body">
+
+              <!-- Atajos de fecha -->
+              <div class="atajos-fecha">
+                <button class="atajo-btn" onclick="setAtajo('hoy')">Hoy</button>
+                <button class="atajo-btn" onclick="setAtajo('semana')">Esta semana</button>
+                <button class="atajo-btn" onclick="setAtajo('mes')">Este mes</button>
+                <button class="atajo-btn" onclick="setAtajo('mes_anterior')">Mes anterior</button>
+              </div>
+
+              <!-- Fechas -->
+              <div class="fechas-row">
+                <div class="form-group">
+                  <label class="form-label" for="fecha-inicio">Fecha inicio</label>
+                  <input class="form-input" type="date" id="fecha-inicio" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="fecha-fin">Fecha fin</label>
+                  <input class="form-input" type="date" id="fecha-fin" />
+                </div>
+              </div>
+
+              <!-- Botón generar -->
+              <button class="btn-generar" id="btn-ventas" onclick="generarReporteVentas()">Generar reporte de ventas</button>
+
+              <!-- Historial de esta sesión -->
+              <div class="historial" id="historial-ventas">
+                <div class="historial-titulo">Últimas descargas</div>
+                <div class="historial-empty" id="historial-ventas-empty">
+                  Aún no generaste ningún reporte en esta sesión.
+                </div>
+                <div id="historial-ventas-lista"></div>
+              </div>
+
+            </div>
           </div>
-        </div>
-        <div class="reporte-card-body">
-          <p style="font-size:0.85rem; color:var(--admin-muted); margin-bottom:14px;">
-            Exporta el resumen operativo completo de hoy o de un día específico.
-          </p>
-          <div class="form-group" style="margin-bottom:14px; max-width:220px;">
-            <label class="form-label" for="fecha-resumen">Fecha (por defecto: hoy)</label>
-            <input class="form-input" type="date" id="fecha-resumen" />
+
+          <!-- Resumen del día -->
+          <div class="reporte-card">
+            <div class="reporte-card-header">
+              <div class="reporte-icon"><i data-lucide="clipboard-list"></i></div>
+              <div>
+                <div class="reporte-titulo">Resumen del día</div>
+                <div class="reporte-desc">CSV con ventas, cobros por método, mesa y producto top</div>
+              </div>
+            </div>
+            <div class="reporte-card-body">
+              <p class="reporte-note">
+                Exporta el resumen operativo completo de hoy o de un día específico.
+              </p>
+              <div class="form-group reporte-fecha-single">
+                <label class="form-label" for="fecha-resumen">Fecha (por defecto: hoy)</label>
+                <input class="form-input" type="date" id="fecha-resumen" />
+              </div>
+              <button class="btn-generar" id="btn-resumen" onclick="descargarResumenHoy()">Descargar resumen del día</button>
+            </div>
           </div>
-          <button class="btn-generar" id="btn-resumen" onclick="descargarResumenHoy()" style="max-width:280px;">
-            Descargar resumen del día
-          </button>
+
         </div>
+
       </div>
 
     </div>
@@ -191,7 +329,10 @@
   <script src="../assets/js/config.js"></script>
   <script src="../assets/js/auth.js"></script>
   <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/sidebar-toggle.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 
-    <script src="js/index.js"></script>
+  <script src="js/index.js"></script>
+  <script>lucide.createIcons();</script>
 </body>
 </html>

@@ -15,6 +15,7 @@
     document.getElementById("fecha-fin").value    = hoy;
     cargarDashboard();
     cargarGraficoVentas();
+    cargarVentasSemana();
     conectarNotificacionesAdmin();
 
     const formatterPrecio = new Intl.NumberFormat("es-AR", {
@@ -23,7 +24,6 @@
       maximumFractionDigits: 0,
     });
     let ventasChartData = [];
-    let resizeChartTimer;
 
     async function cargarDashboard() {
       try {
@@ -31,7 +31,23 @@
         document.getElementById("metric-ventas-hoy").textContent = formatPrecio(data.ventas_hoy);
         document.getElementById("metric-pedidos-hoy").textContent = data.pedidos_hoy;
         document.getElementById("metric-ticket").textContent = formatPrecio(data.ticket_promedio);
-        document.getElementById("metric-mesas").textContent = data.mesas_activas;
+
+        const activos = data.pedidos_activos || {};
+        const totalActivos = (Number(activos.pendiente) || 0)
+          + (Number(activos.confirmado) || 0)
+          + (Number(activos.en_preparacion) || 0)
+          + (Number(activos.listo) || 0);
+        document.getElementById("metric-activos").textContent = totalActivos;
+
+        // Comparación vs. el día anterior: el backend todavía no expone estos
+        // campos (ventas_ayer / pedidos_ayer / ticket_promedio_ayer /
+        // pedidos_activos_ayer). renderComparativa() oculta el badge si el
+        // dato no viene — no se calcula ni se muestra ningún número inventado.
+        renderComparativa("compare-ventas-hoy", data.ventas_hoy, data.ventas_ayer);
+        renderComparativa("compare-pedidos-hoy", data.pedidos_hoy, data.pedidos_ayer);
+        renderComparativa("compare-ticket", data.ticket_promedio, data.ticket_promedio_ayer);
+        renderComparativa("compare-activos", totalActivos, data.pedidos_activos_ayer);
+
         document.getElementById("metric-top").textContent = data.producto_top?.nombre || "-";
         document.getElementById("metric-top-help").textContent =
           data.producto_top?.cantidad ? `${data.producto_top.cantidad} vendidos hoy` : "Sin ventas hoy";
@@ -40,6 +56,26 @@
           mesaNum != null ? `Mesa ${mesaNum}` : "-";
         document.getElementById("metric-mesa-top-help").textContent =
           mesaNum != null ? formatPrecio(data.mesa_top.total) : "Sin ventas hoy";
+
+        document.getElementById("metric-categoria-top").textContent = data.categoria_top?.nombre || "-";
+        document.getElementById("metric-categoria-top-help").textContent = data.categoria_top
+          ? `${data.categoria_top.porcentaje}% de lo vendido hoy`
+          : "Sin ventas hoy";
+
+        // Requiere las columnas de trazabilidad de la migración 004. Si el
+        // backend no las tiene (o todavía no hay pedidos listos hoy), el
+        // dato viene null y la tarjeta se oculta en vez de mostrar un "—".
+        const tiempoPrepCard = document.getElementById("card-tiempo-prep");
+        if (data.tiempo_prep_promedio_min != null) {
+          document.getElementById("metric-tiempo-prep").textContent =
+            `${Math.round(data.tiempo_prep_promedio_min)} min`;
+          tiempoPrepCard.style.display = "";
+        } else {
+          tiempoPrepCard.style.display = "none";
+        }
+
+        renderDonutCobros(data.cobros_hoy);
+        renderDonutEstados(data.estado_pedidos_hoy);
       } catch (error) {
         mostrarToast("No se pudieron cargar las métricas: " + error.message, "error");
       }
@@ -65,11 +101,13 @@
             cargarDashboard();
             if (!data.estado || ["confirmado", "en_preparacion", "listo", "entregado"].includes(data.estado)) {
               cargarGraficoVentas();
+              cargarVentasSemana();
             }
           }
         } catch {
           cargarDashboard();
           cargarGraficoVentas();
+          cargarVentasSemana();
         }
       });
 
@@ -100,6 +138,27 @@
       return formatterPrecio.format(Number(valor) || 0);
     }
 
+    // Muestra "+X% vs ayer" solo si el backend envió el valor de ayer.
+    // Sin ese dato, el badge queda oculto (nunca se inventa un porcentaje).
+    function renderComparativa(elId, hoy, ayer) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+
+      const ayerNum = Number(ayer);
+      if (ayer == null || !isFinite(ayerNum) || ayerNum === 0 || hoy == null) {
+        el.style.display = "none";
+        el.textContent = "";
+        return;
+      }
+
+      const variacion = ((Number(hoy) - ayerNum) / ayerNum) * 100;
+      const signo = variacion >= 0 ? "+" : "";
+      el.textContent = `${signo}${variacion.toFixed(0)}% vs ayer`;
+      el.classList.toggle("stat-card-compare-up", variacion >= 0);
+      el.classList.toggle("stat-card-compare-down", variacion < 0);
+      el.style.display = "inline-flex";
+    }
+
     async function cargarGraficoVentas() {
       try {
         const data = await fetchAPI("/reportes/ventas-hoy");
@@ -114,83 +173,98 @@
       }
     }
 
+    let ventasChart = null;
+
+    // Devuelve solo el tramo de horas con ventas (más 1h de margen a cada
+    // lado, dentro de 0-23). Si no hay ninguna venta, devuelve todo el rango
+    // sin cambios (el estado vacío ya se maneja aparte con .chart-empty).
+    function recortarRangoActivo(data) {
+      let inicio = -1;
+      let fin = -1;
+      data.forEach((item, i) => {
+        if ((Number(item.ventas) || 0) > 0) {
+          if (inicio === -1) inicio = i;
+          fin = i;
+        }
+      });
+      if (inicio === -1) return data;
+
+      const margen = 1;
+      const desde = Math.max(0, inicio - margen);
+      const hasta = Math.min(data.length - 1, fin + margen);
+      return data.slice(desde, hasta + 1);
+    }
+
     function renderGraficoVentas() {
       const canvas = document.getElementById("ventas-chart");
       const empty = document.getElementById("chart-empty");
       if (!canvas) return;
 
-      const rect = canvas.parentElement.getBoundingClientRect();
-      const width = Math.max(320, Math.floor(rect.width));
-      const height = 260;
-      const ratio = window.devicePixelRatio || 1;
-      canvas.width = width * ratio;
-      canvas.height = height * ratio;
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-
-      const ctx = canvas.getContext("2d");
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      ctx.clearRect(0, 0, width, height);
-
-      const data = ventasChartData.length ? ventasChartData : [];
-      const maxVenta = Math.max(...data.map(item => Number(item.ventas) || 0), 0);
+      const dataCompleta = ventasChartData.length ? ventasChartData : [];
+      const maxVenta = Math.max(...dataCompleta.map(item => Number(item.ventas) || 0), 0);
       empty.style.display = maxVenta > 0 ? "none" : "grid";
 
-      const padding = { top: 20, right: 20, bottom: 42, left: 58 };
-      const chartWidth = width - padding.left - padding.right;
-      const chartHeight = height - padding.top - padding.bottom;
-      const barGap = 8;
-      const barWidth = Math.max(12, (chartWidth - barGap * (data.length - 1)) / Math.max(data.length, 1));
+      // Si las ventas están concentradas en pocas horas, recortamos el eje X
+      // a ese rango (con 1h de margen a cada lado) para que el gráfico no
+      // se vea vacío con dos barras perdidas en 24 columnas.
+      const data = recortarRangoActivo(dataCompleta);
 
-      ctx.font = "700 11px Nunito, sans-serif";
-      ctx.strokeStyle = "#E5E7EB";
-      ctx.fillStyle = "#667085";
-      ctx.lineWidth = 1;
+      const labels = data.map(item => item.label.replace(":00", "h"));
+      const valores = data.map(item => Number(item.ventas) || 0);
 
-      for (let i = 0; i <= 4; i++) {
-        const y = padding.top + (chartHeight / 4) * i;
-        ctx.beginPath();
-        ctx.moveTo(padding.left, y);
-        ctx.lineTo(width - padding.right, y);
-        ctx.stroke();
-
-        const value = maxVenta ? maxVenta - (maxVenta / 4) * i : 0;
-        ctx.fillText(formatNumeroCompacto(value), 12, y + 4);
+      if (ventasChart) {
+        ventasChart.data.labels = labels;
+        ventasChart.data.datasets[0].data = valores;
+        ventasChart.update();
+        return;
       }
 
-      data.forEach((item, index) => {
-        const x = padding.left + index * (barWidth + barGap);
-        const value = Number(item.ventas) || 0;
-        const barHeight = maxVenta ? Math.max(4, (value / maxVenta) * chartHeight) : 0;
-        const y = padding.top + chartHeight - barHeight;
-
-        const gradient = ctx.createLinearGradient(0, y, 0, padding.top + chartHeight);
-        gradient.addColorStop(0, "#2563EB");
-        gradient.addColorStop(1, "#93C5FD");
-
-        ctx.fillStyle = value > 0 ? gradient : "#EEF2F7";
-        roundRect(ctx, x, y, barWidth, barHeight || 4, 5);
-        ctx.fill();
-
-        if (index % 2 === 0) {
-          ctx.fillStyle = "#667085";
-          ctx.textAlign = "center";
-          ctx.fillText(item.label.replace(":00", "h"), x + barWidth / 2, height - 16);
-        }
+      ventasChart = new Chart(canvas.getContext("2d"), {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            data: valores,
+            backgroundColor: "#166273",
+            borderRadius: 4,
+            maxBarThickness: 26,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              displayColors: false,
+              callbacks: {
+                label: (ctx) => formatPrecio(ctx.parsed.y),
+              },
+            },
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: {
+                color: "#64748B",
+                font: { family: "Inter", size: 11 },
+                maxRotation: 0,
+                autoSkip: true,
+                maxTicksLimit: 12,
+              },
+            },
+            y: {
+              beginAtZero: true,
+              grid: { color: "#E2E8F0" },
+              ticks: {
+                color: "#64748B",
+                font: { family: "Inter", size: 11 },
+                callback: (value) => formatNumeroCompacto(value),
+              },
+            },
+          },
+        },
       });
-
-      ctx.textAlign = "left";
-    }
-
-    function roundRect(ctx, x, y, width, height, radius) {
-      const r = Math.min(radius, width / 2, height / 2);
-      ctx.beginPath();
-      ctx.moveTo(x + r, y);
-      ctx.arcTo(x + width, y, x + width, y + height, r);
-      ctx.arcTo(x + width, y + height, x, y + height, r);
-      ctx.arcTo(x, y + height, x, y, r);
-      ctx.arcTo(x, y, x + width, y, r);
-      ctx.closePath();
     }
 
     function formatNumeroCompacto(valor) {
@@ -200,10 +274,240 @@
       return `$${Math.round(numero)}`;
     }
 
-    window.addEventListener("resize", () => {
-      clearTimeout(resizeChartTimer);
-      resizeChartTimer = setTimeout(renderGraficoVentas, 120);
-    });
+    // ── COBROS POR MÉTODO DE PAGO (dona) ────────────────────────
+    let cobrosChart = null;
+    const COLORES_METODOS = ["#166273", "#4A9CAD", "#B45309", "#94A3B8", "#15803D"];
+
+    function capitalizar(texto) {
+      const s = String(texto || "");
+      return s.charAt(0).toUpperCase() + s.slice(1);
+    }
+
+    function renderDonutCobros(cobrosHoy) {
+      const canvas = document.getElementById("cobros-chart");
+      const emptyEl = document.getElementById("donut-empty");
+      const legendEl = document.getElementById("donut-legend");
+      if (!canvas) return;
+
+      const metodos = (cobrosHoy && cobrosHoy.metodos) || {};
+      const entradas = Object.entries(metodos);
+      const labels = entradas.map(([metodo]) => capitalizar(metodo));
+      const valores = entradas.map(([, info]) => Number(info.total) || 0);
+      const total = valores.reduce((acc, v) => acc + v, 0);
+
+      if (emptyEl) emptyEl.style.display = total > 0 ? "none" : "flex";
+
+      if (cobrosChart) {
+        cobrosChart.data.labels = labels;
+        cobrosChart.data.datasets[0].data = valores;
+        cobrosChart.update();
+      } else {
+        cobrosChart = new Chart(canvas.getContext("2d"), {
+          type: "doughnut",
+          data: {
+            labels,
+            datasets: [{
+              data: valores,
+              backgroundColor: COLORES_METODOS,
+              borderWidth: 0,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "68%",
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => `${ctx.label}: ${formatPrecio(ctx.parsed)}`,
+                },
+              },
+            },
+          },
+        });
+      }
+
+      if (legendEl) {
+        legendEl.innerHTML = entradas.length
+          ? entradas.map(([metodo, info], i) => `
+              <div class="donut-legend-item">
+                <span class="donut-legend-dot" style="background:${COLORES_METODOS[i % COLORES_METODOS.length]}"></span>
+                <span class="donut-legend-label">${capitalizar(metodo)}</span>
+                <span class="donut-legend-value">${formatPrecio(info.total)}</span>
+              </div>
+            `).join("")
+          : "";
+      }
+    }
+
+    // ── ESTADO DE PEDIDOS DE HOY (dona) ─────────────────────────
+    let estadosChart = null;
+    const ESTADO_PEDIDOS_INFO = {
+      pendiente:      { label: "Pendiente",      color: "#E8A317" },
+      confirmado:     { label: "Confirmado",     color: "#4A9CAD" },
+      en_preparacion: { label: "En preparación", color: "#166273" },
+      listo:          { label: "Listo",          color: "#22C55E" },
+      entregado:      { label: "Entregado",      color: "#94A3B8" },
+      cancelado:      { label: "Cancelado",      color: "#E23B3B" },
+    };
+
+    function renderDonutEstados(estadoPedidosHoy) {
+      const canvas = document.getElementById("estados-chart");
+      const emptyEl = document.getElementById("estados-empty");
+      const legendEl = document.getElementById("estados-legend");
+      if (!canvas) return;
+
+      const estados = estadoPedidosHoy || {};
+      const entradas = Object.entries(ESTADO_PEDIDOS_INFO)
+        .map(([clave, info]) => [clave, info, Number(estados[clave]) || 0])
+        .filter(([, , cantidad]) => cantidad > 0);
+
+      const total = entradas.reduce((acc, [, , cantidad]) => acc + cantidad, 0);
+      if (emptyEl) emptyEl.style.display = total > 0 ? "none" : "flex";
+
+      const labels = entradas.map(([, info]) => info.label);
+      const valores = entradas.map(([, , cantidad]) => cantidad);
+      const colores = entradas.map(([, info]) => info.color);
+
+      if (estadosChart) {
+        estadosChart.data.labels = labels;
+        estadosChart.data.datasets[0].data = valores;
+        estadosChart.data.datasets[0].backgroundColor = colores;
+        estadosChart.update();
+      } else {
+        estadosChart = new Chart(canvas.getContext("2d"), {
+          type: "doughnut",
+          data: {
+            labels,
+            datasets: [{
+              data: valores,
+              backgroundColor: colores,
+              borderWidth: 0,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "68%",
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => `${ctx.label}: ${ctx.parsed} pedido${ctx.parsed === 1 ? "" : "s"}`,
+                },
+              },
+            },
+          },
+        });
+      }
+
+      if (legendEl) {
+        legendEl.innerHTML = entradas.length
+          ? entradas.map(([, info, cantidad], i) => `
+              <div class="donut-legend-item">
+                <span class="donut-legend-dot" style="background:${colores[i]}"></span>
+                <span class="donut-legend-label">${info.label}</span>
+                <span class="donut-legend-value">${cantidad}</span>
+              </div>
+            `).join("")
+          : "";
+      }
+    }
+
+    // ── TENDENCIA SEMANAL ────────────────────────────────────────
+    function parseFechaLocal(iso) {
+      const [anio, mes, dia] = iso.split("-").map(Number);
+      return new Date(anio, mes - 1, dia);
+    }
+
+    function formatDiaSemana(iso) {
+      const texto = parseFechaLocal(iso).toLocaleDateString("es-AR", { weekday: "short" });
+      return texto.charAt(0).toUpperCase() + texto.slice(1).replace(".", "");
+    }
+
+    let ventasSemanaData = [];
+
+    async function cargarVentasSemana() {
+      try {
+        const data = await fetchAPI("/reportes/ventas-semana");
+        ventasSemanaData = data.serie || [];
+        document.getElementById("semana-total").textContent = formatPrecio(data.total_ventas || 0);
+        document.getElementById("semana-orders").textContent =
+          `${Number(data.total_pedidos || 0)} pedidos confirmados`;
+        renderGraficoSemana();
+      } catch (error) {
+        document.getElementById("semana-empty").textContent = "No se pudo cargar la tendencia semanal.";
+        document.getElementById("semana-empty").style.display = "grid";
+      }
+    }
+
+    let semanaChart = null;
+
+    function renderGraficoSemana() {
+      const canvas = document.getElementById("semana-chart");
+      const empty = document.getElementById("semana-empty");
+      if (!canvas) return;
+
+      const data = ventasSemanaData;
+      const maxVenta = Math.max(...data.map(item => Number(item.ventas) || 0), 0);
+      empty.style.display = maxVenta > 0 ? "none" : "grid";
+
+      const labels = data.map(item => formatDiaSemana(item.fecha));
+      const valores = data.map(item => Number(item.ventas) || 0);
+
+      if (semanaChart) {
+        semanaChart.data.labels = labels;
+        semanaChart.data.datasets[0].data = valores;
+        semanaChart.update();
+        return;
+      }
+
+      semanaChart = new Chart(canvas.getContext("2d"), {
+        type: "line",
+        data: {
+          labels,
+          datasets: [{
+            data: valores,
+            borderColor: "#166273",
+            backgroundColor: "rgba(22, 98, 115, 0.08)",
+            fill: true,
+            tension: 0.35,
+            pointRadius: 3,
+            pointBackgroundColor: "#166273",
+            pointBorderColor: "#166273",
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              displayColors: false,
+              callbacks: {
+                label: (ctx) => formatPrecio(ctx.parsed.y),
+              },
+            },
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { color: "#64748B", font: { family: "Inter", size: 11 } },
+            },
+            y: {
+              beginAtZero: true,
+              grid: { color: "#E2E8F0" },
+              ticks: {
+                color: "#64748B",
+                font: { family: "Inter", size: 11 },
+                callback: (value) => formatNumeroCompacto(value),
+              },
+            },
+          },
+        },
+      });
+    }
 
     // ── ATAJOS DE FECHA ──────────────────────────────────────────
     function setAtajo(tipo) {
@@ -237,6 +541,88 @@
     function formatFecha(date) {
       return date.toISOString().split("T")[0];
     }
+
+    // ── CALENDARIO (Reportes) ──────────────────────────────────────
+    // Puramente de UI + atajo de carga: elegir un día completa los
+    // campos de fecha de las tarjetas de reportes de abajo. No consulta
+    // la API ni guarda nada — es un selector visual, no un feature nuevo.
+    let calFecha = new Date();
+    calFecha.setDate(1);
+    let calSeleccionado = null;
+
+    const MESES_CAL = [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+    ];
+
+    function renderCalendario() {
+      const label = document.getElementById("cal-month-label");
+      const grid = document.getElementById("cal-grid");
+      if (!label || !grid) return;
+
+      label.textContent = `${MESES_CAL[calFecha.getMonth()]} ${calFecha.getFullYear()}`;
+
+      const hoy = new Date();
+      const primerDia = new Date(calFecha.getFullYear(), calFecha.getMonth(), 1);
+      const ultimoDia = new Date(calFecha.getFullYear(), calFecha.getMonth() + 1, 0);
+      const offset = (primerDia.getDay() + 6) % 7; // semana arranca en lunes
+
+      let celdas = "";
+      for (let i = 0; i < offset; i++) {
+        celdas += `<span class="cal-day cal-day-empty"></span>`;
+      }
+      for (let dia = 1; dia <= ultimoDia.getDate(); dia++) {
+        const esHoy = hoy.getFullYear() === calFecha.getFullYear()
+          && hoy.getMonth() === calFecha.getMonth()
+          && hoy.getDate() === dia;
+        const esSeleccionado = calSeleccionado
+          && calSeleccionado.getFullYear() === calFecha.getFullYear()
+          && calSeleccionado.getMonth() === calFecha.getMonth()
+          && calSeleccionado.getDate() === dia;
+        const clases = ["cal-day"];
+        if (esHoy) clases.push("cal-day-today");
+        if (esSeleccionado) clases.push("cal-day-selected");
+        celdas += `<button type="button" class="${clases.join(" ")}" onclick="calendarSeleccionarDia(${dia})">${dia}</button>`;
+      }
+      grid.innerHTML = celdas;
+    }
+
+    function calendarPrevMonth() {
+      calFecha.setMonth(calFecha.getMonth() - 1);
+      renderCalendario();
+    }
+
+    function calendarNextMonth() {
+      calFecha.setMonth(calFecha.getMonth() + 1);
+      renderCalendario();
+    }
+
+    function calendarIrHoy() {
+      calFecha = new Date();
+      calFecha.setDate(1);
+      renderCalendario();
+    }
+
+    function calendarSeleccionarDia(dia) {
+      calSeleccionado = new Date(calFecha.getFullYear(), calFecha.getMonth(), dia);
+      const iso = formatFecha(calSeleccionado);
+
+      document.getElementById("fecha-inicio").value = iso;
+      document.getElementById("fecha-fin").value = iso;
+      const fechaResumen = document.getElementById("fecha-resumen");
+      if (fechaResumen) fechaResumen.value = iso;
+
+      const label = document.getElementById("cal-selected-label");
+      if (label) {
+        label.textContent = calSeleccionado.toLocaleDateString("es-AR", {
+          day: "numeric", month: "long", year: "numeric",
+        });
+      }
+
+      renderCalendario();
+    }
+
+    renderCalendario();
 
     // ── GENERAR REPORTE DE VENTAS ────────────────────────────────
     async function generarReporteVentas() {
