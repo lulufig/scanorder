@@ -1,16 +1,18 @@
 -- Migración 010: control de inventario
 -- Agrega columnas de stock a productos y crea tabla de auditoría movimientos_stock.
 -- Requiere que docs/database.sql ya esté cargado.
--- No es idempotente: ejecutar exactamente UNA vez.
+-- Idempotente (MySQL 8.0.29+): IF NOT EXISTS en columnas y constraint permite
+-- reaplicarla sin error, para que init_app.sh pueda correrla en cada arranque.
 
 -- 1. Columnas de stock en productos
 ALTER TABLE productos
-  ADD COLUMN stock_actual INT NOT NULL DEFAULT 0,
-  ADD COLUMN stock_minimo INT NOT NULL DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS stock_actual INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS stock_minimo INT NOT NULL DEFAULT 0;
 
--- 2. Constraint: impide que stock_actual quede negativo (MySQL 8.0.16+)
+-- 2. Constraint: impide que stock_actual quede negativo (MySQL 8.0.16+;
+-- IF NOT EXISTS sobre ADD CONSTRAINT requiere MySQL 8.0.29+)
 ALTER TABLE productos
-  ADD CONSTRAINT chk_stock_no_negativo CHECK (stock_actual >= 0);
+  ADD CONSTRAINT IF NOT EXISTS chk_stock_no_negativo CHECK (stock_actual >= 0);
 
 -- 3. Tabla de auditoría de movimientos de stock
 CREATE TABLE IF NOT EXISTS movimientos_stock (

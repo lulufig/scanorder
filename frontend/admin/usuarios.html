@@ -5,27 +5,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ScanOrder — Usuarios</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/admin-base.css" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/css/tokens.css" />
+  <link rel="stylesheet" href="css/admin-shell.css" />
+  <link rel="stylesheet" href="css/mesas.css" />
   <link rel="stylesheet" href="css/usuarios.css" />
 </head>
 
 <body>
 
+  <!-- ===== BARRA MÓVIL (solo visible en pantallas chicas) ===== -->
+  <div class="mobile-topbar">
+    <button class="mobile-menu-btn" type="button" onclick="toggleSidebar()" aria-label="Abrir menú">
+      <i data-lucide="menu"></i>
+    </button>
+    <div class="mobile-topbar-logo">ScanOrder</div>
+  </div>
+  <div class="sidebar-overlay" onclick="closeSidebar()"></div>
+
   <!-- ===== SIDEBAR ===== -->
   <aside class="sidebar">
-    <div class="sidebar-logo">Maven<span>Burger</span></div>
+    <div class="sidebar-logo">ScanOrder</div>
 
-    <div class="sidebar-section">Reportes</div>
-    <a href="index.html" class="sidebar-link">Reportes</a>
+    <div class="sidebar-section" data-role="admin">Reportes</div>
+    <a href="index.html" class="sidebar-link" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
 
     <div class="sidebar-section">Gestión</div>
-    <a href="mesas.html"      class="sidebar-link">Mesas</a>
-    <a href="productos.html"  class="sidebar-link">Productos</a>
-    <a href="inventario.html" class="sidebar-link">Inventario</a>
-
-    <div class="sidebar-section">Usuarios</div>
-    <a href="usuarios.html"   class="sidebar-link active">Usuarios</a>
+    <a href="mesas.html"      class="sidebar-link"><i data-lucide="layout-grid"></i>Mesas</a>
+    <a href="productos.html"  class="sidebar-link" data-role="admin"><i data-lucide="utensils"></i>Productos</a>
+    <a href="inventario.html" class="sidebar-link" data-role="admin"><i data-lucide="package"></i>Inventario</a>
+    <a href="usuarios.html"   class="sidebar-link active" data-role="admin"><i data-lucide="users"></i>Usuarios</a>
 
     <div class="sidebar-bottom">
       <div class="user-info">
@@ -80,7 +90,7 @@
       </div>
       <div>
         <label for="m-email">Correo electrónico</label>
-        <input type="email" id="m-email" placeholder="maria@mavenburger.com" autocomplete="off">
+        <input type="email" id="m-email" placeholder="maria@empresa.com" autocomplete="off">
       </div>
       <div>
         <label for="m-rol">Rol</label>
@@ -89,7 +99,7 @@
           <option value="admin">Administrador</option>
         </select>
       </div>
-      <p class="modal-help">
+      <p style="font-size:.8rem;color:var(--gray-500);margin-top:-.25rem;">
         Se generará una contraseña temporal y se enviará al email indicado.
       </p>
       <div class="modal-actions">
@@ -133,6 +143,240 @@
   <script src="../assets/js/config.js"></script>
   <script src="../assets/js/auth.js"></script>
   <script src="../assets/js/api.js"></script>
-  <script src="js/usuarios.js"></script>
+  <script src="../assets/js/sidebar-toggle.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script>
+    lucide.createIcons();
+    requireAuth(ROLES.ADMIN);
+    applyRoleVisibility();
+
+    document.getElementById("sidebar-username").textContent = getUserNombre() || "—";
+
+    // ── Datos ──────────────────────────────────────────────────────────────────
+
+    let _usuarios = [];
+
+    async function cargarUsuarios() {
+      try {
+        _usuarios = await fetchAPI("/admin/usuarios");
+        renderTabla();
+      } catch (e) {
+        document.getElementById("tabla-body").innerHTML =
+          `<tr><td colspan="5" class="empty-state">Error al cargar usuarios: ${e.message}</td></tr>`;
+      }
+    }
+
+    function renderTabla() {
+      const tbody = document.getElementById("tabla-body");
+      if (!_usuarios.length) {
+        tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No hay usuarios registrados.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = _usuarios.map(u => `
+        <tr>
+          <td><strong>${esc(u.nombre)}</strong></td>
+          <td style="color:var(--gray-500);">${esc(u.email)}</td>
+          <td><span class="badge badge-${u.rol}">${u.rol}</span></td>
+          <td>${estadoBadge(u)}</td>
+          <td>
+            <div class="acciones-cell">
+              <button class="btn-editar" onclick="abrirModalEditar(${u.id_usuario})"
+                title="Editar nombre, email o rol">
+                Editar
+              </button>
+              <button class="btn-reenviar" onclick="reenviarBienvenida(${u.id_usuario}, this)"
+                title="Genera nueva contraseña temporal y reenvía el email"
+                ${!u.activo ? "disabled" : ""}>
+                Reenviar bienvenida
+              </button>
+              <button class="btn-toggle ${u.activo ? 'desactivar' : 'activar'}"
+                onclick="toggleActivo(${u.id_usuario}, this)"
+                title="${u.activo ? 'Desactivar usuario' : 'Reactivar usuario'}">
+                ${u.activo ? "Desactivar" : "Reactivar"}
+              </button>
+            </div>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    function estadoBadge(u) {
+      if (!u.activo) return `<span class="badge badge-inactivo">Inactivo</span>`;
+      if (u.debe_cambiar_password) return `<span class="badge badge-temp">Contraseña temporal</span>`;
+      return `<span class="badge badge-ok">Activo</span>`;
+    }
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    // ── Crear usuario ──────────────────────────────────────────────────────────
+
+    function abrirModalCrear() {
+      document.getElementById("m-nombre").value = "";
+      document.getElementById("m-email").value  = "";
+      document.getElementById("m-rol").value    = "mozo";
+      document.getElementById("modal-error").classList.remove("visible");
+      document.getElementById("btn-crear-confirm").disabled = false;
+      document.getElementById("modal-crear").classList.add("open");
+      setTimeout(() => document.getElementById("m-nombre").focus(), 50);
+    }
+
+    function cerrarModal() {
+      document.getElementById("modal-crear").classList.remove("open");
+    }
+
+    document.getElementById("modal-crear").addEventListener("click", e => {
+      if (e.target === e.currentTarget) cerrarModal();
+    });
+
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape") { cerrarModal(); cerrarModalEditar(); }
+    });
+
+    async function crearUsuario() {
+      const nombre = document.getElementById("m-nombre").value.trim();
+      const email  = document.getElementById("m-email").value.trim();
+      const rol    = document.getElementById("m-rol").value;
+      const errEl  = document.getElementById("modal-error");
+
+      errEl.classList.remove("visible");
+
+      if (!nombre) { errEl.textContent = "El nombre es obligatorio."; errEl.classList.add("visible"); return; }
+      if (!email || !email.includes("@")) { errEl.textContent = "Ingresá un email válido."; errEl.classList.add("visible"); return; }
+
+      const btn = document.getElementById("btn-crear-confirm");
+      btn.disabled = true;
+      btn.textContent = "Creando...";
+
+      try {
+        const nuevo = await fetchAPI("/admin/usuarios", "POST", { nombre, email, rol });
+        _usuarios.unshift(nuevo);
+        renderTabla();
+        cerrarModal();
+        showToast("Usuario creado. Se envió el email de bienvenida.", "ok");
+      } catch (e) {
+        errEl.textContent = e.message || "No se pudo crear el usuario.";
+        errEl.classList.add("visible");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Crear usuario";
+      }
+    }
+
+    // ── Editar usuario ─────────────────────────────────────────────────────────
+
+    let _editandoId = null;
+
+    function abrirModalEditar(id) {
+      const u = _usuarios.find(x => x.id_usuario === id);
+      if (!u) return;
+      _editandoId = id;
+      document.getElementById("e-nombre").value = u.nombre;
+      document.getElementById("e-email").value  = u.email;
+      document.getElementById("e-rol").value    = u.rol;
+      document.getElementById("modal-editar-error").classList.remove("visible");
+      document.getElementById("btn-editar-confirm").disabled = false;
+      document.getElementById("btn-editar-confirm").textContent = "Guardar cambios";
+      document.getElementById("modal-editar").classList.add("open");
+      setTimeout(() => document.getElementById("e-nombre").focus(), 50);
+    }
+
+    function cerrarModalEditar() {
+      document.getElementById("modal-editar").classList.remove("open");
+      _editandoId = null;
+    }
+
+    document.getElementById("modal-editar").addEventListener("click", e => {
+      if (e.target === e.currentTarget) cerrarModalEditar();
+    });
+
+    async function guardarEdicion() {
+      const nombre = document.getElementById("e-nombre").value.trim();
+      const email  = document.getElementById("e-email").value.trim();
+      const rol    = document.getElementById("e-rol").value;
+      const errEl  = document.getElementById("modal-editar-error");
+
+      errEl.classList.remove("visible");
+
+      if (!nombre) { errEl.textContent = "El nombre es obligatorio."; errEl.classList.add("visible"); return; }
+      if (!email || !email.includes("@")) { errEl.textContent = "Ingresá un email válido."; errEl.classList.add("visible"); return; }
+
+      const btn = document.getElementById("btn-editar-confirm");
+      btn.disabled = true;
+      btn.textContent = "Guardando...";
+
+      try {
+        const actualizado = await fetchAPI(`/admin/usuarios/${_editandoId}`, "PUT", { nombre, email, rol });
+        const idx = _usuarios.findIndex(x => x.id_usuario === _editandoId);
+        if (idx !== -1) _usuarios[idx] = { ..._usuarios[idx], ...actualizado };
+        renderTabla();
+        cerrarModalEditar();
+        showToast("Usuario actualizado.", "ok");
+      } catch (e) {
+        errEl.textContent = e.message || "No se pudo actualizar el usuario.";
+        errEl.classList.add("visible");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Guardar cambios";
+      }
+    }
+
+    // ── Desactivar / Reactivar ────────────────────────────────────────────────
+
+    async function toggleActivo(id, btnEl) {
+      const desactivando = btnEl.classList.contains("desactivar");
+      btnEl.disabled = true;
+      btnEl.textContent = desactivando ? "Desactivando..." : "Reactivando...";
+      try {
+        const res = await fetchAPI(`/admin/usuarios/${id}/activo`, "PATCH");
+        const u = _usuarios.find(x => x.id_usuario === id);
+        if (u) u.activo = res.activo;
+        renderTabla();
+        showToast(res.activo ? "Usuario reactivado." : "Usuario desactivado.", "ok");
+      } catch (e) {
+        showToast(e.message || "Error al cambiar estado.", "error");
+        btnEl.disabled = false;
+        btnEl.textContent = desactivando ? "Desactivar" : "Reactivar";
+      }
+    }
+
+    // ── Reenviar bienvenida ────────────────────────────────────────────────────
+
+    async function reenviarBienvenida(id, btnEl) {
+      btnEl.disabled = true;
+      btnEl.textContent = "Enviando...";
+      try {
+        await fetchAPI(`/admin/usuarios/${id}/reenviar-bienvenida`, "POST");
+        showToast("Email de bienvenida reenviado.", "ok");
+        // Marcar el usuario como "contraseña temporal" localmente
+        const u = _usuarios.find(x => x.id_usuario === id);
+        if (u) u.debe_cambiar_password = true;
+        renderTabla();
+      } catch (e) {
+        showToast(e.message || "Error al reenviar.", "error");
+        btnEl.disabled = false;
+        btnEl.textContent = "Reenviar bienvenida";
+      }
+    }
+
+    // ── Toast ──────────────────────────────────────────────────────────────────
+
+    let _toastTimer = null;
+    function showToast(msg, tipo = "ok") {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.className = `toast toast-${tipo} visible`;
+      clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(() => t.classList.remove("visible"), 3500);
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────────
+    cargarUsuarios();
+  </script>
 </body>
 </html>

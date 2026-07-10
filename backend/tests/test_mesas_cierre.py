@@ -24,6 +24,7 @@ TEST_DB_NAME = "scanorder_test_cierre"
 
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATABASE_SQL_PATH = os.path.join(BACKEND_DIR, "..", "docs", "database.sql")
+INVENTORY_MIGRATION_PATH = os.path.join(BACKEND_DIR, "migrations", "010_inventory.sql")
 
 
 def _mysql_disponible() -> bool:
@@ -78,6 +79,12 @@ def schema(monkeypatch_module_env):
     )
     cur = conn.cursor()
     for stmt in _parse_statements(DATABASE_SQL_PATH):
+        cur.execute(stmt)
+    # docs/database.sql es el snapshot consolidado hasta la migración 006; el
+    # control de inventario (stock_actual, movimientos_stock) es posterior
+    # (migración 010) y no está incluido ahí. Se aplica acá para poder probar
+    # que cobrar una mesa no descuenta stock (eso solo pasa al entregar).
+    for stmt in _parse_statements(INVENTORY_MIGRATION_PATH):
         cur.execute(stmt)
     conn.commit()
     conn.close()
@@ -175,6 +182,60 @@ def _seed_mesa_con_pedidos(db_conn, totales: list[float], estado="listo"):
 
     db_conn.commit()
     return id_mesa, numero, ids_pedido
+
+
+def _seed_producto_con_stock(db_conn, stock_inicial=10, stock_minimo=2):
+    numero = int(uuid.uuid4().int % 1_000_000) + 1
+    cur = db_conn.cursor(dictionary=True)
+    cur.execute("INSERT INTO categorias (nombre) VALUES (%s)", (f"cat-stock-{numero}",))
+    id_categoria = cur.lastrowid
+    cur.execute(
+        """
+        INSERT INTO productos (id_categoria, nombre, precio, stock_actual, stock_minimo)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (id_categoria, f"prod-stock-{numero}", 100.00, stock_inicial, stock_minimo),
+    )
+    id_producto = cur.lastrowid
+    db_conn.commit()
+    return id_producto
+
+
+def _seed_mesa_con_pedido_de_producto(db_conn, id_producto, cantidad, precio_unitario, estado):
+    numero = int(uuid.uuid4().int % 1_000_000) + 1
+    cur = db_conn.cursor(dictionary=True)
+    cur.execute("INSERT INTO mesas (numero) VALUES (%s)", (numero,))
+    id_mesa = cur.lastrowid
+    total = cantidad * precio_unitario
+    cur.execute(
+        "INSERT INTO pedidos (id_mesa, estado, total) VALUES (%s, %s, %s)",
+        (id_mesa, estado, total),
+    )
+    id_pedido = cur.lastrowid
+    cur.execute(
+        """
+        INSERT INTO detalle_pedidos (id_pedido, id_producto, cantidad, precio_unitario, subtotal)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (id_pedido, id_producto, cantidad, precio_unitario, total),
+    )
+    db_conn.commit()
+    return id_mesa, numero, id_pedido
+
+
+def _stock_actual(db_conn, id_producto) -> int:
+    cur = db_conn.cursor()
+    cur.execute("SELECT stock_actual FROM productos WHERE id_producto = %s", (id_producto,))
+    return cur.fetchone()[0]
+
+
+def _mesa_esta_ocupada(db_conn, id_mesa) -> bool:
+    """mesa_operational_state.release() borra la fila; si no existe, la mesa
+    no está marcada ocupada en el estado operativo persistido."""
+    cur = db_conn.cursor()
+    cur.execute("SELECT ocupada FROM mesa_estado_operativo WHERE id_mesa = %s", (id_mesa,))
+    row = cur.fetchone()
+    return bool(row[0]) if row else False
 
 
 def _contar_cierres(db_conn, id_mesa) -> int:
@@ -345,3 +406,109 @@ def test_metodo_pago_invalido_devuelve_400(db_conn, client, admin_token):
 
     assert resp.status_code == 400
     assert _contar_cierres(db_conn, id_mesa) == 0
+
+
+# ── 5. Cobro y entrega son ejes independientes ───────────────────────────────
+
+def test_cobrar_mesa_con_pedido_en_preparacion_no_fuerza_entrega_y_libera_mesa(
+    db_conn, client, admin_token
+):
+    _seed_admin_usuario(db_conn)
+    id_mesa, _, ids_pedido = _seed_mesa_con_pedidos(db_conn, [1000.00], estado="en_preparacion")
+    id_pedido = ids_pedido[0]
+
+    # La mesa está marcada ocupada antes del cobro, como en un caso real.
+    cur = db_conn.cursor()
+    cur.execute(
+        "INSERT INTO mesa_estado_operativo (id_mesa, ocupada) VALUES (%s, TRUE)",
+        (id_mesa,),
+    )
+    db_conn.commit()
+
+    resp = client.post(
+        f"/mesas/{id_mesa}/cerrar",
+        json={"metodo_pago": "efectivo", "monto_cobrado": 1000.0},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["entrega_pendiente"] is True
+
+    # El pedido sigue con su estado real de cocina: cobrar no lo fuerza a "entregado".
+    assert _estado_pedido(db_conn, id_pedido) == "en_preparacion"
+
+    # Pero ya quedó vinculado a un cierre (está "cobrado").
+    cur.execute("SELECT COUNT(*) FROM cierre_pedidos WHERE id_pedido = %s", (id_pedido,))
+    assert cur.fetchone()[0] == 1
+
+    # Y la mesa se liberó igual, pese a tener un pedido sin entregar.
+    assert _mesa_esta_ocupada(db_conn, id_mesa) is False
+
+
+def test_mesa_cobrada_se_puede_liberar_aunque_tenga_pedidos_sin_entregar(
+    db_conn, client, admin_token
+):
+    _seed_admin_usuario(db_conn)
+    id_mesa, _, ids_pedido = _seed_mesa_con_pedidos(db_conn, [800.00], estado="listo")
+
+    cierre = client.post(
+        f"/mesas/{id_mesa}/cerrar",
+        json={"metodo_pago": "efectivo", "monto_cobrado": 800.0},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert cierre.status_code == 200
+
+    # El pedido sigue "listo" (no entregado) pero la mesa ya está cobrada;
+    # liberar no debe rechazarla con 409 por falta de entrega.
+    assert _estado_pedido(db_conn, ids_pedido[0]) == "listo"
+
+    resp = client.post(
+        f"/mesas/{id_mesa}/liberar",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp.status_code == 200
+
+
+def test_stock_no_se_descuenta_al_cobrar_solo_al_entregar_pedido_ya_cobrado(
+    db_conn, client, admin_token
+):
+    _seed_admin_usuario(db_conn)
+    id_producto = _seed_producto_con_stock(db_conn, stock_inicial=10)
+    id_mesa, _, id_pedido = _seed_mesa_con_pedido_de_producto(
+        db_conn, id_producto, cantidad=3, precio_unitario=100.0, estado="en_preparacion"
+    )
+
+    resp_cierre = client.post(
+        f"/mesas/{id_mesa}/cerrar",
+        json={"metodo_pago": "efectivo", "monto_cobrado": 300.0},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp_cierre.status_code == 200
+    assert resp_cierre.json()["entrega_pendiente"] is True
+
+    # Cobrar no descuenta stock ni cambia el estado del pedido.
+    assert _estado_pedido(db_conn, id_pedido) == "en_preparacion"
+    assert _stock_actual(db_conn, id_producto) == 10
+
+    # El mozo entrega el pedido normalmente (transición en_preparacion → entregado
+    # es válida): recién ahí se descuenta stock, una sola vez.
+    resp_entrega = client.patch(
+        f"/pedidos/{id_pedido}/estado",
+        json={"estado": "entregado"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert resp_entrega.status_code == 200
+
+    # db_conn quedó en una transacción abierta (REPEATABLE READ) desde las
+    # lecturas de arriba; sin este commit, las siguientes lecturas verían el
+    # snapshot viejo y no el commit que hizo el PATCH en su propia conexión.
+    db_conn.commit()
+    assert _estado_pedido(db_conn, id_pedido) == "entregado"
+    assert _stock_actual(db_conn, id_producto) == 7
+
+    cur = db_conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) FROM movimientos_stock WHERE id_pedido = %s AND tipo = 'salida'",
+        (id_pedido,),
+    )
+    assert cur.fetchone()[0] == 1

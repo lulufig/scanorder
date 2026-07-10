@@ -1,5 +1,6 @@
 
   requireAuth(ROLES.ADMIN);
+  applyRoleVisibility();
 
   // Mostrar nombre del usuario en sidebar
   const nombre = getUserNombre();

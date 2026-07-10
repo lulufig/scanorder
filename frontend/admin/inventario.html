@@ -5,26 +5,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ScanOrder — Inventario</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/admin-base.css" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/css/tokens.css" />
+  <link rel="stylesheet" href="css/admin-shell.css" />
+  <link rel="stylesheet" href="css/mesas.css" />
   <link rel="stylesheet" href="css/inventario.css" />
 </head>
 
 <body>
 
+  <!-- ===== BARRA MÓVIL (solo visible en pantallas chicas) ===== -->
+  <div class="mobile-topbar">
+    <button class="mobile-menu-btn" type="button" onclick="toggleSidebar()" aria-label="Abrir menú">
+      <i data-lucide="menu"></i>
+    </button>
+    <div class="mobile-topbar-logo">ScanOrder</div>
+  </div>
+  <div class="sidebar-overlay" onclick="closeSidebar()"></div>
+
   <!-- ===== SIDEBAR ===== -->
   <aside class="sidebar">
-    <div class="sidebar-logo">Maven<span>Burger</span></div>
+    <div class="sidebar-logo">ScanOrder</div>
 
-    <div class="sidebar-section">Reportes</div>
-    <a href="index.html" class="sidebar-link">Reportes</a>
+    <div class="sidebar-section" data-role="admin">Reportes</div>
+    <a href="index.html" class="sidebar-link" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
 
     <div class="sidebar-section">Gestión</div>
-    <a href="mesas.html"      class="sidebar-link">Mesas</a>
-    <a href="productos.html"  class="sidebar-link">Productos</a>
-    <a href="inventario.html" class="sidebar-link active">Inventario</a>
-    <div class="sidebar-section">Usuarios</div>
-    <a href="usuarios.html"   class="sidebar-link">Usuarios</a>
+    <a href="mesas.html"      class="sidebar-link"><i data-lucide="layout-grid"></i>Mesas</a>
+    <a href="productos.html"  class="sidebar-link" data-role="admin"><i data-lucide="utensils"></i>Productos</a>
+    <a href="inventario.html" class="sidebar-link active" data-role="admin"><i data-lucide="package"></i>Inventario</a>
+    <a href="usuarios.html"   class="sidebar-link" data-role="admin"><i data-lucide="users"></i>Usuarios</a>
 
     <div class="sidebar-bottom">
       <div class="user-info">
@@ -47,54 +58,38 @@
 
     <!-- Banner de alerta global -->
     <div class="alerta-banner" id="alerta-bajo-minimo">
-      <div class="alerta-text">
-        <span class="alerta-dot"></span>
-        <span>Hay <strong id="alerta-count">0</strong> producto(s) con stock por debajo del mínimo</span>
-      </div>
-      <button type="button" class="btn-ver-criticos" onclick="verCriticos()">Ver críticos</button>
+      <i data-lucide="triangle-alert"></i>
+      Hay <strong id="alerta-count">0</strong> producto(s) con stock por debajo del mínimo
     </div>
 
-    <div class="inv-panel">
-      <!-- Filtros -->
-      <div class="inv-filters">
-        <div class="inv-search">
-          <input type="text" id="filtro-nombre" placeholder="Buscar producto..." oninput="renderTabla()" />
-        </div>
-        <div class="inv-filter">
-          <select id="filtro-estado" onchange="renderTabla()">
-            <option value="">Todos los estados</option>
-            <option value="CRITICOS">Críticos</option>
-            <option value="OK">Stock OK</option>
-            <option value="BAJO">Bajo mínimo</option>
-            <option value="AGOTADO">Agotado</option>
-          </select>
-        </div>
-      </div>
+    <!-- Filtros -->
+    <div class="inv-filters">
+      <select id="filtro-estado" onchange="renderTabla()">
+        <option value="">Todos los estados</option>
+        <option value="OK">OK</option>
+        <option value="BAJO">Bajo mínimo</option>
+        <option value="AGOTADO">Agotado</option>
+      </select>
+      <input type="text" id="filtro-nombre" placeholder="Buscar producto…" oninput="renderTabla()" />
+    </div>
 
-      <!-- Tabla -->
-      <div class="inv-table-wrap">
-        <table class="inv-table">
-          <colgroup>
-            <col>
-            <col>
-            <col>
-            <col>
-            <col>
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Producto</th>
-              <th>Categoría</th>
-              <th>Stock</th>
-              <th>Estado</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="inv-tbody">
-            <tr><td colspan="5" class="table-empty">Cargando...</td></tr>
-          </tbody>
-        </table>
-      </div>
+    <!-- Tabla -->
+    <div class="inv-table-wrap">
+      <table class="inv-table">
+        <thead>
+          <tr>
+            <th>Producto</th>
+            <th>Categoría</th>
+            <th>Stock actual</th>
+            <th>Stock mínimo</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="inv-tbody">
+          <tr><td colspan="6" style="text-align:center;padding:2rem;color:#888">Cargando…</td></tr>
+        </tbody>
+      </table>
     </div>
 
   </main>
@@ -127,6 +122,9 @@
   <script src="../assets/js/config.js"></script>
   <script src="../assets/js/auth.js"></script>
   <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/sidebar-toggle.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <script src="js/inventario.js"></script>
+  <script>lucide.createIcons();</script>
 </body>
 </html>

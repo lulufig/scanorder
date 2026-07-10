@@ -132,3 +132,18 @@ function requireAuth(...requiredRoles) {
   }
   return true;
 }
+
+/**
+ * Oculta del menú lateral (y de cualquier bloque marcado) las secciones
+ * que el rol actual no debería ver. Es solo UX: el backend ya valida
+ * permisos por endpoint, esto no reemplaza esa protección.
+ *
+ * Marcar los elementos a ocultar con el atributo `data-role="admin"`.
+ * Llamar después de requireAuth() en cada página protegida.
+ */
+function applyRoleVisibility() {
+  if (getUserRole() === ROLES.ADMIN) return;
+  document.querySelectorAll('[data-role="admin"]').forEach((el) => {
+    el.style.display = "none";
+  });
+}

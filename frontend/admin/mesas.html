@@ -5,27 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ScanOrder — Mesas</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-
-    <link rel="stylesheet" href="css/mesas.css" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../assets/css/tokens.css" />
+  <link rel="stylesheet" href="css/admin-shell.css" />
+  <link rel="stylesheet" href="css/mesas.css" />
 </head>
 
 <body>
 
+  <!-- ===== BARRA MÓVIL (solo visible en pantallas chicas) ===== -->
+  <div class="mobile-topbar">
+    <button class="mobile-menu-btn" type="button" onclick="toggleSidebar()" aria-label="Abrir menú">
+      <i data-lucide="menu"></i>
+    </button>
+    <div class="mobile-topbar-logo">ScanOrder</div>
+  </div>
+  <div class="sidebar-overlay" onclick="closeSidebar()"></div>
+
   <!-- ===== SIDEBAR ===== -->
   <aside class="sidebar">
-    <div class="sidebar-logo">Maven<span>Burger</span></div>
+    <div class="sidebar-logo">ScanOrder</div>
 
-    <div class="sidebar-section">Reportes</div>
-    <a href="index.html" class="sidebar-link"> Reportes</a>
+    <div class="sidebar-section" data-role="admin">Reportes</div>
+    <a href="index.html" class="sidebar-link" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
 
     <div class="sidebar-section">Gestión</div>
-    <a href="mesas.html"      class="sidebar-link active"> Mesas</a>
-    <a href="productos.html"  class="sidebar-link"> Productos</a>
-    <a href="inventario.html" class="sidebar-link"> Inventario</a>
-
-    <div class="sidebar-section">Usuarios</div>
-    <a href="usuarios.html"   class="sidebar-link"> Usuarios</a>
+    <a href="mesas.html"      class="sidebar-link active"><i data-lucide="layout-grid"></i>Mesas</a>
+    <a href="productos.html"  class="sidebar-link" data-role="admin"><i data-lucide="utensils"></i>Productos</a>
+    <a href="inventario.html" class="sidebar-link" data-role="admin"><i data-lucide="package"></i>Inventario</a>
+    <a href="usuarios.html"   class="sidebar-link" data-role="admin"><i data-lucide="users"></i>Usuarios</a>
 
     <div class="sidebar-bottom">
       <div class="user-info">
@@ -95,7 +104,7 @@
     </div>
 
     <!-- Gestión y QR existentes -->
-    <div class="card qr-admin-card">
+    <div class="card qr-admin-card" data-role="admin">
       <div class="card-header qr-admin-header">
         <div>
           <div class="card-title">Mesas y códigos QR</div>
@@ -215,7 +224,10 @@
   <script src="../assets/js/config.js"></script>
   <script src="../assets/js/auth.js"></script>
   <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/sidebar-toggle.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 
-    <script src="js/mesas.js"></script>
+  <script src="js/mesas.js"></script>
+  <script>lucide.createIcons();</script>
 </body>
 </html>

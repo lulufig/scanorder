@@ -4,9 +4,16 @@ Tests para la lógica del dashboard y el export CSV de resumen diario.
 No requieren MySQL: se mockea get_db_connection() con cursores que devuelven
 datos sintéticos, verificando el procesamiento de los resultados.
 
-Orden de fetchone/fetchall en dashboard_metricas (caché vacío):
-  fetchone: [SHOW_COLUMNS, pedidos_hoy, ventas, producto_top, mesas, mesa_top, SHOW_TABLES]
-  fetchall: [estados]
+Orden de fetchone/fetchall en dashboard_metricas (caché vacío, confirmado_at
+NO existe → el chequeo de listo_at se salta por short-circuit y no consume
+fetchone):
+  fetchone: [SHOW_COLUMNS confirmado_at, pedidos_hoy, ventas, producto_top,
+             mesas, mesa_top, SHOW_TABLES cierres_mesa, categoria_top_row,
+             total_items_row (solo si categoria_top_row no es None)]
+  fetchall: [estados, cobros_metodos (solo si cierres_mesa existe), estados_hoy]
+
+Si confirmado_at SÍ existe, se suma un fetchone extra (SHOW_COLUMNS listo_at)
+antes del fetchone de tiempo_row (solo si listo_at también existe).
 
 Orden en resumen_hoy_csv (caché vacío):
   fetchone: [SHOW_COLUMNS, resumen, mesa_top, SHOW_TABLES]
@@ -15,7 +22,7 @@ Orden en resumen_hoy_csv (caché vacío):
 import io
 import csv
 import pytest
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
 
@@ -63,13 +70,21 @@ def _call_resumen_hoy(conn, fecha=None):
         return resumen_hoy_csv(fecha=fecha, current_user={"id": 1, "rol": "admin"})
 
 
+def _call_ventas_semana(conn):
+    from app.routes.reportes import ventas_ultima_semana
+    with patch("app.routes.reportes.get_db_connection", return_value=conn), \
+         patch("app.routes.reportes.close_db_connection"):
+        return ventas_ultima_semana(current_user={"id": 1, "rol": "admin"})
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # /reportes/dashboard — campo mesa_top
 # ────────────────────────────────────────────────────────────────────────────
 
-# Secuencias de mock para dashboard (caché vacío):
-#   fetchone: SHOW_COLUMNS, pedidos_hoy, ventas, producto_top(LIMIT 1), mesas, mesa_top, SHOW_TABLES
-#   fetchall: estados
+# Secuencias de mock para dashboard (caché vacío, confirmado_at no existe):
+#   fetchone: SHOW_COLUMNS, pedidos_hoy, ventas, producto_top(LIMIT 1), mesas,
+#             mesa_top, SHOW_TABLES, categoria_top_row, total_items_row
+#   fetchall: estados, estados_hoy
 _DASH_FETCHONE_BASE = [
     None,                                                    # SHOW COLUMNS confirmado_at
     {"pedidos_hoy": 5},                                      # pedidos_hoy
@@ -78,9 +93,13 @@ _DASH_FETCHONE_BASE = [
     {"mesas_activas": 3},                                    # mesas_activas
     {"numero_mesa": 7, "total_consumido": 950.0},            # mesa_top
     None,                                                    # SHOW TABLES cierres_mesa → no existe
+    {"categoria": "Hamburguesas", "cantidad": 8},            # categoria_top_row
+    {"total_items": 12},                                     # total_items_row
 ]
 _DASH_FETCHALL_BASE = [
     [{"estado": "listo", "cantidad": 3}],                    # estados (pedidos_activos)
+    [{"estado": "listo", "cantidad": 3},
+     {"estado": "entregado", "cantidad": 2}],                # estados_hoy
 ]
 
 
@@ -101,20 +120,64 @@ class TestDashboardMesaTop:
             {"mesas_activas": 0},
             None,                                            # mesa_top → None (sin ventas)
             None,                                            # SHOW TABLES cierres_mesa
+            None,                                            # categoria_top_row → sin ventas
         ]
-        conn = _mock_conn(fetchone, [[]])                    # estados vacío
+        conn = _mock_conn(fetchone, [[], []])                # estados vacío, estados_hoy vacío
         result = _call_dashboard(conn)
         assert result["mesa_top"] == {"numero": None, "total": 0.0}
+        assert result["categoria_top"] is None
+        assert result["tiempo_prep_promedio_min"] is None
 
     def test_dashboard_incluye_todos_los_campos_requeridos(self):
         conn = _mock_conn(_DASH_FETCHONE_BASE, _DASH_FETCHALL_BASE)
         result = _call_dashboard(conn)
         for campo in [
             "ventas_hoy", "pedidos_hoy", "ticket_promedio",
-            "pedidos_activos", "producto_top", "mesa_top",
+            "pedidos_activos", "estado_pedidos_hoy", "producto_top",
+            "categoria_top", "tiempo_prep_promedio_min", "mesa_top",
             "mesas_activas", "cobros_hoy",
         ]:
             assert campo in result, f"Falta campo '{campo}'"
+
+    def test_categoria_top_calcula_porcentaje_sobre_items_del_dia(self):
+        conn = _mock_conn(_DASH_FETCHONE_BASE, _DASH_FETCHALL_BASE)
+        result = _call_dashboard(conn)
+        assert result["categoria_top"]["nombre"] == "Hamburguesas"
+        assert result["categoria_top"]["cantidad"] == 8
+        assert result["categoria_top"]["porcentaje"] == round(8 / 12 * 100, 1)
+
+    def test_estado_pedidos_hoy_incluye_entregado_y_cancelado(self):
+        conn = _mock_conn(_DASH_FETCHONE_BASE, _DASH_FETCHALL_BASE)
+        result = _call_dashboard(conn)
+        assert result["estado_pedidos_hoy"]["listo"] == 3
+        assert result["estado_pedidos_hoy"]["entregado"] == 2
+        assert result["estado_pedidos_hoy"]["cancelado"] == 0
+
+    def test_tiempo_prep_promedio_ausente_sin_columnas_de_trazabilidad(self):
+        # _DASH_FETCHONE_BASE simula confirmado_at inexistente (primer None) →
+        # pedidos_tiene_columna corta por short-circuit y nunca llega a
+        # chequear listo_at ni a calcular el promedio.
+        conn = _mock_conn(_DASH_FETCHONE_BASE, _DASH_FETCHALL_BASE)
+        result = _call_dashboard(conn)
+        assert result["tiempo_prep_promedio_min"] is None
+
+    def test_tiempo_prep_promedio_presente_con_columnas_de_trazabilidad(self):
+        fetchone = [
+            {"Field": "confirmado_at"},                       # SHOW COLUMNS confirmado_at → existe
+            {"pedidos_hoy": 5},
+            {"ventas_hoy": 1500.0, "ticket_promedio": 300.0},
+            {"nombre": "Smash Burger", "cantidad": 8},
+            {"mesas_activas": 3},
+            {"numero_mesa": 7, "total_consumido": 950.0},
+            None,                                              # SHOW TABLES cierres_mesa
+            {"categoria": "Hamburguesas", "cantidad": 8},      # categoria_top_row
+            {"total_items": 12},                               # total_items_row
+            {"Field": "listo_at"},                             # SHOW COLUMNS listo_at → existe
+            {"minutos": 17.4},                                 # tiempo_row
+        ]
+        conn = _mock_conn(fetchone, _DASH_FETCHALL_BASE)
+        result = _call_dashboard(conn)
+        assert result["tiempo_prep_promedio_min"] == 17.4
 
     def test_cobros_hoy_incluye_metodos_cuando_cierres_existe(self):
         fetchone = [
@@ -125,6 +188,8 @@ class TestDashboardMesaTop:
             {"mesas_activas": 2},
             {"numero_mesa": 2, "total_consumido": 900.0},
             {"Tables_in_scanorder_db": "cierres_mesa"},      # SHOW TABLES → existe
+            {"categoria": "Bebidas", "cantidad": 6},          # categoria_top_row
+            {"total_items": 6},                                # total_items_row
         ]
         fetchall = [
             [{"estado": "listo", "cantidad": 3}],
@@ -132,12 +197,48 @@ class TestDashboardMesaTop:
                 {"metodo_pago": "efectivo", "cantidad": 2, "total": 600.0},
                 {"metodo_pago": "tarjeta",  "cantidad": 1, "total": 300.0},
             ],
+            [{"estado": "listo", "cantidad": 3}],              # estados_hoy
         ]
         conn = _mock_conn(fetchone, fetchall)
         result = _call_dashboard(conn)
         assert result["cobros_hoy"]["total"] == 900.0
         assert "efectivo" in result["cobros_hoy"]["metodos"]
         assert "tarjeta"  in result["cobros_hoy"]["metodos"]
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# /reportes/ventas-semana — tendencia de los últimos 7 días
+# ────────────────────────────────────────────────────────────────────────────
+
+class TestVentasSemana:
+    def test_serie_tiene_siete_dias_incluyendo_hoy(self):
+        fetchone = [None]                                     # SHOW COLUMNS confirmado_at
+        fetchall = [[]]                                        # sin ventas en el rango
+        conn = _mock_conn(fetchone, fetchall)
+        result = _call_ventas_semana(conn)
+        assert len(result["serie"]) == 7
+        assert result["serie"][-1]["fecha"] == date.today().isoformat()
+        assert result["serie"][0]["fecha"] == (date.today() - timedelta(days=6)).isoformat()
+
+    def test_dias_sin_ventas_completan_en_cero(self):
+        fetchone = [None]
+        fetchall = [[]]
+        conn = _mock_conn(fetchone, fetchall)
+        result = _call_ventas_semana(conn)
+        assert all(item["ventas"] == 0.0 and item["pedidos"] == 0 for item in result["serie"])
+        assert result["total_ventas"] == 0.0
+        assert result["total_pedidos"] == 0
+
+    def test_dia_con_ventas_aparece_en_la_serie(self):
+        hoy_iso = date.today().isoformat()
+        fetchone = [None]
+        fetchall = [[{"fecha": date.today(), "pedidos": 4, "ventas": 800.0}]]
+        conn = _mock_conn(fetchone, fetchall)
+        result = _call_ventas_semana(conn)
+        hoy_item = next(item for item in result["serie"] if item["fecha"] == hoy_iso)
+        assert hoy_item["ventas"] == 800.0
+        assert hoy_item["pedidos"] == 4
+        assert result["total_ventas"] == 800.0
 
 
 # ────────────────────────────────────────────────────────────────────────────
