@@ -5,17 +5,202 @@
    ============================================================ */
 
 .inv-table-wrap {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
   overflow-x: auto;
 }
 
-.stock-num {
-  font-family: var(--font-mono);
-  font-weight: 500;
+.inv-table {
+  width: 100%;
+  min-width: 820px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: var(--gray-800);
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.86rem;
+  font-weight: 400;
 }
 
-.badge-ok      { color: var(--state-libre-text);     background: var(--state-libre-bg); }
-.badge-bajo    { color: var(--state-esperando-text); background: var(--state-esperando-bg); }
-.badge-agotado { color: var(--state-alerta-text);    background: var(--state-alerta-bg); }
+.inv-table th,
+.inv-table td {
+  border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.inv-table th:last-child,
+.inv-table td:last-child {
+  border-right: 0;
+}
+
+.inv-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.inv-table th {
+  padding: 12px 18px;
+  background: var(--gray-50);
+  color: var(--gray-500);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.inv-table td {
+  padding: 14px 18px;
+  background: var(--color-surface);
+}
+
+.inv-table tbody tr:hover td {
+  background: var(--gray-50);
+}
+
+.inv-table th:nth-child(1),
+.inv-table td:nth-child(1) {
+  width: 30%;
+}
+
+.inv-table th:nth-child(2),
+.inv-table td:nth-child(2) {
+  width: 22%;
+}
+
+.inv-table th:nth-child(3),
+.inv-table td:nth-child(3) {
+  width: 24%;
+}
+
+.inv-table th:nth-child(4),
+.inv-table td:nth-child(4) {
+  width: 14%;
+}
+
+.inv-table th:nth-child(5),
+.inv-table td:nth-child(5) {
+  width: 10%;
+  text-align: right;
+}
+
+.inv-product-name {
+  color: var(--gray-900);
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.inv-category {
+  color: var(--gray-800);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.inv-subcategory {
+  margin-top: 3px;
+  color: var(--gray-500);
+  font-size: 0.8rem;
+}
+
+.table-empty {
+  padding: 34px 18px !important;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.stock-cell {
+  display: grid;
+  gap: 8px;
+  max-width: 260px;
+}
+
+.stock-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stock-current {
+  color: var(--gray-900);
+  font-family: 'DM Mono', Consolas, monospace;
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.stock-min {
+  color: var(--gray-500);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stock-bar {
+  position: relative;
+  width: 100%;
+  height: 7px;
+  overflow: hidden;
+  background: var(--gray-100);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+}
+
+.stock-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--stock-pct);
+  min-width: 3px;
+  background: var(--stock-color);
+  border-radius: inherit;
+  transition: width 0.25s ease, background 0.25s ease;
+}
+
+.badge-ok,
+.badge-bajo,
+.badge-agotado {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-ok::before,
+.badge-bajo::before,
+.badge-agotado::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.badge-ok {
+  color: var(--state-libre-text);
+}
+
+.badge-ok::before {
+  background: var(--state-libre-text);
+}
+
+.badge-bajo {
+  color: var(--state-esperando-text);
+}
+
+.badge-bajo::before {
+  background: var(--state-esperando-text);
+}
+
+.badge-agotado {
+  color: var(--state-alerta-text);
+}
+
+.badge-agotado::before {
+  background: var(--state-alerta-text);
+}
 
 .alerta-banner {
   display: none;
@@ -43,33 +228,79 @@
 
 .inv-filters {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 16px 18px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+}
+
+.inv-search {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 260px;
+}
+
+.inv-search [data-lucide] {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  width: 18px;
+  height: 18px;
+  color: var(--gray-400);
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 
 .inv-filters select,
 .inv-filters input {
-  padding: 8px 12px;
+  height: 42px;
+  padding: 0 13px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--gray-800);
-  font-size: 0.87rem;
+  font-size: 0.88rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.inv-filters input {
+  width: 100%;
+  padding-left: 42px;
+}
+
+.inv-filters select {
+  flex: 0 0 250px;
+}
+
+.inv-filters select:focus,
+.inv-filters input:focus {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-focus);
 }
 
 .btn-ajustar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 14px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  color: var(--gray-600);
-  padding: 5px 11px;
   border-radius: var(--radius-sm);
-  font-size: 0.8rem;
-  font-weight: 600;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  color: var(--gray-700);
+  font-size: 0.84rem;
+  font-weight: 500;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
 .btn-ajustar:hover {
+  background: var(--gray-50);
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
@@ -86,4 +317,17 @@
 
 .btn-guardar:hover {
   background: var(--color-primary-hover);
+}
+
+@media (max-width: 760px) {
+  .inv-filters {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .inv-search,
+  .inv-filters select {
+    width: 100%;
+    flex-basis: auto;
+  }
 }

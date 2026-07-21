@@ -64,13 +64,16 @@
 
     <!-- Filtros -->
     <div class="inv-filters">
+      <div class="inv-search">
+        <i data-lucide="search"></i>
+        <input type="text" id="filtro-nombre" placeholder="Buscar producto…" oninput="renderTabla()" />
+      </div>
       <select id="filtro-estado" onchange="renderTabla()">
         <option value="">Todos los estados</option>
-        <option value="OK">OK</option>
+        <option value="OK">Stock OK</option>
         <option value="BAJO">Bajo mínimo</option>
         <option value="AGOTADO">Agotado</option>
       </select>
-      <input type="text" id="filtro-nombre" placeholder="Buscar producto…" oninput="renderTabla()" />
     </div>
 
     <!-- Tabla -->
@@ -80,14 +83,13 @@
           <tr>
             <th>Producto</th>
             <th>Categoría</th>
-            <th>Stock actual</th>
-            <th>Stock mínimo</th>
+            <th>Stock</th>
             <th>Estado</th>
             <th>Acciones</th>
           </tr>
         </thead>
         <tbody id="inv-tbody">
-          <tr><td colspan="6" style="text-align:center;padding:2rem;color:#888">Cargando…</td></tr>
+          <tr><td colspan="5" style="text-align:center;padding:2rem;color:#888">Cargando…</td></tr>
         </tbody>
       </table>
     </div>
