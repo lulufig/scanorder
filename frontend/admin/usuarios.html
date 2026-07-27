@@ -53,55 +53,182 @@
       <div class="page-actions">
         <div>
           <h1 class="page-title">Usuarios</h1>
-          <p class="page-subtitle">Cuentas de mozos y administradores</p>
+          <p class="page-subtitle">Gestioná las cuentas y accesos del equipo</p>
         </div>
-        <button class="btn-nuevo" onclick="abrirModalCrear()">+ Nuevo usuario</button>
+        <button class="btn-nuevo" onclick="abrirModalCrear()">
+          <i data-lucide="plus"></i>
+          Nuevo usuario
+        </button>
       </div>
     </div>
 
+    <section class="usuarios-summary" aria-label="Resumen de usuarios">
+      <div class="summary-item">
+        <div class="summary-icon"><i data-lucide="users"></i></div>
+        <span class="summary-label">Total usuarios</span>
+        <strong class="summary-value" id="usuarios-total">0</strong>
+        <div class="summary-line"><span id="usuarios-total-bar"></span></div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-icon success"><i data-lucide="user-check"></i></div>
+        <span class="summary-label">Activos</span>
+        <strong class="summary-value" id="usuarios-activos">0</strong>
+        <div class="summary-line"><span id="usuarios-activos-bar"></span></div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-icon warning"><i data-lucide="key-round"></i></div>
+        <span class="summary-label">Temporales</span>
+        <strong class="summary-value" id="usuarios-temp">0</strong>
+        <div class="summary-line"><span id="usuarios-temp-bar"></span></div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-icon muted"><i data-lucide="user-x"></i></div>
+        <span class="summary-label">Inactivos</span>
+        <strong class="summary-value" id="usuarios-inactivos">0</strong>
+        <div class="summary-line"><span id="usuarios-inactivos-bar"></span></div>
+      </div>
+    </section>
+
     <!-- Tabla -->
-    <div class="usu-table-wrap">
-      <table class="usu-table">
-        <thead>
-          <tr>
-            <th>Nombre</th>
-            <th>Email</th>
-            <th>Rol</th>
-            <th>Estado</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody id="tabla-body">
-          <tr><td colspan="5" class="empty-state">Cargando...</td></tr>
-        </tbody>
-      </table>
+    <div class="usuarios-panel">
+      <div class="usuarios-panel-header">
+        <div>
+          <h2>Listado de usuarios</h2>
+          <p>Gestión de accesos, roles y estado de las cuentas.</p>
+        </div>
+        <div class="panel-tools">
+          <span class="panel-count" id="usuarios-count-label">—</span>
+          <div class="view-toggle" aria-label="Cambiar vista">
+            <button type="button" class="view-btn active" id="btn-view-list" onclick="cambiarVista('lista')" title="Vista lista">
+              <i data-lucide="list"></i>
+            </button>
+            <button type="button" class="view-btn" id="btn-view-grid" onclick="cambiarVista('grid')" title="Vista cuadrícula">
+              <i data-lucide="layout-grid"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="users-filters">
+        <div class="filter-search">
+          <i data-lucide="search"></i>
+          <input type="search" id="filtro-texto" placeholder="Buscar por nombre, email o ID..." oninput="actualizarFiltros()" />
+        </div>
+        <select id="filtro-rol" onchange="actualizarFiltros()">
+          <option value="">Todos los roles</option>
+          <option value="admin">Administrador</option>
+          <option value="mozo">Mozo</option>
+        </select>
+        <select id="filtro-estado" onchange="actualizarFiltros()">
+          <option value="">Todos los estados</option>
+          <option value="activo">Activo</option>
+          <option value="inactivo">Inactivo</option>
+          <option value="temporal">Contraseña temporal</option>
+        </select>
+        <label class="check-filter">
+          <input type="checkbox" id="filtro-temporales" onchange="actualizarFiltros()" />
+          Solo temporales
+        </label>
+        <select id="filtro-orden" onchange="actualizarOrdenSelect()">
+          <option value="created_at:desc">Último añadido</option>
+          <option value="nombre:asc">Nombre A-Z</option>
+          <option value="nombre:desc">Nombre Z-A</option>
+          <option value="rol:asc">Rol</option>
+          <option value="estado:asc">Estado</option>
+        </select>
+      </div>
+
+      <div class="bulk-bar" id="bulk-bar">
+        <span><strong id="selected-count">0</strong> seleccionado(s)</span>
+        <div class="bulk-actions">
+          <button type="button" class="btn-secondary" onclick="cargarUsuarios()">
+            <i data-lucide="refresh-cw"></i>
+            Actualizar
+          </button>
+          <button type="button" class="btn-secondary" onclick="exportarSeleccionCSV()">
+            <i data-lucide="download"></i>
+            Exportar CSV
+          </button>
+          <button type="button" class="btn-secondary" onclick="abrirModalCambiarRol()">
+            <i data-lucide="user-cog"></i>
+            Cambiar rol
+          </button>
+          <button type="button" class="btn-danger-soft" onclick="desactivarSeleccionados()">
+            <i data-lucide="user-x"></i>
+            Desactivar
+          </button>
+        </div>
+      </div>
+
+      <div class="usu-table-wrap">
+        <table class="usu-table">
+          <thead>
+            <tr>
+              <th>
+                <div class="row-check">
+                  <input type="checkbox" id="select-all" onchange="toggleSeleccionTodos(this.checked)" />
+                  <button type="button" class="sort-th" onclick="ordenarPor('nombre')">Usuario <i data-lucide="chevrons-up-down"></i></button>
+                </div>
+              </th>
+              <th><button class="sort-th" onclick="ordenarPor('email')">Email <i data-lucide="chevrons-up-down"></i></button></th>
+              <th><button class="sort-th" onclick="ordenarPor('rol')">Rol <i data-lucide="chevrons-up-down"></i></button></th>
+              <th><button class="sort-th" onclick="ordenarPor('estado')">Estado <i data-lucide="chevrons-up-down"></i></button></th>
+              <th><button class="sort-th" onclick="ordenarPor('ultimo_acceso')">Último acceso <i data-lucide="chevrons-up-down"></i></button></th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-body">
+            <tr><td colspan="6" class="empty-state">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="users-grid" id="users-grid" hidden></div>
     </div>
 
   </main>
 
   <!-- ===== MODAL CREAR USUARIO ===== -->
   <div class="modal-overlay" id="modal-crear">
-    <div class="modal-box">
-      <h3>Nuevo usuario</h3>
+    <div class="modal-box user-modal">
+      <div class="user-modal-head">
+        <h3>Nuevo usuario</h3>
+        <div class="modal-avatar">
+          <i data-lucide="camera"></i>
+        </div>
+      </div>
       <div id="modal-error" class="modal-error"></div>
-      <div>
-        <label for="m-nombre">Nombre completo</label>
-        <input type="text" id="m-nombre" placeholder="Ej: María García" autocomplete="off">
+
+      <div class="user-modal-grid">
+        <div class="form-group full">
+          <label for="m-nombre">Nombre completo</label>
+          <input type="text" id="m-nombre" placeholder="Ej: María García" autocomplete="off">
+        </div>
+        <div class="form-group full">
+          <label for="m-email">Correo electrónico</label>
+          <input type="email" id="m-email" placeholder="maria@empresa.com" autocomplete="off">
+        </div>
+        <div class="form-group full">
+          <label for="m-rol">Rol</label>
+          <select id="m-rol">
+            <option value="mozo">Mozo</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+        <div class="temporary-row">
+          <span class="temporary-check"><i data-lucide="check"></i></span>
+          <div>
+            <strong>Usuario temporal</strong>
+            <p>Se forzará el cambio de contraseña al iniciar sesión.</p>
+          </div>
+        </div>
+        <div class="password-preview">
+          <span>Contraseña</span>
+          <strong>Auto-generada</strong>
+          <i data-lucide="key-round"></i>
+        </div>
       </div>
-      <div>
-        <label for="m-email">Correo electrónico</label>
-        <input type="email" id="m-email" placeholder="maria@empresa.com" autocomplete="off">
-      </div>
-      <div>
-        <label for="m-rol">Rol</label>
-        <select id="m-rol">
-          <option value="mozo">Mozo</option>
-          <option value="admin">Administrador</option>
-        </select>
-      </div>
-      <p style="font-size:.8rem;color:var(--gray-500);margin-top:-.25rem;">
-        Se generará una contraseña temporal y se enviará al email indicado.
-      </p>
+
       <div class="modal-actions">
         <button class="btn-cancel" onclick="cerrarModal()">Cancelar</button>
         <button class="btn-crear" id="btn-crear-confirm" onclick="crearUsuario()">Crear usuario</button>
@@ -136,6 +263,27 @@
     </div>
   </div>
 
+  <!-- ===== MODAL CAMBIO MASIVO DE ROL ===== -->
+  <div class="modal-overlay" id="modal-cambiar-rol">
+    <div class="modal-box bulk-role-modal">
+      <h3>Cambiar rol</h3>
+      <p class="bulk-role-text">
+        Se actualizará el rol de <strong id="bulk-role-count">0</strong> usuario(s) seleccionado(s).
+      </p>
+      <div>
+        <label for="bulk-rol">Nuevo rol</label>
+        <select id="bulk-rol">
+          <option value="mozo">Mozo</option>
+          <option value="admin">Administrador</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="cerrarModalCambiarRol()">Cancelar</button>
+        <button class="btn-crear" id="btn-bulk-rol-confirm" onclick="cambiarRolSeleccionados()">Aplicar cambios</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 
@@ -145,238 +293,6 @@
   <script src="../assets/js/api.js"></script>
   <script src="../assets/js/sidebar-toggle.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-  <script>
-    lucide.createIcons();
-    requireAuth(ROLES.ADMIN);
-    applyRoleVisibility();
-
-    document.getElementById("sidebar-username").textContent = getUserNombre() || "—";
-
-    // ── Datos ──────────────────────────────────────────────────────────────────
-
-    let _usuarios = [];
-
-    async function cargarUsuarios() {
-      try {
-        _usuarios = await fetchAPI("/admin/usuarios");
-        renderTabla();
-      } catch (e) {
-        document.getElementById("tabla-body").innerHTML =
-          `<tr><td colspan="5" class="empty-state">Error al cargar usuarios: ${e.message}</td></tr>`;
-      }
-    }
-
-    function renderTabla() {
-      const tbody = document.getElementById("tabla-body");
-      if (!_usuarios.length) {
-        tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No hay usuarios registrados.</td></tr>`;
-        return;
-      }
-      tbody.innerHTML = _usuarios.map(u => `
-        <tr>
-          <td><strong>${esc(u.nombre)}</strong></td>
-          <td style="color:var(--gray-500);">${esc(u.email)}</td>
-          <td><span class="badge badge-${u.rol}">${u.rol}</span></td>
-          <td>${estadoBadge(u)}</td>
-          <td>
-            <div class="acciones-cell">
-              <button class="btn-editar" onclick="abrirModalEditar(${u.id_usuario})"
-                title="Editar nombre, email o rol">
-                Editar
-              </button>
-              <button class="btn-reenviar" onclick="reenviarBienvenida(${u.id_usuario}, this)"
-                title="Genera nueva contraseña temporal y reenvía el email"
-                ${!u.activo ? "disabled" : ""}>
-                Reenviar bienvenida
-              </button>
-              <button class="btn-toggle ${u.activo ? 'desactivar' : 'activar'}"
-                onclick="toggleActivo(${u.id_usuario}, this)"
-                title="${u.activo ? 'Desactivar usuario' : 'Reactivar usuario'}">
-                ${u.activo ? "Desactivar" : "Reactivar"}
-              </button>
-            </div>
-          </td>
-        </tr>
-      `).join("");
-    }
-
-    function estadoBadge(u) {
-      if (!u.activo) return `<span class="badge badge-inactivo">Inactivo</span>`;
-      if (u.debe_cambiar_password) return `<span class="badge badge-temp">Contraseña temporal</span>`;
-      return `<span class="badge badge-ok">Activo</span>`;
-    }
-
-    function esc(s) {
-      return String(s)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
-    }
-
-    // ── Crear usuario ──────────────────────────────────────────────────────────
-
-    function abrirModalCrear() {
-      document.getElementById("m-nombre").value = "";
-      document.getElementById("m-email").value  = "";
-      document.getElementById("m-rol").value    = "mozo";
-      document.getElementById("modal-error").classList.remove("visible");
-      document.getElementById("btn-crear-confirm").disabled = false;
-      document.getElementById("modal-crear").classList.add("open");
-      setTimeout(() => document.getElementById("m-nombre").focus(), 50);
-    }
-
-    function cerrarModal() {
-      document.getElementById("modal-crear").classList.remove("open");
-    }
-
-    document.getElementById("modal-crear").addEventListener("click", e => {
-      if (e.target === e.currentTarget) cerrarModal();
-    });
-
-    document.addEventListener("keydown", e => {
-      if (e.key === "Escape") { cerrarModal(); cerrarModalEditar(); }
-    });
-
-    async function crearUsuario() {
-      const nombre = document.getElementById("m-nombre").value.trim();
-      const email  = document.getElementById("m-email").value.trim();
-      const rol    = document.getElementById("m-rol").value;
-      const errEl  = document.getElementById("modal-error");
-
-      errEl.classList.remove("visible");
-
-      if (!nombre) { errEl.textContent = "El nombre es obligatorio."; errEl.classList.add("visible"); return; }
-      if (!email || !email.includes("@")) { errEl.textContent = "Ingresá un email válido."; errEl.classList.add("visible"); return; }
-
-      const btn = document.getElementById("btn-crear-confirm");
-      btn.disabled = true;
-      btn.textContent = "Creando...";
-
-      try {
-        const nuevo = await fetchAPI("/admin/usuarios", "POST", { nombre, email, rol });
-        _usuarios.unshift(nuevo);
-        renderTabla();
-        cerrarModal();
-        showToast("Usuario creado. Se envió el email de bienvenida.", "ok");
-      } catch (e) {
-        errEl.textContent = e.message || "No se pudo crear el usuario.";
-        errEl.classList.add("visible");
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Crear usuario";
-      }
-    }
-
-    // ── Editar usuario ─────────────────────────────────────────────────────────
-
-    let _editandoId = null;
-
-    function abrirModalEditar(id) {
-      const u = _usuarios.find(x => x.id_usuario === id);
-      if (!u) return;
-      _editandoId = id;
-      document.getElementById("e-nombre").value = u.nombre;
-      document.getElementById("e-email").value  = u.email;
-      document.getElementById("e-rol").value    = u.rol;
-      document.getElementById("modal-editar-error").classList.remove("visible");
-      document.getElementById("btn-editar-confirm").disabled = false;
-      document.getElementById("btn-editar-confirm").textContent = "Guardar cambios";
-      document.getElementById("modal-editar").classList.add("open");
-      setTimeout(() => document.getElementById("e-nombre").focus(), 50);
-    }
-
-    function cerrarModalEditar() {
-      document.getElementById("modal-editar").classList.remove("open");
-      _editandoId = null;
-    }
-
-    document.getElementById("modal-editar").addEventListener("click", e => {
-      if (e.target === e.currentTarget) cerrarModalEditar();
-    });
-
-    async function guardarEdicion() {
-      const nombre = document.getElementById("e-nombre").value.trim();
-      const email  = document.getElementById("e-email").value.trim();
-      const rol    = document.getElementById("e-rol").value;
-      const errEl  = document.getElementById("modal-editar-error");
-
-      errEl.classList.remove("visible");
-
-      if (!nombre) { errEl.textContent = "El nombre es obligatorio."; errEl.classList.add("visible"); return; }
-      if (!email || !email.includes("@")) { errEl.textContent = "Ingresá un email válido."; errEl.classList.add("visible"); return; }
-
-      const btn = document.getElementById("btn-editar-confirm");
-      btn.disabled = true;
-      btn.textContent = "Guardando...";
-
-      try {
-        const actualizado = await fetchAPI(`/admin/usuarios/${_editandoId}`, "PUT", { nombre, email, rol });
-        const idx = _usuarios.findIndex(x => x.id_usuario === _editandoId);
-        if (idx !== -1) _usuarios[idx] = { ..._usuarios[idx], ...actualizado };
-        renderTabla();
-        cerrarModalEditar();
-        showToast("Usuario actualizado.", "ok");
-      } catch (e) {
-        errEl.textContent = e.message || "No se pudo actualizar el usuario.";
-        errEl.classList.add("visible");
-      } finally {
-        btn.disabled = false;
-        btn.textContent = "Guardar cambios";
-      }
-    }
-
-    // ── Desactivar / Reactivar ────────────────────────────────────────────────
-
-    async function toggleActivo(id, btnEl) {
-      const desactivando = btnEl.classList.contains("desactivar");
-      btnEl.disabled = true;
-      btnEl.textContent = desactivando ? "Desactivando..." : "Reactivando...";
-      try {
-        const res = await fetchAPI(`/admin/usuarios/${id}/activo`, "PATCH");
-        const u = _usuarios.find(x => x.id_usuario === id);
-        if (u) u.activo = res.activo;
-        renderTabla();
-        showToast(res.activo ? "Usuario reactivado." : "Usuario desactivado.", "ok");
-      } catch (e) {
-        showToast(e.message || "Error al cambiar estado.", "error");
-        btnEl.disabled = false;
-        btnEl.textContent = desactivando ? "Desactivar" : "Reactivar";
-      }
-    }
-
-    // ── Reenviar bienvenida ────────────────────────────────────────────────────
-
-    async function reenviarBienvenida(id, btnEl) {
-      btnEl.disabled = true;
-      btnEl.textContent = "Enviando...";
-      try {
-        await fetchAPI(`/admin/usuarios/${id}/reenviar-bienvenida`, "POST");
-        showToast("Email de bienvenida reenviado.", "ok");
-        // Marcar el usuario como "contraseña temporal" localmente
-        const u = _usuarios.find(x => x.id_usuario === id);
-        if (u) u.debe_cambiar_password = true;
-        renderTabla();
-      } catch (e) {
-        showToast(e.message || "Error al reenviar.", "error");
-        btnEl.disabled = false;
-        btnEl.textContent = "Reenviar bienvenida";
-      }
-    }
-
-    // ── Toast ──────────────────────────────────────────────────────────────────
-
-    let _toastTimer = null;
-    function showToast(msg, tipo = "ok") {
-      const t = document.getElementById("toast");
-      t.textContent = msg;
-      t.className = `toast toast-${tipo} visible`;
-      clearTimeout(_toastTimer);
-      _toastTimer = setTimeout(() => t.classList.remove("visible"), 3500);
-    }
-
-    // ── Init ───────────────────────────────────────────────────────────────────
-    cargarUsuarios();
-  </script>
+  <script src="js/usuarios.js"></script>
 </body>
 </html>
