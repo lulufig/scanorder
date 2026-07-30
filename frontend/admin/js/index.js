@@ -82,12 +82,11 @@
     }
 
     function conectarNotificacionesAdmin() {
-      const token = getToken();
-      if (!token) return;
+      if (!window.COCINA_DEVICE_TOKEN) return;
 
       const wsProtocol = API_URL.startsWith("https") ? "wss" : "ws";
       const wsBase = API_URL.replace(/^https?:\/\//, "");
-      const socket = new WebSocket(`${wsProtocol}://${wsBase}/pedidos/ws/cocina?token=${encodeURIComponent(token)}`);
+      const socket = new WebSocket(`${wsProtocol}://${wsBase}/pedidos/ws/cocina?device_token=${encodeURIComponent(window.COCINA_DEVICE_TOKEN)}`);
 
       socket.addEventListener("message", (event) => {
         try {

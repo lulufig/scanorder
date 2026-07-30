@@ -202,7 +202,13 @@ Concentra tres responsabilidades distintas:
 2. **WS `/pedidos/ws/cocina`**: push unidireccional de nuevos pedidos/cambios de estado al panel de cocina.
 3. **WS `/pedidos/ws/mesa`**: carrito colaborativo host/guest por mesa, manejado por la clase `MesaSessionManager`. Soporta múltiples comensales editando el mismo carrito en tiempo real (acciones `sync_cart`/`clear_cart`, eventos `snapshot`/`carrito_actualizado`/`participantes_actualizados`/`pedido_confirmado`). Si el `host_client_id` se desconecta, el host se reasigna automáticamente a otro participante.
 
-El estado de `MesaSessionManager` (y el de `MesaOperationalState`, que vive en `mesas.py`) se mantiene en memoria de proceso pero se espeja a MySQL (tablas `mesa_sesiones_snapshot` / `mesa_estado_operativo`, migración `006_runtime_state.sql`) en cada mutación, y se recarga al iniciar el proceso. Esto significa: **el contenido de negocio (carrito, participantes, estado operativo) sobrevive a un reinicio del backend**; lo único que se pierde son las conexiones WebSocket activas en sí (los clientes deben reconectar).
+El estado de `MesaSessionManager` (y el de `MesaOperationalState`, que vive en `mesas.py`) se mantiene en memoria de proceso pero se espeja a MySQL (tablas `mesa_sesiones_snapshot` / `mesa_estado_operativo`, migración `006_runtime_state.sql`) en cada mutación. Esa persistencia sí alimenta correctamente la vista agregada de `GET /mesas/mapa` (que lee directamente de DB para las mesas sin sesión viva en memoria).
+
+**Limitación conocida — no se rehidrata la sesión viva al reconectar:** ni `MesaSessionManager.connect()` ni `MesaOperationalState.touch()` cargan el snapshot persistido al crear el estado en memoria — ambos parten de valores por defecto (`session.setdefault(...)` / `self.states.setdefault(...)`). Como el diccionario en memoria arranca vacío en cada arranque del proceso, esto significa que **tras un reinicio del backend, ni el carrito colaborativo de una mesa activa ni sus banderas `cuenta_solicitada`/`mozo_solicitado` se restauran automáticamente**: el primer `connect()`/`touch()` sobre esa mesa parte de los defaults y los vuelve a persistir, pisando lo que sí se había guardado antes del reinicio. El cliente debe rearmar el carrito a mano; una solicitud de mozo/cuenta pendiente puede perderse silenciosamente.
+
+Acotado al caso de reinicio con mesas/sesiones activas — no afecta la operación normal (sin reinicios de por medio) ni ningún dato financiero: pedidos, cierres y stock se persisten y leen siempre desde DB, no dependen de este estado en memoria. Mejora futura: rehidratar `MesaSessionManager`/`MesaOperationalState` desde `load_session_snapshots()`/`load_operational_snapshot()` en `connect()`/`touch()` en vez de solo en la vista agregada.
+
+Lo único que sí sigue siendo cierto sin matices: las conexiones WebSocket activas se pierden en cualquier reinicio del backend (los clientes deben reconectar).
 
 ### Token de seguridad por mesa (`qr_token`)
 
@@ -253,11 +259,12 @@ Auditado y cubierto con tests de integración contra MySQL real (`backend/tests/
 El bloque financiero del cierre es una **única transacción InnoDB**:
 1. `INSERT INTO cierres_mesa` (registro del cierre con total recalculado)
 2. `INSERT INTO cierre_pedidos` × N (uno por pedido incluido)
-3. `UPDATE pedidos SET estado = 'entregado'` × N
 
 Todo en la misma conexión, con un único `connection.commit()` al final. Si cualquier paso falla, el `except` ejecuta `connection.rollback()` y devuelve 500 — la base queda exactamente como estaba antes del intento.
 
 El `total_consumido` **siempre se recalcula en el backend** sumando `detalle_pedidos.subtotal`. El cliente no puede inyectar un total: `CierreMesaCreate` no tiene campo `total`.
+
+**Cerrar mesa ya NO toca `pedidos.estado`** (desde `fix/cobro-sin-entrega`; ver "Cobro y entrega son ejes independientes" más abajo).
 
 ### Cleanup post-commit (best-effort, por diseño)
 
@@ -273,6 +280,24 @@ Ambas llamadas están en bloques `try/except` que **tragan todas las excepciones
 - La dirección opuesta sería peligrosa: ejecutar el cleanup *antes* del commit podría liberar la mesa antes de que el cierre quede persistido.
 
 **No "arreglar" esto reordenando el cleanup antes del commit.** Ese cambio introduciría una ventana de corrupción.
+
+### Cobro y entrega son ejes independientes (`fix/cobro-sin-entrega`)
+
+Antes de esta rama, `cerrar_mesa` forzaba `estado='entregado'` sobre **todos** los pedidos incluidos en el cierre, sin importar si de verdad ya habían salido de cocina (`pendiente`/`confirmado`/`en_preparacion` quedaban marcados "entregados" igual). Como salvavidas, si algún pedido no estaba `listo`/`entregado` al momento del cobro, la mesa se dejaba `ocupada` en `mesa_operational_state` — pero el frontend (`GET /mesas/{id}/operacion`) no filtraba pedidos ya cobrados de su lista, así que el botón "Liberar mesa" nunca aparecía y la mesa quedaba trabada sin acción disponible (ni Cobrar, que devolvía 409, ni Liberar, que no se mostraba).
+
+Diseño actual: **"cobrado" y "entregado" son estados independientes.**
+
+- `cerrar_mesa` **no cambia `pedidos.estado` en absoluto**. Solo inserta en `cierres_mesa`/`cierre_pedidos` (eso es lo que define "cobrado": un pedido vinculado a una fila de `cierre_pedidos`). El pedido conserva su estado real de cocina.
+- `cerrar_mesa` **siempre libera la mesa** (`mesa_operational_state.release` + `mesa_sessions.force_release`), tenga o no pedidos sin entregar. La ocupación del salón depende de si se cobró, no de si cocina terminó.
+- El descuento de stock sigue ocurriendo **solo** en `PATCH /pedidos/{id}/estado` cuando `estado == "entregado"` (`descontar_stock_pedido`) — cobrar nunca lo dispara.
+- El campo `entrega_pendiente` en la respuesta de `cerrar_mesa` es puramente informativo (había pedidos sin `listo`/`entregado` al momento del cobro); ya no condiciona si se libera la mesa.
+- `GET /mesas/{id}/operacion` expone, por pedido, un flag `cobrado` (JOIN contra `cierre_pedidos`), y a nivel mesa dos booleanos calculados con el mismo criterio que usan `cerrar_mesa`/`liberar_mesa` (helpers `contar_pedidos_sin_cobrar`/`contar_pedidos_sin_entregar`, para que "puede cobrarse" y "puede liberarse" no se desincronicen):
+  - `cobrada`: no queda ningún pedido del ciclo actual sin vincular a un cierre.
+  - `tiene_pedidos_sin_entregar`: hay pedidos (cobrados o no) que todavía no llegaron a `entregado`.
+- Frontend (`mesas.js`): el modal de mesa muestra **"Liberar mesa"** solo si `cobrada && ocupada`; en cualquier otro caso muestra **"Cobrar mesa"** — siempre hay una acción disponible, nunca un estado trabado.
+- Pedidos cobrados pero no entregados siguen apareciendo con su estado real en el panel de cocina (`GET /pedidos/activos-completos`, WS `/pedidos/ws/cocina`) y en el modal de mesa, donde el mozo los entrega normalmente; ahí (y solo ahí) se descuenta stock.
+
+Cubierto por `test_cobrar_mesa_con_pedido_en_preparacion_no_fuerza_entrega_y_libera_mesa`, `test_mesa_cobrada_se_puede_liberar_aunque_tenga_pedidos_sin_entregar` y `test_stock_no_se_descuenta_al_cobrar_solo_al_entregar_pedido_ya_cobrado` en `test_mesas_cierre.py`.
 
 ### Guarda anti-doble-cierre (independiente del estado operativo)
 
@@ -412,7 +437,7 @@ En `PATCH /pedidos/{id}/estado` cuando `body.estado == "entregado"`:
 | `docker-compose.yml` | 3 servicios: `db` (mysql:8.0), `app` (backend), `web` (nginx:1.27-alpine). |
 | `nginx.conf` | Root = repo root; sirve `/frontend/`; bloquea `/backend/` y `/docs/`. |
 | `.env.example` | Plantilla versionada. `.env` y `.env.docker` están en `.gitignore`. |
-| `backend/scripts/init_app.sh` | Primer arranque: wait-for-MySQL, carga schema, aplica migración 007, crea admin, lanza uvicorn. |
+| `backend/scripts/init_app.sh` | Primer arranque: wait-for-MySQL, carga schema, aplica TODAS las migraciones incrementales posteriores a `docs/database.sql` (007→011, y las que se agreguen después), crea admin, lanza uvicorn. |
 | `backend/scripts/create_admin.py` | Si `usuarios` vacía: genera password aleatorio, inserta admin con `must_change_password=TRUE`, imprime credenciales. |
 | `backend/migrations/007_must_change_password.sql` | `ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE` (idempotente). |
 | `frontend/cambiar-password.html` | Página de cambio de contraseña en primer login. Valida largo, llama `POST /auth/cambiar-password`, redirige según rol. |
@@ -425,12 +450,17 @@ docker compose up
   └─ db: MySQL ready (healthcheck)
   └─ app: init_app.sh
        ├─ wait MySQL
-       ├─ load docs/database.sql (si usuarios no existe)
-       ├─ apply 007_must_change_password.sql (idempotente)
+       ├─ load docs/database.sql (si usuarios no existe; consolida 001-006)
+       ├─ apply migrations/*.sql con número ≥ 007, en orden (007, 008, 009,
+       │  010, 011, ...), cada una idempotente — se reintenta en cada
+       │  restart del contenedor, así un volumen existente también se pone
+       │  al día si la imagen trae migraciones nuevas
        ├─ create_admin.py → imprime password en logs
        └─ uvicorn app.main:app --host 0.0.0.0 --port 8000
   └─ web: nginx sirve /frontend/ en :80
 ```
+
+**Antes de `fix/docker-migraciones`**, este paso solo aplicaba `007_must_change_password.sql`: `010_inventory.sql` (stock) y `011_auth_complete.sql` (`password_reset_tokens`) quedaban sin aplicar en una instalación limpia — el control de stock degradaba en silencio o daba 500 en las escrituras, y `POST /auth/forgot-password` devolvía 200 sin generar nunca un token. `init_app.sh` ahora recorre `migrations/*.sql`, salta `001`-`006` (ya consolidadas en `docs/database.sql`) y aplica el resto en orden; si alguna falla, aborta el arranque con un mensaje claro en vez de seguir de largo.
 
 ### Cambios en auth (`backend/app/routes/auth.py`)
 
@@ -452,6 +482,6 @@ Después de guardar el token: si `data.user.must_change_password` es `true`, red
 
 ### Próxima migración
 
-La siguiente migración incremental será `012_*.sql`.
+La siguiente migración incremental será `012_*.sql`. `init_app.sh` la va a recoger automáticamente (recorre `migrations/*.sql` y aplica todo lo que no empiece con `001`-`006`) — **no hace falta tocar el script**, pero la migración nueva tiene que ser idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `ADD CONSTRAINT IF NOT EXISTS`), porque se reaplica en cada arranque del contenedor.
 
 `011_auth_complete.sql` agrega tabla `password_reset_tokens` (tokens de recuperación de un solo uso, expiran en 30 min). `email` ya existía en el schema base; `must_change_password` ya existía en migración 007.

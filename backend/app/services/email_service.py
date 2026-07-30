@@ -68,7 +68,7 @@ def enviar_bienvenida(email: str, nombre: str, password_temporal: str) -> None:
         "Tu cuenta en ScanOrder fue creada por el administrador.\n\n"
         f"Tu contraseña temporal es: {password_temporal}\n\n"
         "Por seguridad, deberás cambiarla en tu próximo inicio de sesión.\n\n"
-        f"Podés ingresar en: {frontend_url}/frontend/auth/login.html\n\n"
+        f"Podés ingresar en: {frontend_url}/frontend/login.html\n\n"
         "ScanOrder — Maven Burger"
     )
     _enviar(email, subject, body)

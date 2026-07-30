@@ -331,6 +331,12 @@
   <script src="../assets/js/api.js"></script>
   <script src="../assets/js/sidebar-toggle.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script>
+    // Token de dispositivo fijo para habilitar el WS de tiempo real de cocina en el dashboard.
+    // Debe coincidir con COCINA_DEVICE_TOKEN en backend/.env y con cocina/pedidos.html.
+    // IMPORTANTE: debe ir ANTES de index.js, que lo lee al cargarse.
+    window.COCINA_DEVICE_TOKEN = "C7vRnMUAG_hKwRUTGGSyDf2TGTOBb_NFkuxgv1iwBP0";
+  </script>
 
   <script src="js/index.js"></script>
   <script>lucide.createIcons();</script>
