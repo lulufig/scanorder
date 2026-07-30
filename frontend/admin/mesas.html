@@ -6,7 +6,7 @@
   <title>ScanOrder — Mesas</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   <link rel="stylesheet" href="../assets/css/tokens.css" />
   <link rel="stylesheet" href="css/admin-shell.css" />
   <link rel="stylesheet" href="css/mesas.css" />
@@ -225,7 +225,7 @@
   <script src="../assets/js/auth.js"></script>
   <script src="../assets/js/api.js"></script>
   <script src="../assets/js/sidebar-toggle.js"></script>
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer onload="lucide.createIcons()"></script>
   <script>
     // Token de dispositivo fijo para habilitar el WS de tiempo real de cocina en este panel.
     // Debe coincidir con COCINA_DEVICE_TOKEN en backend/.env y con cocina/pedidos.html.
@@ -234,6 +234,5 @@
   </script>
 
   <script src="js/mesas.js"></script>
-  <script>lucide.createIcons();</script>
 </body>
 </html>
