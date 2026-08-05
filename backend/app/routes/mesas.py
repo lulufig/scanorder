@@ -696,13 +696,12 @@ def cerrar_mesa(
         cursor.execute(
             """
             INSERT INTO cierres_mesa
-                (id_mesa, numero_mesa, metodo_pago, total_consumido,
+                (id_mesa, metodo_pago, total_consumido,
                  monto_cobrado, vuelto, id_usuario_cierre, observaciones)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 id_mesa,
-                int(mesa["numero"]),
                 body.metodo_pago,
                 total_consumido,
                 monto_cobrado,

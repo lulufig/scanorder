@@ -48,7 +48,7 @@ Leyenda: ✅ funciona sin problemas · ⚠️ funciona pero con un gap o deuda t
 | 2 | ABM de usuarios | ✅ (bulk actions son client-side, no atómicas) |
 | 3 | Recuperación de contraseña | ⚠️ link roto en email de bienvenida |
 | 4 | CRUD de productos | ⚠️ soft-delete sin forma de ver/reactivar |
-| 5 | Flujo de pedido (crear→cocina→entregar→cobrar) | ⚠️ dos estados inalcanzables desde la UI |
+| 5 | Flujo de pedido (crear→cocina→entregar→cobrar) | ✅ (2 estados intermedios deliberadamente sin UI) |
 | 6 | Control de stock | ✅ core sólido / ⚠️ 2 endpoints sin UI |
 | 7 | Cierre de mesa | ✅ (coincide con lo documentado, 1 matiz menor) |
 | 8 | Reportes + export CSV | ✅ |
@@ -80,11 +80,11 @@ Create/Update/Delete están bien implementados y el payload de `productos.js` co
 
 **Gap:** `GET /productos/` (`productos.py:112`) siempre filtra `WHERE disponible = TRUE`, y es el único endpoint de listado — lo usan tanto el menú público como el panel admin. Como el "delete" es soft-delete (`disponible = FALSE`), **un producto dado de baja desaparece también de la vista del admin**, sin forma de verlo ni reactivarlo desde la UI. El stat card "No disponibles" en `productos.html` siempre muestra 0 por el mismo motivo (nunca llegan datos de productos no disponibles al navegador).
 
-### 2.5 Flujo de pedido — ⚠️
+### 2.5 Flujo de pedido — ✅
 
 Los estados backend (`pendiente→confirmado→en_preparacion→listo→entregado`) y el panel de cocina (correctamente solo-lectura, sin ningún PATCH) están bien implementados.
 
-**Gap:** la única superficie de UI que dispara `PATCH /pedidos/{id}/estado` es `mesas.js:428-437`, y solo cablea **2 de las 4 transiciones**: pendiente→confirmado, y →entregado (directo, para mozo). **No existe ningún botón para confirmado→en_preparacion ni en_preparacion→listo.** El backend ya calcula `siguiente_estado` en `GET /mesas/{id}/operacion` (`mesas.py:442-447`) pensado exactamente para resolver esto, pero el frontend nunca lo lee. En la práctica, esos dos estados intermedios quedan vivos en el modelo de datos y en reportes, pero son inalcanzables desde la UI actual — vale la pena decidir si es una funcionalidad pendiente o un diseño intencional (mozo marca directo "entregado") antes de documentarlo como flujo completo.
+**Decisión de diseño confirmada (no es un gap):** la única superficie de UI que dispara `PATCH /pedidos/{id}/estado` es `mesas.js:428-437`, y solo cablea 2 transiciones: pendiente→confirmado, y →entregado directo. El equipo decidió conscientemente no exponer botones para confirmado→en_preparacion ni en_preparacion→listo: en la operación real de cocina, nadie va a parar a apretar un botón por cada paso intermedio — agregaría fricción sin valor. El propio backend ya estaba diseñado para esto antes de esta decisión explícita: `TRANSICION_ESTADO` (`pedidos.py:37-45`) permite "entregado" desde cualquier estado activo, con un comentario en el código que documenta la misma intención ("para que el mozo pueda marcar directo sin pasar por los estados intermedios"). Los estados `en_preparacion`/`listo` se mantienen en el modelo de datos y en reportes por completitud/trazabilidad (por si a futuro se necesitan), pero no forman parte del flujo operativo real.
 
 ### 2.6 Control de stock — ✅ / ⚠️
 
@@ -117,7 +117,8 @@ Todos los campos que consume el dashport (`admin/js/index.js`) existen tal cual 
 
 - **12 tablas reales** tras aplicar todas las migraciones (ver inventario completo en §5.3). `docs/database.sql` solo contiene 10 — le faltan `movimientos_stock` y `password_reset_tokens` (de las migraciones 010 y 011), y la columna `usuarios.must_change_password` (migración 007).
 - **Imprecisión en CLAUDE.md**: afirma que `docs/database.sql` "consolida 001-006", pero en realidad ya incorpora el efecto de la migración **008** también (`usuarios.rol` ya es `ENUM('admin','mozo')` en el schema base, no `ENUM('admin','cocina')`). Es decir, la línea de corte real es "001-006 + 008", no "001-006". Consecuencia práctica: ninguna — 008 es idempotente — pero conviene corregir la afirmación en la doc técnica final.
-- `backend/scripts/init_app.sh` aplica correctamente todas las migraciones ≥007 encontradas en el directorio (007-011), en orden, todas idempotentes. No hay migraciones 012+ sin contemplar.
+- `backend/scripts/init_app.sh` aplica correctamente todas las migraciones ≥007 encontradas en el directorio, en orden, todas idempotentes.
+- **Actualización (2026-07-30):** se agregó `012_drop_cierres_mesa_numero_mesa.sql` (elimina la redundancia de 3FN señalada en §4 — ver ahí el detalle). Sigue el mismo patrón de capas que 007/010/011: no está reflejada en `docs/database.sql`, `init_app.sh` la recoge automáticamente sin cambios al script.
 - Todas las tablas que el código consulta existen en el schema/migraciones — no se encontró ninguna tabla fantasma.
 - Columnas dependientes de migración con **graceful degradation incompleta** (ver detalle en §2.6 y más abajo): `incrementar_stock`/`ajustar_stock_manual` (inventario), y los endpoints `GET /auth/me`, `GET/POST/PUT /admin/usuarios` que referencian `must_change_password` sin chequear si la columna existe (riesgo bajo en la práctica, pero real).
 
@@ -149,8 +150,8 @@ Priorizado de mayor a menor impacto:
 2. **Dashboard admin sin tiempo real** (WS con parámetro equivocado) y **panel de mesas sin push instantáneo** (variable global no definida) — ambos degradan a polling, funcionan, pero no son lo que la arquitectura documentada promete.
 3. **Afirmación de CLAUDE.md sobre persistencia del carrito tras reinicio no se cumple del todo** — el snapshot en DB existe pero no se usa para rehidratar la sesión viva al reconectar. Si un evaluador reinicia el backend en medio de una demo con un carrito cargado, lo va a notar.
 4. **Productos dados de baja son irrecuperables desde la UI** — probablemente no es el comportamiento esperado de un ABM completo si "baja lógica" implica poder reactivar.
-5. **`en_preparacion`/`listo` inalcanzables desde la UI** — si la consigna académica pide un flujo de cocina con más de 2 pasos visibles, esto puede leerse como incompleto aunque el modelo de datos lo soporte.
-6. **3FN**: el diseño está limpio en general (buen ejemplo: `cierre_pedidos` con `UNIQUE(id_pedido)` modelando la regla de negocio "no se cobra dos veces"; `precio_unitario` capturado en el momento del pedido, no referenciado en vivo). Hay **una violación real y localizada**: `cierres_mesa.numero_mesa` es dependencia transitiva de `id_mesa` (vía `mesas.numero`), porque `id_mesa` no es clave candidata en `cierres_mesa` (una mesa tiene múltiples cierres). Es defendible como denormalización intencional (preserva el número de mesa al momento del cierre), pero conviene mencionarlo explícitamente en la carpeta técnica en vez de que lo encuentre el evaluador.
+5. **`en_preparacion`/`listo` sin botón en la UI** — es una decisión de diseño consciente (evitar fricción operativa en cocina), no un gap. Si un evaluador pregunta, la respuesta es: el modelo de datos soporta el flujo completo por trazabilidad, pero el negocio real solo necesita pendiente→confirmado→entregado.
+6. **3FN**: el diseño está limpio (buen ejemplo: `cierre_pedidos` con `UNIQUE(id_pedido)` modelando la regla de negocio "no se cobra dos veces"; `precio_unitario` capturado en el momento del pedido, no referenciado en vivo). **Corregido (2026-07-30, migración `012_drop_cierres_mesa_numero_mesa.sql`):** existía una violación real y localizada — `cierres_mesa.numero_mesa` era dependencia transitiva de `id_mesa` (vía `mesas.numero`), porque `id_mesa` no es clave candidata en `cierres_mesa` (una mesa tiene múltiples cierres). A diferencia de `precio_unitario` (que sí protege contra un cambio real: el precio del producto puede modificarse después), esta columna no protegía nada: no existe ningún endpoint que permita renumerar una mesa, y se confirmó por grep que ningún endpoint, reporte, test ni el frontend la leían — se escribía en el INSERT y nunca se volvía a consultar (todo lo que necesita el número de mesa hace JOIN/lookup contra `mesas`, incluida la propia respuesta de `POST /mesas/{id}/cerrar`). Se eliminó la columna sin cambios de contrato de API — 176/176 tests siguen en verde.
 7. **`mesas.estado` es una columna muerta** (nunca se actualiza después del `INSERT`, no se expone en la API) — si se arma un diagrama ER a partir del `CREATE TABLE` literal, conviene marcarla como legacy para no sugerir que es la fuente de verdad de la ocupación (esa es `mesa_estado_operativo.ocupada`).
 8. **Documentación desactualizada** (bajo impacto pero rápido de corregir): CLAUDE.md dice que `docs/database.sql` consolida "001-006" (en realidad también 008); dice que el polling de inventario es cada 30s (el código hace 5s); describe el cleanup post-cierre con try/except propio que ya no está exactamente así en el código.
 9. **ABM de usuarios**: el requisito académico de ABM está completo (alta/baja/modificación/consulta, los 4 verificados end-to-end). Las "acciones masivas" son cosméticas sobre los mismos endpoints unitarios — no hay nada roto, pero tampoco son atómicas si eso se llegara a preguntar.
@@ -210,15 +211,21 @@ Ningún hallazgo de esta lista implica pérdida de datos, brecha de seguridad, n
 | `productos` | Productos del menú (+ `stock_actual`/`stock_minimo` de migración 010) |
 | `pedidos` | Pedidos, con timestamps por estado y FK a `mesas`/`usuarios` |
 | `detalle_pedidos` | Ítems de cada pedido (snapshot de `precio_unitario`) |
-| `cierres_mesa` | Registro de cobro por mesa |
+| `cierres_mesa` | Registro de cobro por mesa (`numero_mesa` eliminada por redundante — migración 012, ver §4) |
 | `cierre_pedidos` | Relación N:M cierre↔pedido, `UNIQUE(id_pedido)` = "no se cobra dos veces" |
 | `movimientos_stock` | Historial de entradas/salidas/ajustes de stock (migración 010) |
 | `password_reset_tokens` | Tokens de recuperación de contraseña, un solo uso (migración 011) |
 
 Nota para el ER: 3 columnas/tablas de este listado **no están en `docs/database.sql`** tal cual está hoy en el repo — requieren aplicar las migraciones 007/010/011 para existir realmente (ver §3.1). Si se genera el diagrama desde `docs/database.sql` sin más, va a faltar `movimientos_stock`, `password_reset_tokens` y la columna `must_change_password`.
 
+**Diagrama ER (Lucidchart)**, ya con el schema corregido (sin `cierres_mesa.numero_mesa`):
+- Editar: https://lucid.app/lucidchart/8f324d4c-e53e-4b1c-a64b-adac0438a0ff/edit
+- Ver: https://lucid.app/lucidchart/8f324d4c-e53e-4b1c-a64b-adac0438a0ff/view
+
 ---
 
 ## Nota metodológica
 
-Esta revisión no modificó ningún archivo del repositorio. Se usó `origin/dev` en un checkout separado (detached HEAD) para no interferir con el trabajo en curso en la rama `fix/ui-mozo-menu`; los cambios locales sin commitear de esa rama (`CLAUDE.md`, `AUDITORIA_FINAL.md`) se guardaron en un stash antes de cambiar de rama y se restauraron al finalizar.
+La auditoría original (2026-07-29) no modificó ningún archivo del repositorio. Se usó `origin/dev` en un checkout separado (detached HEAD) para no interferir con el trabajo en curso en la rama `fix/ui-mozo-menu`; los cambios locales sin commitear de esa rama (`CLAUDE.md`, `AUDITORIA_FINAL.md`) se guardaron en un stash antes de cambiar de rama y se restauraron al finalizar.
+
+**Actualización (2026-07-30):** a partir de los hallazgos de esta auditoría se aplicaron correcciones puntuales sobre `dev` (con confirmación explícita antes de cada cambio): el link roto del email de bienvenida, el `device_token` de los WebSockets del admin, la corrección de la afirmación sobre persistencia del carrito en `CLAUDE.md`, la eliminación de los scripts externos bloqueantes en el frontend, y la eliminación de `cierres_mesa.numero_mesa` (violación de 3FN documentada en §4, sin uso real en el código — ver detalle ahí). Los 176 tests siguen en verde después de cada cambio.
