@@ -17,6 +17,17 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 
 ROLES_VALIDOS = {"admin", "mozo"}
 
+# ── Helper de detección de columna (graceful degradation) ─────────────────────
+_col_cache: dict[str, bool] = {}
+
+
+def usuarios_tiene_columna(cursor, columna: str) -> bool:
+    key = f"usuarios.{columna}"
+    if key not in _col_cache:
+        cursor.execute("SHOW COLUMNS FROM usuarios LIKE %s", (columna,))
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
+
 
 class UsuarioCreate(BaseModel):
     nombre: str
@@ -52,10 +63,11 @@ def listar_usuarios():
         raise HTTPException(status_code=500, detail="Error de conexión a DB")
     try:
         cursor = connection.cursor(dictionary=True)
+        campo_mcp = "must_change_password" if usuarios_tiene_columna(cursor, "must_change_password") else "FALSE"
         cursor.execute(
-            """
+            f"""
             SELECT id_usuario, nombre, email, rol,
-                   must_change_password AS debe_cambiar_password,
+                   {campo_mcp} AS debe_cambiar_password,
                    activo, created_at
               FROM usuarios
              ORDER BY created_at DESC
@@ -95,20 +107,30 @@ def crear_usuario(body: UsuarioCreate):
                 detail="El email ya está registrado",
             )
 
-        cursor.execute(
-            """
-            INSERT INTO usuarios (nombre, email, password_hash, rol, must_change_password)
-            VALUES (%s, %s, %s, %s, TRUE)
-            """,
-            (body.nombre, body.email, hash_password(password_temporal), body.rol),
-        )
+        if usuarios_tiene_columna(cursor, "must_change_password"):
+            cursor.execute(
+                """
+                INSERT INTO usuarios (nombre, email, password_hash, rol, must_change_password)
+                VALUES (%s, %s, %s, %s, TRUE)
+                """,
+                (body.nombre, body.email, hash_password(password_temporal), body.rol),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO usuarios (nombre, email, password_hash, rol)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (body.nombre, body.email, hash_password(password_temporal), body.rol),
+            )
         connection.commit()
         nuevo_id = cursor.lastrowid
 
+        campo_mcp = "must_change_password" if usuarios_tiene_columna(cursor, "must_change_password") else "FALSE"
         cursor.execute(
-            """
+            f"""
             SELECT id_usuario, nombre, email, rol,
-                   must_change_password AS debe_cambiar_password,
+                   {campo_mcp} AS debe_cambiar_password,
                    activo, created_at
               FROM usuarios WHERE id_usuario = %s
             """,
@@ -225,10 +247,11 @@ def actualizar_usuario(id_usuario: int, body: UsuarioUpdate):
         )
         connection.commit()
 
+        campo_mcp = "must_change_password" if usuarios_tiene_columna(cursor, "must_change_password") else "FALSE"
         cursor.execute(
-            """
+            f"""
             SELECT id_usuario, nombre, email, rol,
-                   must_change_password AS debe_cambiar_password,
+                   {campo_mcp} AS debe_cambiar_password,
                    activo, created_at
               FROM usuarios WHERE id_usuario = %s
             """,
@@ -267,10 +290,16 @@ def reenviar_bienvenida(id_usuario: int):
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
         nueva_password = _password_temporal()
-        cursor.execute(
-            "UPDATE usuarios SET password_hash = %s, must_change_password = TRUE WHERE id_usuario = %s",
-            (hash_password(nueva_password), id_usuario),
-        )
+        if usuarios_tiene_columna(cursor, "must_change_password"):
+            cursor.execute(
+                "UPDATE usuarios SET password_hash = %s, must_change_password = TRUE WHERE id_usuario = %s",
+                (hash_password(nueva_password), id_usuario),
+            )
+        else:
+            cursor.execute(
+                "UPDATE usuarios SET password_hash = %s WHERE id_usuario = %s",
+                (hash_password(nueva_password), id_usuario),
+            )
         connection.commit()
     except HTTPException:
         connection.rollback()

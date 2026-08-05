@@ -30,6 +30,18 @@ _FORGOT_MAX = 3
 _FORGOT_WINDOW = 3600  # segundos
 
 
+# ── Helper de detección de columna (graceful degradation) ─────────────────────
+_col_cache: dict[str, bool] = {}
+
+
+def usuarios_tiene_columna(cursor, columna: str) -> bool:
+    key = f"usuarios.{columna}"
+    if key not in _col_cache:
+        cursor.execute("SHOW COLUMNS FROM usuarios LIKE %s", (columna,))
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
+
+
 def _check_forgot_rate_limit(email: str) -> None:
     now = time.time()
     _forgot_attempts[email] = [t for t in _forgot_attempts[email] if now - t < _FORGOT_WINDOW]
@@ -189,10 +201,11 @@ def get_current_user_info(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Error de conexión a DB")
     try:
         cursor = connection.cursor(dictionary=True)
+        campo_mcp = "must_change_password" if usuarios_tiene_columna(cursor, "must_change_password") else "FALSE"
         cursor.execute(
-            """
+            f"""
             SELECT id_usuario, nombre, email, rol,
-                   must_change_password AS debe_cambiar_password, activo
+                   {campo_mcp} AS debe_cambiar_password, activo
               FROM usuarios WHERE id_usuario = %s
             """,
             (current_user["user_id"],),

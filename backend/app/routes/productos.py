@@ -1,9 +1,9 @@
-from fastapi import APIRouter, HTTPException, status, Depends
-from typing import List
+from fastapi import APIRouter, HTTPException, status, Depends, Query
+from typing import List, Optional
 
 from app.database import get_db_connection, close_db_connection
 from app.schemas.productos import ProductoCreate, ProductoUpdate, ProductoResponse
-from app.utils.dependencies import require_role
+from app.utils.dependencies import require_role, get_current_user_optional
 
 router = APIRouter(
     prefix="/productos",
@@ -99,8 +99,19 @@ def resolver_id_categoria(cursor, id_categoria=None, categoria=None):
 
 
 @router.get("/", response_model=List[ProductoResponse])
-def listar_productos():
-    """Lista todos los productos con disponible = TRUE."""
+def listar_productos(
+    incluir_no_disponibles: bool = Query(
+        False,
+        description="Si es true y quien llama es admin/mozo autenticado, incluye productos dados de baja.",
+    ),
+    current_user: Optional[dict] = Depends(get_current_user_optional),
+):
+    """Lista productos. Por defecto solo disponible = TRUE (menú público).
+    Con incluir_no_disponibles=true y sesión admin/mozo válida, devuelve todos
+    (usado por el panel admin para poder ver y reactivar productos dados de baja)."""
+    mostrar_todos = incluir_no_disponibles and bool(
+        current_user and current_user.get("rol") in {"admin", "mozo"}
+    )
     connection = get_db_connection()
     if not connection:
         raise HTTPException(
@@ -109,7 +120,10 @@ def listar_productos():
         )
     try:
         cursor = connection.cursor(dictionary=True)
-        cursor.execute(select_productos_sql(cursor) + "WHERE p.disponible = TRUE")
+        sql = select_productos_sql(cursor)
+        if not mostrar_todos:
+            sql += "WHERE p.disponible = TRUE"
+        cursor.execute(sql)
         return cursor.fetchall()
     except HTTPException:
         raise

@@ -35,8 +35,9 @@
     async function cargarProductos() {
       mostrarCargando();
       try {
-        // GET /productos — requiere token (auth=true por defecto)
-        const data = await fetchAPI("/productos");
+        // GET /productos — incluye dados de baja porque el panel admin
+        // necesita poder verlos y reactivarlos (el menú público no manda este param).
+        const data = await fetchAPI("/productos?incluir_no_disponibles=true");
         todosLosProductos = ordenarProductos(Array.isArray(data) ? data : []);
         actualizarFiltroCategorias(todosLosProductos);
         actualizarStats(todosLosProductos);
@@ -106,8 +107,11 @@
           </td>
           <td>
             <div class="table-actions">
-              <button class="btn-edit"   onclick="abrirModalEditar(${p.id_producto})">Editar</button>
-              <button class="btn-delete" onclick="pedirConfirmacion(${p.id_producto}, '${escapeHtml(p.nombre)}')">Eliminar</button>
+              <button class="btn-edit" onclick="abrirModalEditar(${p.id_producto})">Editar</button>
+              ${p.disponible
+                ? `<button class="btn-delete" onclick="pedirConfirmacion(${p.id_producto}, '${escapeHtml(p.nombre)}')">Eliminar</button>`
+                : `<button class="btn-reactivar" onclick="reactivarProducto(${p.id_producto}, this)">Reactivar</button>`
+              }
             </div>
           </td>
         </tr>
@@ -281,6 +285,24 @@
       } finally {
         btn.disabled = false;
         btn.textContent = "Eliminar";
+      }
+    }
+
+    // ── REACTIVAR ───────────────────────────────────────────────
+    async function reactivarProducto(id, btnEl) {
+      btnEl.disabled = true;
+      btnEl.textContent = "Reactivando...";
+
+      try {
+        // PUT /productos/{id} — solo se envía disponible, el resto de los
+        // campos quedan sin tocar (el backend hace COALESCE por campo).
+        await fetchAPI(`/productos/${id}`, "PUT", { disponible: true });
+        mostrarToast("Producto reactivado.", "success");
+        await cargarProductos(); // recarga la tabla
+      } catch (error) {
+        mostrarToast("Error al reactivar: " + error.message, "error");
+        btnEl.disabled = false;
+        btnEl.textContent = "Reactivar";
       }
     }
 

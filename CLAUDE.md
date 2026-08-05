@@ -30,9 +30,9 @@ No hay paso de build para el frontend: son archivos estáticos en `frontend/` qu
 
 ### Migraciones (`backend/migrations/`)
 
-Orden de aplicación: `001` → `008`, secuencial, sin runner (se corren a mano contra MySQL).
+12 migraciones (`001` a `012`), secuenciales, sin runner (se corren a mano contra MySQL en desarrollo local; en Docker las aplica `backend/scripts/init_app.sh` automáticamente — ver sección Docker más abajo).
 
-**Verificado ejecutándolas de verdad** contra una base descartable (`scanorder_migration_test`, dropeada al terminar; `scanorder_db` no se tocó):
+**001-006, verificado ejecutándolas de verdad** contra una base descartable (`scanorder_migration_test`, dropeada al terminar; `scanorder_db` no se tocó):
 
 - **No aplican sobre una base de datos vacía (sin tablas).** Corrida directa de `001` → `006` sobre un schema en blanco: `001` falla en su primer statement —
   ```
@@ -40,9 +40,20 @@ Orden de aplicación: `001` → `008`, secuencial, sin runner (se corren a mano 
   -- ERROR 1146 (42S02): Table 'scanorder_migration_test.pedidos' doesn't exist
   ```
   Las migraciones asumen un esquema base ya cargado (una versión *anterior* de la base, previa a estos fixes), no una DB en blanco.
-- `docs/database.sql` ya es un snapshot consolidado que incluye el resultado final de las 6 migraciones (`estado` ya `VARCHAR(20)`, columnas `*_at` ya presentes, `cierres_mesa`/`cierre_pedidos`/`mesa_estado_operativo`/`mesa_sesiones_snapshot` ya creadas). Corriendo `001` → `006` **después** de cargar `docs/database.sql`, las 6 aplican sin error, pero **todas como no-ops** (cada `ALTER`/`UPDATE` afecta 0 filas) porque las columnas/tablas ya existen y no hay datos semilla.
+- `docs/database.sql` ya es un snapshot consolidado que incluye el resultado final de `001`-`006` **y también de `008`**: `usuarios.rol` ya es `ENUM('admin','mozo')`, no `ENUM('admin','cocina')` (el commit que creó `008_roles_mozo.sql` tocó `docs/database.sql` a la vez). La línea de corte real es "001-006 + 008", no "001-006". **No** incluye el efecto de `007`, `009`, `010`, `011` ni `012` (tabla abajo) — para el schema real completo hay que cargar `docs/database.sql` y aplicar esas cinco a mano. Corriendo `001` → `006` **después** de cargar `docs/database.sql`, las 6 aplican sin error, pero **todas como no-ops** (cada `ALTER`/`UPDATE` afecta 0 filas) porque las columnas/tablas ya existen y no hay datos semilla.
 - `002_menu_categorias_nuevas.sql` asume categorías ya existentes con IDs hardcodeados 1-4 (`UPDATE categorias ... WHERE id_categoria = 1`, etc.). Ni `docs/database.sql` ni ningún script del repo siembran esas filas — si esos IDs no existen, la migración no falla pero tampoco logra nada (0 filas afectadas, silencioso).
 - `001` y `004` no son redundantes entre sí pese al nombre similar de "trazabilidad": `001` corrige el tipo de la columna `estado` (bug ENUM→VARCHAR que dejaba pedidos con `estado=''`); `004` agrega las columnas de fecha por estado (`confirmado_at`, `preparacion_at`, `listo_at`, `entregado_at`) que usan `pedidos.py` y `reportes.py`. Cambios independientes sobre la misma tabla, ninguno reemplaza al otro.
+
+**007-012** — no reflejadas en `docs/database.sql` (salvo `008`, ver arriba); todas idempotentes, aplicadas automáticamente en orden por `init_app.sh` en Docker:
+
+| # | Archivo | Qué hace |
+|---|---|---|
+| 007 | `007_must_change_password.sql` | Agrega `usuarios.must_change_password` (flag de cambio de contraseña obligatorio en el próximo login). |
+| 008 | `008_roles_mozo.sql` | Migra `rol='cocina'` → `'mozo'` y cambia el `ENUM` de `usuarios.rol` a `('admin','mozo')`. Ya reflejada en `docs/database.sql`. |
+| 009 | `009_fix_rol_vacio.sql` | Corrige usuarios que quedaron con `rol=''` tras la 008: tenían un rol inválido *antes* de esa migración, así que el `UPDATE ... WHERE rol='cocina'` de 008 no los alcanzó a tocar. |
+| 010 | `010_inventory.sql` | Agrega `productos.stock_actual`/`stock_minimo` + `CHECK (stock_actual >= 0)` + tabla `movimientos_stock`. |
+| 011 | `011_auth_complete.sql` | Crea tabla `password_reset_tokens` (recuperación de contraseña, un solo uso, TTL 30 min). |
+| 012 | `012_drop_cierres_mesa_numero_mesa.sql` | Elimina `cierres_mesa.numero_mesa` — duplicaba `mesas.numero` (accesible vía `id_mesa`, que sí tiene FK) sin ningún uso real en el código: se escribía en el `INSERT` y nunca se volvía a leer en ningún lado (endpoints, reportes, tests, frontend). A diferencia de `precio_unitario` en `detalle_pedidos`, no protegía contra ninguna mutación real (no existe forma de renumerar una mesa) — violación de 3FN sin beneficio. Sin cambios de contrato de API. |
 
 ## Modelo de roles y autenticación (desde `refactor/roles-mozo`)
 
@@ -120,6 +131,8 @@ ABM completo (`feature/user-edit`): alta, baja lógica, modificación y consulta
 ### Primer login forzado
 
 `GET /auth/me` hace un DB lookup y devuelve `debe_cambiar_password` (reflejo de `must_change_password` en DB). El frontend redirige al formulario de cambio si es `true`. El backend **no bloquea** otros endpoints por este flag.
+
+**Graceful degradation de `must_change_password`:** `GET /auth/me` y los cuatro endpoints de `/admin/usuarios` (`GET`, `POST`, `PUT`, `POST .../reenviar-bienvenida`) chequean si la columna existe antes de referenciarla (`usuarios_tiene_columna()`, una copia local en `auth.py` y otra en `admin.py` — mismo patrón cacheado con `_col_cache` que ya usan `producto_tiene_columna()`/`pedidos_tiene_columna()`/`mesa_tiene_columna()` en sus routers respectivos). Si la migración 007 no está aplicada, degradan a `debe_cambiar_password: False` (o insertan/actualizan sin esa columna) en vez de devolver 500 crudo — `POST /auth/login` ya hacía esto desde antes vía `.get("must_change_password", False)`.
 
 ### Email service (`app/services/email_service.py`)
 
@@ -233,11 +246,18 @@ Patrón común a todos los endpoints CSV: `io.StringIO` + `csv.writer`, respuest
 
 Devuelve JSON con métricas del día en curso. Campos:
 - `ventas_hoy`, `pedidos_hoy`, `ticket_promedio`
-- `pedidos_activos` (pendiente/confirmado/en_preparacion/listo)
+- `pedidos_activos` (pendiente/confirmado/en_preparacion/listo) — solo los que siguen abiertos ahora
+- `estado_pedidos_hoy` (pendiente/confirmado/en_preparacion/listo/entregado/cancelado) — desglose de **todos** los pedidos creados hoy, no solo los activos; distinto de `pedidos_activos`
 - `producto_top` (`nombre`, `cantidad`)
+- `categoria_top`
+- `tiempo_prep_promedio_min`
 - `mesa_top` (`numero`, `total`) — mesa con mayor facturación del día; `numero: null` si no hay ventas
 - `mesas_activas` (COUNT DISTINCT de mesas con pedidos abiertos)
 - `cobros_hoy` (total + desglose `metodos` desde `cierres_mesa`; defensivo: `{}` si la tabla no existe)
+
+Endpoints hermanos, no incluidos en `/dashboard` pero consumidos por el mismo dashboard admin (`admin/js/index.js`):
+- **`GET /reportes/ventas-hoy`** — serie de ventas por hora del día en curso (alimenta el gráfico de barras).
+- **`GET /reportes/ventas-semana`** — serie de ventas de los últimos 7 días (alimenta el gráfico de tendencia semanal).
 
 ## Arquitectura frontend (`frontend/`)
 
@@ -266,20 +286,21 @@ El `total_consumido` **siempre se recalcula en el backend** sumando `detalle_ped
 
 **Cerrar mesa ya NO toca `pedidos.estado`** (desde `fix/cobro-sin-entrega`; ver "Cobro y entrega son ejes independientes" más abajo).
 
-### Cleanup post-commit (best-effort, por diseño)
+### Cleanup post-commit (best-effort, no en un try/except propio)
 
-**Después** del `commit()`, el código intenta liberar la mesa en memoria:
+**Después** del `commit()`, el código intenta liberar la mesa en memoria (`mesas.py`, dentro de `cerrar_mesa`):
 ```python
-mesa_operational_state.release(id_mesa)   # línea ~662
-mesa_sessions.force_release(numero)       # línea ~663
+mesa_sessions.force_release(int(mesa["numero"]))
+mesa_operational_state.release(id_mesa)
 ```
-Ambas llamadas están en bloques `try/except` que **tragan todas las excepciones sin re-lanzar**. Esto es **intencional y correcto**:
+Estas dos llamadas **no están envueltas en su propio `try/except`** — son statements planos dentro del `try:` general de la función, cubiertas únicamente por el `except HTTPException`/`except Exception` de más abajo, junto con todo el resto del cuerpo de `cerrar_mesa`.
 
-- El cleanup solo puede fallar *después* de un commit exitoso. Nunca puede dejar la base a medias.
-- La dirección de fallo es segura: si falla el cleanup, la mesa queda "ocupada" en caché pero el registro financiero ya existe y es íntegro.
-- La dirección opuesta sería peligrosa: ejecutar el cleanup *antes* del commit podría liberar la mesa antes de que el cierre quede persistido.
+Lo que sí contiene el escenario "falla algo del cleanup después de un commit exitoso" es una capa más abajo: `release_operational_state()` y `delete_session_snapshot()` (`repositories/mesa_state_repo.py`) — a las que `mesa_operational_state.release()`/`mesa_sessions.force_release()` delegan la escritura a DB — **sí** tienen su propio `try/except Exception` interno que traga errores de conexión/consulta sin relanzar. Entonces, en la práctica:
 
-**No "arreglar" esto reordenando el cleanup antes del commit.** Ese cambio introduciría una ventana de corrupción.
+- Un fallo de **DB** durante el cleanup (tabla `mesa_estado_operativo`/`mesa_sesiones_snapshot` ausente, conexión caída) queda contenido ahí — nunca llega al `except` de `cerrar_mesa`, nunca dispara un `rollback()` sobre una transacción ya commiteada.
+- Un fallo que **no sea de DB** (un bug de lógica en memoria dentro de `MesaOperationalState`/`MesaSessionManager`, que no tienen protección propia) sí se propagaría hasta el `except Exception` de `cerrar_mesa`: eso ejecuta `connection.rollback()` sobre una transacción que ya hizo `commit()` (no-op a nivel DB, InnoDB ya persistió) y devuelve 500 al mozo, aunque el cobro haya quedado registrado correctamente. Es un falso negativo de UX, no un riesgo financiero — el registro en `cierres_mesa`/`cierre_pedidos` ya existe, y la guarda anti-doble-cierre (más abajo) evita que un reintento cobre de nuevo.
+
+**No "arreglar" esto reordenando el cleanup antes del commit.** Ejecutarlo antes liberaría la mesa antes de que el cierre quede persistido — sería peor que el falso negativo de UX actual.
 
 ### Cobro y entrega son ejes independientes (`fix/cobro-sin-entrega`)
 
@@ -301,21 +322,26 @@ Cubierto por `test_cobrar_mesa_con_pedido_en_preparacion_no_fuerza_entrega_y_lib
 
 ### Guarda anti-doble-cierre (independiente del estado operativo)
 
-La guarda usa `SELECT ... FOR UPDATE` buscando pedidos **no linkeados en `cierre_pedidos`**:
+La guarda usa `SELECT ... FOR UPDATE` sobre los pedidos del **ciclo actual** de la mesa que todavía no están linkeados en `cierre_pedidos`. **No filtra por `estado = 'listo'`** — cualquier pedido no cancelado cuenta, consistente con "cobro y entrega son ejes independientes" (si filtrara por `listo`, no se podría cobrar una mesa con pedidos todavía `pendiente`/`confirmado`/`en_preparacion`, que es exactamente el caso que esta sección más arriba documenta como soportado):
 ```sql
-SELECT p.* FROM pedidos p
+SELECT p.id_pedido, p.estado, p.total
+FROM pedidos p
 LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido
-WHERE p.id_mesa = %s AND cp.id_pedido IS NULL
-AND p.estado = 'listo'
+WHERE p.id_mesa = %s
+  AND p.estado NOT IN ('cancelado')
+  AND cp.id_pedido IS NULL
+  AND p.created_at >= COALESCE(%s, CURDATE())
 FOR UPDATE
 ```
-Si la primera transacción completó exitosamente, todos los pedidos ya tienen fila en `cierre_pedidos` → la segunda consulta devuelve 0 filas → el endpoint devuelve 409.
+El "ciclo actual" lo calcula `obtener_inicio_ciclo_mesa()` (arriba de `cerrar_mesa` en `mesas.py`): es el `created_at` del último `cierres_mesa` de esa mesa, o `CURDATE()` si nunca se cerró — así un pedido de un ciclo de cobro anterior nunca vuelve a entrar en juego en un cierre nuevo. La misma función y el mismo criterio los usa `contar_pedidos_sin_cobrar()`, para que "puede cobrarse" (este endpoint) y "puede liberarse" (`GET /mesas/{id}/operacion`) nunca queden desincronizados.
+
+Si la primera transacción completó exitosamente, todos los pedidos del ciclo ya tienen fila en `cierre_pedidos` → la segunda consulta devuelve 0 filas → el endpoint devuelve 409.
 
 **Esta guarda es infalible incluso si el cleanup falló** (mesa quede "ocupada" en caché). No depende de `mesa_estado_operativo` en absoluto. Verificado por `test_no_doble_cierre_aunque_mesa_no_se_libero_por_cleanup_fallido`.
 
 ### Validación del método de pago
 
-El método de pago se valida contra una allow-list **antes de abrir conexión a la DB** (líneas ~525-530). Un método inválido devuelve 400 inmediatamente, sin costo de conexión.
+El método de pago se valida contra una allow-list **antes de abrir conexión a la DB** (`mesas.py`, al inicio de `cerrar_mesa`). Un método inválido devuelve 400 inmediatamente, sin costo de conexión.
 
 ---
 
@@ -415,7 +441,17 @@ En `PATCH /pedidos/{id}/estado` cuando `body.estado == "entregado"`:
 - Badge de estado: `OK` (verde), `BAJO` (amarillo), `AGOTADO` (rojo).
 - Banner de alerta global si hay productos con estado ≠ OK.
 - Modal "Ajustar Stock" con campos `stock_actual`, `stock_minimo`, `motivo`.
-- Polling automático cada 30 s.
+- Polling automático cada 5 s (`setInterval(cargarInventario, 5000)`).
+
+---
+
+## Productos dados de baja: ver y reactivar desde admin
+
+`DELETE /productos/{id}` es baja lógica (`disponible = FALSE`), pero `GET /productos/` por defecto solo devuelve `disponible = TRUE` (así lo necesita el menú público, que también pega contra este mismo endpoint). Sin distinción entre ambos casos, un producto dado de baja desaparecía también del panel admin, sin forma de verlo ni reactivarlo.
+
+- **`GET /productos/?incluir_no_disponibles=true`** — el query param solo se honra si quien llama tiene un JWT válido de rol `admin` o `mozo` (`Depends(get_current_user_optional)`); sin token válido (o sin ese rol), se ignora en silencio y el comportamiento es idéntico al de siempre. El menú público (`frontend/cliente/menu.js`) nunca manda este parámetro, así que no cambia en nada.
+- `frontend/admin/js/productos.js` (`cargarProductos()`) pide siempre este parámetro — por eso el stat card "No disponibles" de `productos.html` ahora refleja el número real, y la tabla muestra los productos de baja con badge "No disponible".
+- **Reactivar** reusa el `PUT /productos/{id}` existente (no es un endpoint nuevo) mandando solo `{ "disponible": true }` — el `UPDATE` hace `COALESCE` campo por campo, así que el resto de los datos del producto queda intacto. En la fila de la tabla, el botón "Reactivar" (verde) reemplaza a "Eliminar" cuando el producto ya está de baja.
 
 ---
 
@@ -437,7 +473,7 @@ En `PATCH /pedidos/{id}/estado` cuando `body.estado == "entregado"`:
 | `docker-compose.yml` | 3 servicios: `db` (mysql:8.0), `app` (backend), `web` (nginx:1.27-alpine). |
 | `nginx.conf` | Root = repo root; sirve `/frontend/`; bloquea `/backend/` y `/docs/`. |
 | `.env.example` | Plantilla versionada. `.env` y `.env.docker` están en `.gitignore`. |
-| `backend/scripts/init_app.sh` | Primer arranque: wait-for-MySQL, carga schema, aplica TODAS las migraciones incrementales posteriores a `docs/database.sql` (007→011, y las que se agreguen después), crea admin, lanza uvicorn. |
+| `backend/scripts/init_app.sh` | Primer arranque: wait-for-MySQL, carga schema, aplica TODAS las migraciones incrementales posteriores a `docs/database.sql` (007→012, y las que se agreguen después), crea admin, lanza uvicorn. |
 | `backend/scripts/create_admin.py` | Si `usuarios` vacía: genera password aleatorio, inserta admin con `must_change_password=TRUE`, imprime credenciales. |
 | `backend/migrations/007_must_change_password.sql` | `ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE` (idempotente). |
 | `frontend/cambiar-password.html` | Página de cambio de contraseña en primer login. Valida largo, llama `POST /auth/cambiar-password`, redirige según rol. |
@@ -450,9 +486,9 @@ docker compose up
   └─ db: MySQL ready (healthcheck)
   └─ app: init_app.sh
        ├─ wait MySQL
-       ├─ load docs/database.sql (si usuarios no existe; consolida 001-006)
+       ├─ load docs/database.sql (si usuarios no existe; consolida 001-006 y 008)
        ├─ apply migrations/*.sql con número ≥ 007, en orden (007, 008, 009,
-       │  010, 011, ...), cada una idempotente — se reintenta en cada
+       │  010, 011, 012, ...), cada una idempotente — se reintenta en cada
        │  restart del contenedor, así un volumen existente también se pone
        │  al día si la imagen trae migraciones nuevas
        ├─ create_admin.py → imprime password en logs
@@ -464,7 +500,7 @@ docker compose up
 
 ### Cambios en auth (`backend/app/routes/auth.py`)
 
-- `POST /auth/login` ahora incluye `must_change_password: bool` en el payload de respuesta. Campo gracioso: usa `.get("must_change_password", False)` → devuelve `False` si la columna no existe (pre-migración 007).
+- `POST /auth/login` ahora incluye `must_change_password: bool` en el payload de respuesta. Campo gracioso: usa `.get("must_change_password", False)` → devuelve `False` si la columna no existe (pre-migración 007). `GET /auth/me` y `/admin/usuarios` tienen el mismo tipo de guard hoy (ver "Graceful degradation de `must_change_password`" más arriba) — al principio solo `/login` lo tenía.
 - `POST /auth/cambiar-password` (nuevo, requiere Bearer): valida 8-72 chars, `UPDATE usuarios SET password_hash, must_change_password=FALSE`.
 
 ### Cambio en frontend (`frontend/auth/js/login.js`)
@@ -482,6 +518,4 @@ Después de guardar el token: si `data.user.must_change_password` es `true`, red
 
 ### Próxima migración
 
-La siguiente migración incremental será `012_*.sql`. `init_app.sh` la va a recoger automáticamente (recorre `migrations/*.sql` y aplica todo lo que no empiece con `001`-`006`) — **no hace falta tocar el script**, pero la migración nueva tiene que ser idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `ADD CONSTRAINT IF NOT EXISTS`), porque se reaplica en cada arranque del contenedor.
-
-`011_auth_complete.sql` agrega tabla `password_reset_tokens` (tokens de recuperación de un solo uso, expiran en 30 min). `email` ya existía en el schema base; `must_change_password` ya existía en migración 007.
+La última migración aplicada es `012_drop_cierres_mesa_numero_mesa.sql` (ver tabla completa de migraciones más arriba). La siguiente incremental será `013_*.sql`. `init_app.sh` la va a recoger automáticamente (recorre `migrations/*.sql` y aplica todo lo que no empiece con `001`-`006`) — **no hace falta tocar el script**, pero la migración nueva tiene que ser idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `ADD CONSTRAINT IF NOT EXISTS`, `DROP COLUMN IF EXISTS`), porque se reaplica en cada arranque del contenedor.

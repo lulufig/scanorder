@@ -585,3 +585,66 @@ class TestCambiarPassword:
             cursor3.execute("DELETE FROM usuarios WHERE id_usuario = %s", (id_usuario,))
             db.commit()
             cursor3.close()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Graceful degradation — columna must_change_password ausente (sin MySQL real)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Simula una instalación limpia sin la migración 007 aplicada, mockeando el
+# cursor para que "SHOW COLUMNS ... LIKE 'must_change_password'" no encuentre
+# nada — mismo patrón que ya usa test_inventory.py para tabla_tiene_columna.
+# Antes de este fix, estos endpoints tiraban 500 crudo en ese escenario.
+
+
+class TestMustChangePasswordColumnaAusente:
+    def test_auth_me_sin_columna_no_rompe(self, client):
+        with patch.dict("app.routes.auth._col_cache", {}, clear=True):
+            with patch("app.routes.auth.get_db_connection") as mock_conn:
+                conn = MagicMock()
+                mock_conn.return_value = conn
+                cursor = MagicMock()
+                conn.cursor.return_value = cursor
+
+                cursor.fetchone.side_effect = [
+                    None,  # usuarios_tiene_columna("must_change_password") → no existe
+                    {  # SELECT ... FALSE AS debe_cambiar_password ...
+                        "id_usuario": 99,
+                        "nombre": "Admin Test",
+                        "email": "admin@test.com",
+                        "rol": "admin",
+                        "debe_cambiar_password": 0,
+                        "activo": 1,
+                    },
+                ]
+
+                r = client.get("/auth/me", headers=_auth("admin"))
+
+        assert r.status_code == 200
+        assert r.json()["user"]["debe_cambiar_password"] is False
+
+    def test_listar_usuarios_sin_columna_no_rompe(self, client):
+        with patch.dict("app.routes.admin._col_cache", {}, clear=True):
+            with patch("app.routes.admin.get_db_connection") as mock_conn:
+                conn = MagicMock()
+                mock_conn.return_value = conn
+                cursor = MagicMock()
+                conn.cursor.return_value = cursor
+
+                cursor.fetchone.return_value = None  # usuarios_tiene_columna → no existe
+                cursor.fetchall.return_value = [
+                    {
+                        "id_usuario": 1,
+                        "nombre": "Mozo Test",
+                        "email": "mozo@test.com",
+                        "rol": "mozo",
+                        "debe_cambiar_password": 0,
+                        "activo": 1,
+                        "created_at": "2026-01-01",
+                    }
+                ]
+
+                r = client.get("/admin/usuarios", headers=_auth("admin"))
+
+        assert r.status_code == 200
+        assert r.json()[0]["debe_cambiar_password"] is False

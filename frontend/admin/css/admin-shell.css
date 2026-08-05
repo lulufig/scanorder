@@ -222,6 +222,7 @@ a { color: inherit; }
 .btn-ghost,
 .btn-edit,
 .btn-delete,
+.btn-reactivar,
 .btn-generar {
   display: inline-flex;
   align-items: center;
@@ -303,6 +304,16 @@ a { color: inherit; }
 
 .btn-delete:hover {
   background: var(--state-alerta-bg);
+}
+
+.btn-reactivar {
+  background: var(--gray-0);
+  color: var(--state-libre-text);
+  border-color: var(--state-libre-border);
+}
+
+.btn-reactivar:hover {
+  background: var(--state-libre-bg);
 }
 
 .spinner {
