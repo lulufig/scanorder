@@ -445,6 +445,38 @@ body {
   font-size: 0.78rem;
 }
 
+.success-box {
+  display: none;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--state-libre-bg);
+  border: 1px solid var(--state-libre-border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  color: var(--state-libre-text);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.success-box-block {
+  display: flex;
+}
+
+.success-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--state-libre-dot);
+}
+
+.success-hint {
+  margin-top: 6px;
+  color: var(--state-libre-text);
+  opacity: 0.75;
+  font-weight: 400;
+}
+
 .footer-text {
   margin-top: 28px;
   color: var(--gray-400);
