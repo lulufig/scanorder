@@ -21,6 +21,7 @@
     let metodoPagoSeleccionado = "efectivo";
     let qrPreviewUrls = new Map();
     let qrModalObjectUrl = null;
+    let qrModalRequestId = 0;
 
     // ── INICIALIZACIÓN ──────────────────────────────────────────
     document.addEventListener("DOMContentLoaded", () => {
@@ -789,6 +790,7 @@
 
     // ── VER QR EN MODAL ─────────────────────────────────────────
     async function verQR(idMesa, numero, qrEndpoint) {
+      const requestId = ++qrModalRequestId;
       mesaQRActual = { idMesa, numero, qrEndpoint };
 
       document.getElementById("modal-qr-title").textContent = `QR — Mesa ${numero}`;
@@ -800,11 +802,22 @@
       document.getElementById("modal-overlay").classList.add("open");
 
       try {
+        const objectUrl = await fetchFileObjectUrl(qrEndpoint);
+        // Si mientras esperábamos la respuesta se abrió otra mesa en el modal,
+        // esta respuesta quedó obsoleta: descartarla en vez de pisar la imagen
+        // de la mesa que el usuario ya está viendo (condición de carrera si
+        // dos "Ver QR" se clickean seguidos y las respuestas llegan desordenadas).
+        if (requestId !== qrModalRequestId) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
         if (qrModalObjectUrl) URL.revokeObjectURL(qrModalObjectUrl);
-        qrModalObjectUrl = await fetchFileObjectUrl(qrEndpoint);
+        qrModalObjectUrl = objectUrl;
         img.src = qrModalObjectUrl;
       } catch (error) {
-        mostrarToast("No se pudo cargar el QR: " + error.message, "error");
+        if (requestId === qrModalRequestId) {
+          mostrarToast("No se pudo cargar el QR: " + error.message, "error");
+        }
       }
     }
 
