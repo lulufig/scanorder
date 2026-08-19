@@ -5686,3 +5686,42 @@ body:not(.categoria-activa) .header-menu-cats button.active {
     font-size: 0.72rem;
   }
 }
+
+.producto-card.producto-agotado {
+  opacity: 0.72;
+}
+
+.producto-card.producto-agotado .producto-precio {
+  color: #6b7280;
+}
+
+.producto-badge.agotado {
+  background: #f3f4f6 !important;
+  color: #4b5563 !important;
+  border: 1px solid #e5e7eb !important;
+}
+
+.btn-cantidad.sin-stock,
+.btn-cantidad.sin-stock:hover,
+.btn-cantidad.sin-stock:active {
+  width: auto;
+  min-width: 86px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #e5e7eb;
+  font-size: 0.78rem;
+  transform: none;
+  cursor: not-allowed;
+}
+
+.smart-card.smart-card-agotada {
+  opacity: 0.68;
+}
+
+.smart-card-actions button:disabled {
+  background: #e5e7eb;
+  color: #6b7280;
+  cursor: not-allowed;
+}

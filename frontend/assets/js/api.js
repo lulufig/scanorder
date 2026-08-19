@@ -79,10 +79,12 @@ async function fetchAPI(endpoint, method = "GET", body = null, auth = true) {
 async function downloadFile(endpoint, filename) {
   const token = getToken();
   const headers = token ? { "Authorization": `Bearer ${token}` } : {};
+  const separator = endpoint.includes("?") ? "&" : "?";
+  const cacheSafeEndpoint = `${endpoint}${separator}_=${Date.now()}`;
 
   let response;
   try {
-    response = await fetch(`${API_URL}${endpoint}`, { headers });
+    response = await fetch(`${API_URL}${cacheSafeEndpoint}`, { headers, cache: "no-store" });
   } catch {
     throw new ApiError("No se pudo descargar el archivo. Verificá la conexión.", 0);
   }
@@ -112,10 +114,12 @@ async function downloadFile(endpoint, filename) {
 async function fetchFileObjectUrl(endpoint) {
   const token = getToken();
   const headers = token ? { "Authorization": `Bearer ${token}` } : {};
+  const separator = endpoint.includes("?") ? "&" : "?";
+  const cacheSafeEndpoint = `${endpoint}${separator}_=${Date.now()}`;
 
   let response;
   try {
-    response = await fetch(`${API_URL}${endpoint}`, { headers });
+    response = await fetch(`${API_URL}${cacheSafeEndpoint}`, { headers, cache: "no-store" });
   } catch {
     throw new ApiError("No se pudo cargar el archivo protegido.", 0);
   }

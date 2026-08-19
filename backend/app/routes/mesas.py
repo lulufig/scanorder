@@ -842,7 +842,12 @@ def get_qr_mesa(
     return FileResponse(
         path=str(ruta_archivo),
         media_type="image/png",
-        filename=f"mesa_{id_mesa}.png"
+        filename=f"mesa_{id_mesa}.png",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
     )
 
 
