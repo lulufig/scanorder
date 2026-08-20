@@ -842,7 +842,11 @@ def get_qr_mesa(
     return FileResponse(
         path=str(ruta_archivo),
         media_type="image/png",
-        filename=f"mesa_{id_mesa}.png"
+        filename=f"mesa_{id_mesa}.png",
+        # El archivo se sobrescribe al regenerar el QR sin que cambie la URL
+        # (mismo id_mesa) — sin esto el navegador puede seguir sirviendo desde
+        # caché una versión vieja con un qr_token que ya no coincide con la DB.
+        headers={"Cache-Control": "no-store, must-revalidate"}
     )
 
 
