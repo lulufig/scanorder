@@ -37,3 +37,4 @@ class ProductoResponse(BaseModel):
     imagen_url: Optional[str]
     disponible: bool
     categoria: Optional[str] = None
+    stock_actual: Optional[int] = None

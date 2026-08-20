@@ -23,6 +23,7 @@ def producto_tiene_columna(cursor, columna: str) -> bool:
 
 def select_productos_sql(cursor) -> str:
     campo_subcategoria = "p.subcategoria" if producto_tiene_columna(cursor, "subcategoria") else "NULL AS subcategoria"
+    campo_stock = "p.stock_actual" if producto_tiene_columna(cursor, "stock_actual") else "NULL AS stock_actual"
     return f"""
             SELECT
                 p.id_producto,
@@ -33,6 +34,7 @@ def select_productos_sql(cursor) -> str:
                 {campo_subcategoria},
                 p.imagen_url,
                 p.disponible,
+                {campo_stock},
                 c.nombre AS categoria
             FROM productos p
             LEFT JOIN categorias c ON p.id_categoria = c.id_categoria
@@ -149,8 +151,12 @@ def productos_populares_hoy():
     try:
         cursor = connection.cursor(dictionary=True)
         tiene_subcategoria = producto_tiene_columna(cursor, "subcategoria")
+        tiene_stock = producto_tiene_columna(cursor, "stock_actual")
         campo_subcategoria = "p.subcategoria" if tiene_subcategoria else "NULL AS subcategoria"
+        campo_stock = "p.stock_actual" if tiene_stock else "NULL AS stock_actual"
         group_subcategoria = ", p.subcategoria" if tiene_subcategoria else ""
+        group_stock = ", p.stock_actual" if tiene_stock else ""
+        filtro_stock = "AND p.stock_actual > 0" if tiene_stock else ""
         cursor.execute(
             f"""
             SELECT
@@ -160,6 +166,7 @@ def productos_populares_hoy():
                 p.precio,
                 p.imagen_url,
                 {campo_subcategoria},
+                {campo_stock},
                 p.disponible,
                 c.nombre AS categoria,
                 SUM(dp.cantidad) AS total_pedido
@@ -169,7 +176,8 @@ def productos_populares_hoy():
             LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
             WHERE DATE(pe.created_at) = CURDATE()
               AND p.disponible = TRUE
-            GROUP BY p.id_producto, p.nombre, p.descripcion, p.precio, p.imagen_url{group_subcategoria}, p.disponible, c.nombre
+              {filtro_stock}
+            GROUP BY p.id_producto, p.nombre, p.descripcion, p.precio, p.imagen_url{group_subcategoria}{group_stock}, p.disponible, c.nombre
             ORDER BY total_pedido DESC
             LIMIT 6
             """

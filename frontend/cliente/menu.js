@@ -756,13 +756,24 @@ function scrollAElemento(id) {
   });
 }
 
+function productoSinStock(producto) {
+  return producto && producto.stock_actual !== null && producto.stock_actual !== undefined && Number(producto.stock_actual) <= 0;
+}
+
+function productoPuedePedirse(producto) {
+  return Boolean(producto && producto.disponible && !productoSinStock(producto));
+}
+
 function renderProductoCard(p, i) {
   const enCarrito = carrito.find(c => c.id_producto === p.id_producto);
   const cantidad  = enCarrito ? enCarrito.cantidad : 0;
-  const badges = obtenerBadgesProducto(p);
+  const agotado = productoSinStock(p);
+  const badges = agotado
+    ? [{ texto: "Sin stock", tipo: "agotado" }, ...obtenerBadgesProducto(p)]
+    : obtenerBadgesProducto(p);
 
   return `
-    <div class="producto-card producto-row" style="animation-delay:${i * 0.04}s" id="card-${p.id_producto}">
+    <div class="producto-card producto-row ${agotado ? "producto-agotado" : ""}" style="animation-delay:${i * 0.04}s" id="card-${p.id_producto}">
       <div class="producto-info">
         <div class="producto-nombre">${escapeHtml(p.nombre)}</div>
         ${badges.length
@@ -778,7 +789,9 @@ function renderProductoCard(p, i) {
       <div class="producto-side">
         <div class="producto-precio">${formatPrecio(p.precio)}</div>
         <div class="cantidad-control" id="ctrl-${p.id_producto}">
-          ${cantidad === 0
+          ${agotado
+            ? `<button class="btn-cantidad sin-stock" type="button" disabled>Sin stock</button>`
+            : cantidad === 0
             ? `<button class="btn-cantidad" onclick="agregarAlCarrito(${p.id_producto})">+</button>`
             : `<button class="btn-cantidad minus" onclick="quitarDelCarrito(${p.id_producto})">-</button>
                <span class="cantidad-num">${cantidad}</span>
@@ -848,7 +861,7 @@ function construirRecomendaciones(populares, clima) {
   const hora = new Date().getHours();
 
   const agregar = (producto, motivo, badge, prioridad) => {
-    if (!producto || usados.has(producto.id_producto)) return;
+    if (!productoPuedePedirse(producto) || usados.has(producto.id_producto)) return;
     usados.add(producto.id_producto);
     recomendaciones.push({ producto, motivo, badge, prioridad });
   };
@@ -895,17 +908,20 @@ function renderRecomendacionesInteligentes() {
 function renderRecomendacionCard(rec, i) {
   const p = rec.producto;
   const cantidad = carrito.find(c => c.id_producto === p.id_producto)?.cantidad || 0;
+  const agotado = productoSinStock(p);
   return `
-    <article class="smart-card" style="animation-delay:${i * 0.05}s">
+    <article class="smart-card ${agotado ? "smart-card-agotada" : ""}" style="animation-delay:${i * 0.05}s">
       <div class="smart-card-top">
-        <span class="smart-badge">${escapeHtml(rec.badge)}</span>
+        <span class="smart-badge">${escapeHtml(agotado ? "Sin stock" : rec.badge)}</span>
         <span class="smart-price">${formatPrecio(p.precio)}</span>
       </div>
       <h3>${escapeHtml(p.nombre)}</h3>
       <p>${escapeHtml(rec.motivo)}</p>
       <div class="smart-card-actions">
         <span>${escapeHtml(capitalize(p.categoria || "Menu"))}</span>
-        ${cantidad === 0
+        ${agotado
+          ? `<button type="button" disabled>Sin stock</button>`
+          : cantidad === 0
           ? `<button type="button" onclick="agregarAlCarrito(${p.id_producto})">Agregar</button>`
           : `<button type="button" onclick="agregarAlCarrito(${p.id_producto})">Sumar otro</button>`
         }
@@ -952,13 +968,14 @@ function construirContextoRecomendaciones(clima) {
 
 function buscarProductoPorTexto(keywords) {
   return todosProductos.find(producto => {
+    if (!productoPuedePedirse(producto)) return false;
     const texto = normalizarTexto(`${producto.nombre || ""} ${producto.descripcion || ""} ${producto.categoria || ""}`);
     return keywords.some(keyword => texto.includes(normalizarTexto(keyword)));
   });
 }
 
 function getProductosDestacables() {
-  return [...todosProductos].sort((a, b) => {
+  return todosProductos.filter(productoPuedePedirse).sort((a, b) => {
     const aScore = Number(idsPopularesHoy.has(a.id_producto)) + Number(/combo|burger|hamburguesa/i.test(`${a.nombre} ${a.categoria}`));
     const bScore = Number(idsPopularesHoy.has(b.id_producto)) + Number(/combo|burger|hamburguesa/i.test(`${b.nombre} ${b.categoria}`));
     return bScore - aScore;
@@ -968,6 +985,10 @@ function getProductosDestacables() {
 function agregarAlCarrito(idProducto) {
   const producto = todosProductos.find(p => p.id_producto === idProducto);
   if (!producto) return;
+  if (!productoPuedePedirse(producto)) {
+    mostrarAvisoMesa("Este producto no tiene stock disponible por el momento.");
+    return;
+  }
 
   const existente = carrito.find(c => c.id_producto === idProducto);
   if (existente) {
@@ -1005,6 +1026,12 @@ function quitarDelCarrito(idProducto) {
 function actualizarControlCantidad(idProducto) {
   const ctrl    = document.getElementById(`ctrl-${idProducto}`);
   if (!ctrl) return;
+
+  const producto = todosProductos.find(p => p.id_producto === idProducto);
+  if (productoSinStock(producto)) {
+    ctrl.innerHTML = `<button class="btn-cantidad sin-stock" type="button" disabled>Sin stock</button>`;
+    return;
+  }
 
   const item    = carrito.find(c => c.id_producto === idProducto);
   const cantidad = item ? item.cantidad : 0;
@@ -1275,7 +1302,7 @@ function normalizarCarritoRemoto(items) {
   return items
     .map(item => {
       const producto = todosProductos.find(p => p.id_producto === item.id_producto);
-      if (!producto) return null;
+      if (!productoPuedePedirse(producto)) return null;
       return {
         id_producto: producto.id_producto,
         nombre: producto.nombre,
@@ -1455,7 +1482,7 @@ function restaurarCarritoGuardado() {
     carrito = items
       .map(item => {
         const producto = todosProductos.find(p => p.id_producto === item.id_producto);
-        if (!producto) return null;
+        if (!productoPuedePedirse(producto)) return null;
         return {
           id_producto: producto.id_producto,
           nombre: producto.nombre,
