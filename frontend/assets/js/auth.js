@@ -142,7 +142,15 @@ function requireAuth(...requiredRoles) {
  * Llamar después de requireAuth() en cada página protegida.
  */
 function applyRoleVisibility() {
-  if (getUserRole() === ROLES.ADMIN) return;
+  const role = getUserRole();
+
+  // Etiqueta del bloque de usuario en el sidebar según el rol.
+  const rolLabel = document.getElementById("sidebar-rol-label");
+  if (rolLabel) {
+    rolLabel.textContent = role === ROLES.MOZO ? "Mozo" : "Administración";
+  }
+
+  if (role === ROLES.ADMIN) return;
   document.querySelectorAll('[data-role="admin"]').forEach((el) => {
     el.style.display = "none";
   });
