@@ -78,25 +78,42 @@
       </div>
     </div>
 
-    <!-- Tabla -->
-    <div class="table-card">
-      <div class="table-toolbar">
-        <div class="search-field">
+    <!-- Catálogo -->
+    <div class="prod-panel">
+      <div class="prod-panel-header">
+        <div>
+          <h2>Catálogo</h2>
+          <p>Arranca con los 10 más vendidos. Elegí una categoría o cambiá el orden para ver el resto.</p>
+        </div>
+        <span class="panel-count" id="count-label" aria-live="polite">—</span>
+      </div>
+
+      <div class="prod-filters">
+        <div class="filter-search">
           <i data-lucide="search"></i>
           <input
-            type="text"
-            class="search-input"
-            placeholder="Buscar producto..."
+            type="search"
             id="search-input"
-            oninput="filtrarTabla()"
+            placeholder="Buscar por nombre, categoría o descripción…"
+            oninput="onFiltroChange()"
           />
         </div>
-        <div class="filter-field">
-          <select class="filter-select" id="category-filter" onchange="filtrarTabla()">
-            <option value="">Todas las categorias</option>
-          </select>
-          <span id="count-label" aria-live="polite"></span>
-        </div>
+        <select id="estado-filter" onchange="onFiltroChange()">
+          <option value="disponibles">Disponibles</option>
+          <option value="no-disponibles">No disponibles</option>
+          <option value="todos">Todos los estados</option>
+        </select>
+        <select id="category-filter" onchange="onFiltroChange()">
+          <option value="">Todas las categorías</option>
+        </select>
+        <select id="listado-filter" onchange="onFiltroChange()">
+          <option value="mas-vendidos">Más vendidos</option>
+          <option value="categoria">Por categoría</option>
+          <option value="recientes">Recién agregados</option>
+          <option value="az">Nombre A-Z</option>
+          <option value="precio-asc">Precio (menor a mayor)</option>
+          <option value="precio-desc">Precio (mayor a menor)</option>
+        </select>
       </div>
 
       <div id="tabla-container">
@@ -104,6 +121,12 @@
           <div class="icon">...</div>
           <p>Cargando productos...</p>
         </div>
+      </div>
+
+      <div id="ver-todos-row" class="ver-todos-row" hidden>
+        <button type="button" class="btn-ver-todos" onclick="mostrarTodos()">
+          Ver el catálogo completo (<span id="ver-todos-count">0</span>)
+        </button>
       </div>
     </div>
 
@@ -117,6 +140,7 @@
         <button class="modal-close" onclick="cerrarModal()">X</button>
       </div>
       <div class="modal-body">
+        <div id="f-error" class="modal-error"></div>
         <div class="form-grid">
 
           <div class="form-group full">
@@ -136,25 +160,19 @@
 
           <div class="form-group">
             <label class="form-label" for="f-categoria">Categoría *</label>
-            <select class="form-select" id="f-categoria">
+            <select class="form-select" id="f-categoria" onchange="onCategoriaModalChange()">
               <option value="">Seleccioná...</option>
-              <option value="Comidas">Comidas</option>
-              <option value="Cervezas">Cervezas</option>
-              <option value="Cocteleria">Cocteleria</option>
-              <option value="Postres">Postres</option>
             </select>
+          </div>
+
+          <div class="form-group full" id="f-categoria-nueva-group" hidden>
+            <label class="form-label" for="f-categoria-nueva">Nombre de la nueva categoría *</label>
+            <input class="form-input" id="f-categoria-nueva" type="text" placeholder="Ej: Sin alcohol" />
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="f-subcategoria">Subcategoria</label>
-            <select class="form-select" id="f-subcategoria">
-              <option value="">Sin subcategoria</option>
-            </select>
-          </div>
-
-          <div class="form-group full">
-            <label class="form-label" for="f-imagen">URL de imagen</label>
-            <input class="form-input" id="f-imagen" type="url" placeholder="https://..." />
+            <label class="form-label" for="f-subcategoria">Subcategoría</label>
+            <input class="form-input" id="f-subcategoria" type="text" placeholder="Opcional — ej: Hamburguesas" />
           </div>
 
           <div class="form-group full">
@@ -162,6 +180,14 @@
               <input type="checkbox" id="f-disponible" checked />
               <label for="f-disponible">Producto disponible en el menú</label>
             </div>
+          </div>
+
+          <div class="form-group full">
+            <div class="form-checkbox-row">
+              <input type="checkbox" id="f-controla-stock" checked />
+              <label for="f-controla-stock">Controlar el stock de este producto</label>
+            </div>
+            <p class="form-hint">Activado: aparece en Inventario y no se puede pedir cuando llega a 0. Desactivalo para ítems que no querés inventariar.</p>
           </div>
 
         </div>
@@ -175,14 +201,14 @@
     </div>
   </div>
 
-  <!-- ===== MODAL CONFIRMAR ELIMINAR ===== -->
+  <!-- ===== MODAL CONFIRMAR DESACTIVAR ===== -->
   <div class="confirm-overlay" id="confirm-overlay">
     <div class="confirm-box">
-      <div class="confirm-title">¿Eliminar producto?</div>
-      <p class="confirm-msg" id="confirm-msg">Esta acción no se puede deshacer.</p>
+      <div class="confirm-title">¿Desactivar producto?</div>
+      <p class="confirm-msg" id="confirm-msg">Dejará de aparecer en el menú. Podés reactivarlo cuando quieras.</p>
       <div class="confirm-actions">
         <button class="btn-cancel" onclick="cerrarConfirm()">Cancelar</button>
-        <button class="btn-danger" id="btn-confirm-delete" onclick="confirmarEliminar()">Eliminar</button>
+        <button class="btn-delete" id="btn-confirm-delete" onclick="confirmarEliminar()">Desactivar</button>
       </div>
     </div>
   </div>

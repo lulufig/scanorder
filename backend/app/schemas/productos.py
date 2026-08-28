@@ -12,6 +12,7 @@ class ProductoCreate(BaseModel):
     subcategoria: Optional[str] = Field(default=None, min_length=1, max_length=100)
     imagen_url: Optional[str] = None
     disponible: bool = True
+    controla_stock: bool = True
 
 
 class ProductoUpdate(BaseModel):
@@ -24,6 +25,7 @@ class ProductoUpdate(BaseModel):
     subcategoria: Optional[str] = Field(default=None, min_length=1, max_length=100)
     imagen_url: Optional[str] = None
     disponible: Optional[bool] = None
+    controla_stock: Optional[bool] = None
 
 
 class ProductoResponse(BaseModel):
@@ -38,3 +40,5 @@ class ProductoResponse(BaseModel):
     disponible: bool
     categoria: Optional[str] = None
     stock_actual: Optional[int] = None
+    total_vendido: Optional[int] = None
+    controla_stock: Optional[bool] = None

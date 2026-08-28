@@ -20,6 +20,14 @@ def _inventario_activo(cursor) -> bool:
     return cursor.fetchone() is not None
 
 
+def _controla_stock_activo(cursor) -> bool:
+    """True si la migración 013 ya fue aplicada (columna controla_stock existe).
+    Si existe, solo los productos con controla_stock = TRUE participan del control
+    de stock (validación al crear pedido, descuento al entregar)."""
+    cursor.execute("SHOW COLUMNS FROM productos LIKE 'controla_stock'")
+    return cursor.fetchone() is not None
+
+
 def _movimientos_tabla_existe(cursor) -> bool:
     cursor.execute("SHOW TABLES LIKE 'movimientos_stock'")
     return cursor.fetchone() is not None
@@ -41,11 +49,16 @@ def validar_stock_batch(cursor, items: list) -> None:
     if not _inventario_activo(cursor):
         return
 
+    # Con la migración 013, solo los productos marcados controla_stock = TRUE
+    # entran en la validación. Los demás no vuelven en el SELECT → se saltan
+    # con la misma lógica de "producto sin fila" que ya existía.
+    filtro_controla = " AND controla_stock = TRUE" if _controla_stock_activo(cursor) else ""
+
     ids = [item["id_producto"] for item in items]
     placeholders = ",".join(["%s"] * len(ids))
     cursor.execute(
         f"SELECT id_producto, nombre, stock_actual FROM productos "
-        f"WHERE id_producto IN ({placeholders})",
+        f"WHERE id_producto IN ({placeholders}){filtro_controla}",
         ids,
     )
     stock_map = {r["id_producto"]: r for r in cursor.fetchall()}
@@ -82,12 +95,15 @@ def descontar_stock_pedido(cursor, items: list, id_pedido: int, id_usuario: int)
     if not _movimientos_tabla_existe(cursor):
         return
 
+    # Solo se descuenta a los productos con seguimiento activo (migración 013).
+    filtro_controla = " AND controla_stock = TRUE" if _controla_stock_activo(cursor) else ""
+
     for item in items:
         pid = item["id_producto"]
         cantidad = item["cantidad"]
 
         cursor.execute(
-            "SELECT stock_actual FROM productos WHERE id_producto = %s FOR UPDATE",
+            f"SELECT stock_actual FROM productos WHERE id_producto = %s{filtro_controla} FOR UPDATE",
             (pid,),
         )
         row = cursor.fetchone()
@@ -256,14 +272,15 @@ def obtener_productos_bajo_minimo() -> list:
         cursor = connection.cursor(dictionary=True)
         if not _inventario_activo(cursor):
             return []
+        filtro_controla = " AND p.controla_stock = TRUE" if _controla_stock_activo(cursor) else ""
         cursor.execute(
-            """SELECT p.id_producto, p.nombre, p.stock_actual, p.stock_minimo,
-                      c.nombre AS categoria,
-                      (p.stock_minimo - p.stock_actual) AS deficit
-               FROM productos p
-               LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
-               WHERE p.stock_actual < p.stock_minimo
-               ORDER BY deficit DESC"""
+            f"""SELECT p.id_producto, p.nombre, p.stock_actual, p.stock_minimo,
+                       c.nombre AS categoria,
+                       (p.stock_minimo - p.stock_actual) AS deficit
+                FROM productos p
+                LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
+                WHERE p.stock_actual < p.stock_minimo{filtro_controla}
+                ORDER BY deficit DESC"""
         )
         return cursor.fetchall()
     except Exception as e:

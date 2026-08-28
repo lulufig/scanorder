@@ -44,6 +44,11 @@ def _inventario_columns_exist(cursor) -> bool:
     return cursor.fetchone() is not None
 
 
+def _controla_stock_existe(cursor) -> bool:
+    cursor.execute("SHOW COLUMNS FROM productos LIKE 'controla_stock'")
+    return cursor.fetchone() is not None
+
+
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.get("/", summary="Listado completo de inventario")
@@ -66,13 +71,16 @@ def listar_inventario(
                 detail="Módulo de inventario no configurado. Aplicar migración 010_inventory.sql.",
             )
 
+        # Con la migración 013 solo se listan los productos con seguimiento activo.
+        filtro_controla = "WHERE p.controla_stock = TRUE" if _controla_stock_existe(cursor) else ""
         cursor.execute(
-            """SELECT p.id_producto, p.nombre, p.disponible,
-                      p.stock_actual, p.stock_minimo,
-                      c.nombre AS categoria
-               FROM productos p
-               LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
-               ORDER BY c.nombre, p.nombre"""
+            f"""SELECT p.id_producto, p.nombre, p.disponible,
+                       p.stock_actual, p.stock_minimo,
+                       c.nombre AS categoria
+                FROM productos p
+                LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
+                {filtro_controla}
+                ORDER BY c.nombre, p.nombre"""
         )
         productos = cursor.fetchall()
 

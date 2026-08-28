@@ -68,7 +68,11 @@
     const tbody = document.getElementById("inv-tbody");
 
     if (filtrado.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" class="table-empty">Sin resultados</td></tr>`;
+      const mensaje = inventario.length === 0
+        ? `No hay productos con control de stock. Revisá el checkbox
+           "Controlar el stock de este producto" en <a href="productos.html">Productos</a>.`
+        : "Sin resultados para el filtro.";
+      tbody.innerHTML = `<tr><td colspan="5" class="table-empty">${mensaje}</td></tr>`;
       return;
     }
 
@@ -88,8 +92,7 @@
         <td>${stockCell(p, estado)}</td>
         <td>${badgeEstado(estado)}</td>
         <td>
-          <button class="btn-ajustar"
-            onclick="abrirModal(${p.id_producto}, '${escapeHtml(p.nombre).replace(/'/g, "\\'")}', ${p.stock_actual}, ${p.stock_minimo})">
+          <button class="btn-ajustar" onclick="abrirModal(${p.id_producto})">
             Ajustar
           </button>
         </td>
@@ -171,12 +174,14 @@
   }
 
   // ── Modal de ajuste ──────────────────────────────────────────────────────
-  function abrirModal(idProd, nombre, stockActual, stockMinimo) {
-    document.getElementById("modal-id-prod").value    = idProd;
-    document.getElementById("modal-nombre-prod").textContent = nombre;
-    document.getElementById("modal-stock-actual").value  = stockActual;
-    document.getElementById("modal-stock-minimo").value  = stockMinimo;
-    document.getElementById("modal-motivo").value         = "";
+  function abrirModal(idProd) {
+    const p = inventario.find(x => x.id_producto === idProd);
+    if (!p) return;
+    document.getElementById("modal-id-prod").value           = p.id_producto;
+    document.getElementById("modal-nombre-prod").textContent = p.nombre;
+    document.getElementById("modal-stock-actual").value      = p.stock_actual;
+    document.getElementById("modal-stock-minimo").value      = p.stock_minimo;
+    document.getElementById("modal-motivo").value            = "";
     document.getElementById("modal-ajuste").classList.add("open");
   }
 

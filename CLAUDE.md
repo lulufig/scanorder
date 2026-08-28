@@ -44,7 +44,7 @@ No hay paso de build para el frontend: son archivos estáticos en `frontend/` qu
 - `002_menu_categorias_nuevas.sql` asume categorías ya existentes con IDs hardcodeados 1-4 (`UPDATE categorias ... WHERE id_categoria = 1`, etc.). Ni `docs/database.sql` ni ningún script del repo siembran esas filas — si esos IDs no existen, la migración no falla pero tampoco logra nada (0 filas afectadas, silencioso).
 - `001` y `004` no son redundantes entre sí pese al nombre similar de "trazabilidad": `001` corrige el tipo de la columna `estado` (bug ENUM→VARCHAR que dejaba pedidos con `estado=''`); `004` agrega las columnas de fecha por estado (`confirmado_at`, `preparacion_at`, `listo_at`, `entregado_at`) que usan `pedidos.py` y `reportes.py`. Cambios independientes sobre la misma tabla, ninguno reemplaza al otro.
 
-**007-012** — no reflejadas en `docs/database.sql` (salvo `008`, ver arriba); todas idempotentes, aplicadas automáticamente en orden por `init_app.sh` en Docker:
+**007-013** — no reflejadas en `docs/database.sql` (salvo `008`, ver arriba); todas idempotentes, aplicadas automáticamente en orden por `init_app.sh` en Docker:
 
 | # | Archivo | Qué hace |
 |---|---|---|
@@ -54,6 +54,7 @@ No hay paso de build para el frontend: son archivos estáticos en `frontend/` qu
 | 010 | `010_inventory.sql` | Agrega `productos.stock_actual`/`stock_minimo` + `CHECK (stock_actual >= 0)` + tabla `movimientos_stock`. |
 | 011 | `011_auth_complete.sql` | Crea tabla `password_reset_tokens` (recuperación de contraseña, un solo uso, TTL 30 min). |
 | 012 | `012_drop_cierres_mesa_numero_mesa.sql` | Elimina `cierres_mesa.numero_mesa` — duplicaba `mesas.numero` (accesible vía `id_mesa`, que sí tiene FK) sin ningún uso real en el código: se escribía en el `INSERT` y nunca se volvía a leer en ningún lado (endpoints, reportes, tests, frontend). A diferencia de `precio_unitario` en `detalle_pedidos`, no protegía contra ninguna mutación real (no existe forma de renumerar una mesa) — violación de 3FN sin beneficio. Sin cambios de contrato de API. |
+| 013 | `013_stock_opcional.sql` | Agrega `productos.controla_stock BOOLEAN DEFAULT TRUE`. Control de stock **opt-out por producto**: por defecto TODOS los productos se controlan (igual que antes de la 013); el admin puede *excluir* uno puntual desmarcando el checkbox. Solo los `controla_stock = TRUE` aparecen en Inventario, bloquean pedidos por falta de stock y se descuentan al entregar. Sin `UPDATE` de datos en la migración (así el flag nunca se pisa al reaplicar). Ver "Control de inventario" más abajo. |
 
 ## Modelo de roles y autenticación (desde `refactor/roles-mozo`)
 
@@ -231,16 +232,13 @@ Cada mesa tiene un `qr_token` (`secrets.token_urlsafe(24)`) embebido en la URL d
 
 Es un cálculo derivado en cada `GET /mesas/mapa` (no hay timers/cron en background): una mesa se marca `abandonada` si tiene sesión activa, sin pedidos activos, carrito vacío y ≥10 min desde el escaneo del QR. Depende 100% del `MesaSessionManager` (feature anterior) para `session`, `items_carrito` y `minutos_desde_scan` — si se toca el carrito colaborativo, revisar este cálculo.
 
-### Reportes CSV
+### Reportes descargables (Excel / PDF)
 
-Patrón común a todos los endpoints CSV: `io.StringIO` + `csv.writer`, respuesta `Response` con:
-- BOM UTF-8 (`\xef\xbb\xbf`) para que Excel lo reconozca con encoding correcto.
-- Separador `;` y línea `sep=;` como primera línea (convención Excel es-AR).
-- `media_type="text/csv; charset=utf-8-sig"`.
+Los reportes de descarga ya **no son CSV**: se generan como `.xlsx` (openpyxl) o `.pdf` (reportlab) con `?formato=excel` (default) o `?formato=pdf`. Helpers comunes en `reportes.py`: `_build_excel_report(title, subtitle, sections)` + `_excel_response(workbook, filename)` (media type `EXCEL_MEDIA_TYPE`), y `_pdf_response(title, subtitle, sections, filename)` (`PDF_MEDIA_TYPE`). Ambos arman las mismas `sections` (`{title, headers, rows, money_cols?}`) y devuelven un `Response` con `Content-Disposition: attachment`.
 
-**`GET /reportes/ventas?fecha_inicio=&fecha_fin=`** — reporte por rango de fechas (tres secciones: Resumen, Pedidos por estado, Productos top 10). `reportlab` fue eliminado.
+**`GET /reportes/ventas?fecha_inicio=&fecha_fin=&formato=`** — reporte por rango de fechas (Resumen, Pedidos por estado, Productos top 10).
 
-**`GET /reportes/resumen-hoy?fecha=YYYY-MM-DD`** — resumen operativo de un día (por defecto hoy). Secciones: Resumen (ventas, pedidos, ticket, mesa top, producto top), Cobros por método de pago (solo si `cierres_mesa` existe), Pedidos por estado, Productos más vendidos, Ventas por hora (serie 0-23h). Disponible desde `feature/daily-dashboard`.
+**`GET /reportes/resumen-hoy?fecha=YYYY-MM-DD&formato=`** — resumen operativo de un día (por defecto hoy). Secciones: Resumen (ventas, pedidos, ticket, mesa top, producto top), Cobros por método de pago (solo si `cierres_mesa` existe), Pedidos por estado, Productos más vendidos, Ventas por hora (serie 0-23h). La función es `resumen_hoy_excel` (nombre histórico; también hace PDF). Cubierto por `TestResumenHoyExport` en `test_reportes_dashboard.py`.
 
 ### Dashboard (`GET /reportes/dashboard`)
 
@@ -391,6 +389,7 @@ PATCH /pedidos/{id}/estado → body.estado == "entregado"   # descuenta stock (t
 ```
 
 **Reglas de negocio:**
+- **El control de stock se puede desactivar por producto** (migración 013, columna `productos.controla_stock`, default TRUE). Por defecto todos participan: aparecen en `GET /inventario/`, bloquean la creación de pedidos por falta de stock y se les descuenta al entregar. Si el admin desmarca "Controlar el stock de este producto" en el modal de Productos, ese producto se ignora por completo (nunca da 409 por stock aunque su `stock_actual` sea 0, no descuenta, no aparece en Inventario). Pensado para ítems que no vale la pena inventariar.
 - Stock se valida y bloquea **antes** de crear el pedido. Si no hay stock → 409 con `productos_faltantes`.
 - Stock se descuenta **solo al marcar "entregado"** (no al crear, no al confirmar, no al preparar).
 - Cancelar un pedido **no modifica el stock** (nunca se descontó).
@@ -400,19 +399,21 @@ PATCH /pedidos/{id}/estado → body.estado == "entregado"   # descuenta stock (t
 
 | Función | Descripción |
 |---|---|
-| `validar_stock_batch(cursor, items)` | Lee stock en una sola query `IN()`. Lanza `InsufficientStockError` con lista completa de faltantes. Acepta cursor del caller (participante). |
-| `descontar_stock_pedido(cursor, items, id_pedido, id_usuario)` | `SELECT ... FOR UPDATE` por ítem + `UPDATE productos SET stock_actual` + `INSERT movimientos_stock`. Acepta cursor del caller (participante). |
-| `incrementar_stock(id_producto, cantidad, motivo, id_usuario)` | Gestiona su propia transacción. Tipo `entrada`. |
-| `ajustar_stock_manual(id_producto, nuevo_stock, nuevo_minimo, motivo, id_usuario)` | Gestiona su propia transacción. Tipo `ajuste`. Calcula diferencia; si diferencia=0 no inserta movimiento. |
-| `obtener_productos_bajo_minimo()` | Read-only, conexión propia. Retorna productos con `stock_actual < stock_minimo`. |
+| `validar_stock_batch(cursor, items)` | Lee stock en una sola query `IN()` (con `AND controla_stock = TRUE` si la 013 está aplicada). Lanza `InsufficientStockError` con lista completa de faltantes. Los productos que no vuelven en el SELECT (sin seguimiento) se saltan con la misma lógica de "sin fila" que ya existía. |
+| `descontar_stock_pedido(cursor, items, id_pedido, id_usuario)` | `SELECT ... [AND controla_stock = TRUE] FOR UPDATE` por ítem + `UPDATE productos SET stock_actual` + `INSERT movimientos_stock`. Un ítem sin seguimiento no devuelve fila → `continue` (no se descuenta ni se registra movimiento). |
+| `incrementar_stock(id_producto, cantidad, motivo, id_usuario)` | Gestiona su propia transacción. Tipo `entrada`. No chequea `controla_stock` (acción explícita del admin). |
+| `ajustar_stock_manual(id_producto, nuevo_stock, nuevo_minimo, motivo, id_usuario)` | Gestiona su propia transacción. Tipo `ajuste`. Calcula diferencia; si diferencia=0 no inserta movimiento. No chequea `controla_stock`. |
+| `obtener_productos_bajo_minimo()` | Read-only, conexión propia. Retorna productos con `stock_actual < stock_minimo` (`AND controla_stock = TRUE` si la 013 está). |
 
-**Graceful degradation:** si `stock_actual` no existe en la tabla `productos` (migración 010 no aplicada), todas las funciones degradan en silencio sin error.
+Helpers de columna: `_inventario_activo(cursor)` (¿migración 010?) y `_controla_stock_activo(cursor)` (¿migración 013?).
+
+**Graceful degradation:** si `stock_actual` no existe (migración 010 no aplicada) todas las funciones degradan en silencio. Si `controla_stock` no existe (013 no aplicada) el filtro no se agrega → **todos** los productos participan del control — que es también el comportamiento por defecto *con* la 013 aplicada (columna `DEFAULT TRUE`).
 
 ### `routes/inventario.py`
 
 | Endpoint | Método | Requiere | Descripción |
 |---|---|---|---|
-| `GET /inventario/` | GET | admin | Lista todos con estado OK/BAJO/AGOTADO. Soporta `?estado=BAJO`. |
+| `GET /inventario/` | GET | admin | Lista los productos con `controla_stock = TRUE` (por defecto todos), con estado OK/BAJO/AGOTADO. Soporta `?estado=BAJO`. |
 | `GET /inventario/bajo-minimo` | GET | admin | Solo productos con déficit. |
 | `PUT /inventario/{id}` | PUT | admin | Ajuste manual de stock y mínimo. |
 | `POST /inventario/{id}/entrada` | POST | admin | Entrada de stock (compra, reposición). |
@@ -442,6 +443,9 @@ En `PATCH /pedidos/{id}/estado` cuando `body.estado == "entregado"`:
 - Banner de alerta global si hay productos con estado ≠ OK.
 - Modal "Ajustar Stock" con campos `stock_actual`, `stock_minimo`, `motivo`.
 - Polling automático cada 5 s (`setInterval(cargarInventario, 5000)`).
+- El botón "Ajustar" pasa **solo `id_producto`** al `onclick`; `abrirModal()` busca la fila en el array `inventario` (ver gotcha de apóstrofos en "Notas para cambios futuros").
+
+**Reposición rápida** (`frontend/admin/inventario-rapida.html` + `js/inventario-rapida.js` + `css/inventario-rapida.css`) — link desde el header de `inventario.html`. Tabla con un `<input number>` de stock por fila, prellenado con el valor actual; el admin edita las que quiera y una barra flotante (`#save-bar`) muestra cuántas cambió. "Guardar cambios" hace un `PUT /inventario/{id}` por fila modificada (`motivo: "Reposición rápida"`), secuencial, reportando errores por producto. **Sin backend nuevo** — reusa el endpoint existente. Sin polling (para no pisar lo que el admin está tipeando). `.save-bar[hidden]` necesita `display: none !important` (gotcha del atributo `hidden`).
 
 ---
 
@@ -451,7 +455,32 @@ En `PATCH /pedidos/{id}/estado` cuando `body.estado == "entregado"`:
 
 - **`GET /productos/?incluir_no_disponibles=true`** — el query param solo se honra si quien llama tiene un JWT válido de rol `admin` o `mozo` (`Depends(get_current_user_optional)`); sin token válido (o sin ese rol), se ignora en silencio y el comportamiento es idéntico al de siempre. El menú público (`frontend/cliente/menu.js`) nunca manda este parámetro, así que no cambia en nada.
 - `frontend/admin/js/productos.js` (`cargarProductos()`) pide siempre este parámetro — por eso el stat card "No disponibles" de `productos.html` ahora refleja el número real, y la tabla muestra los productos de baja con badge "No disponible".
-- **Reactivar** reusa el `PUT /productos/{id}` existente (no es un endpoint nuevo) mandando solo `{ "disponible": true }` — el `UPDATE` hace `COALESCE` campo por campo, así que el resto de los datos del producto queda intacto. En la fila de la tabla, el botón "Reactivar" (verde) reemplaza a "Eliminar" cuando el producto ya está de baja.
+- **Reactivar** reusa el `PUT /productos/{id}` existente (no es un endpoint nuevo) mandando solo `{ "disponible": true }` — el `UPDATE` hace `COALESCE` campo por campo, así que el resto de los datos del producto queda intacto. En la fila de la tabla, el botón "Reactivar" (verde) reemplaza a "Desactivar" cuando el producto ya está de baja.
+- La UI nunca habla de "eliminar": el botón dice **"Desactivar"** y el cartel de confirmación aclara que el producto solo deja de aparecer en el menú y se puede reactivar (mismo modelo que la baja lógica de usuarios). El endpoint sigue siendo `DELETE /productos/{id}` (baja lógica, no borra la fila).
+
+### Panel de catálogo — filtros, "más vendidos" y vista agrupada (`productos.html` / `productos.js` / `productos.css`)
+
+Rediseñado para usar el mismo lenguaje visual que `usuarios.html` / `inventario.html`: contenedor `.prod-panel` (tarjeta con encabezado + contador), grilla `.prod-filters` con inputs redondeados de 40px y foco con anillo (`--shadow-focus`).
+
+- **`#tabla-container`**: solo `overflow-x: auto` (scroll horizontal en pantallas angostas). Sin scroll vertical propio ni `<thead>` sticky — el único scroll vertical es el de la ventana (evita el doble scroll).
+- **Tope de 10 + botón "Ver el catálogo completo (N)"** (`#ver-todos-row` → `mostrarTodos()` → `mostrandoTodos = true`): aparece **solo en la vista por defecto** (`esVistaPorDefecto` = `listado === "mas-vendidos"` **y** `#category-filter` vacío **y** `#estado-filter === "disponibles"` **y** sin búsqueda). Cualquier otro filtro muestra la lista completa de ese filtro sin botón — cada categoría tiene su propia cantidad, un "ver N más" global no aplica. `#count-label` siempre muestra el total de coincidencias.
+- **Gotcha del atributo `hidden`:** `.ver-todos-row` y `#f-categoria-nueva-group` (`.form-group`) definen `display` vía clase, que le gana a `[hidden]` en especificidad → el `hidden` no ocultaba nada. Hay una regla `.ver-todos-row[hidden], #f-categoria-nueva-group[hidden] { display: none !important }` en `productos.css` (mismo patrón que `.usu-table-wrap[hidden]` en `usuarios.css`). Si se agrega otro elemento que se togglea con `hidden` y tiene `display` por clase, sumarlo ahí.
+- **`#estado-filter`**: `Disponibles` (default) / `No disponibles` / `Todos`. Filtrado 100% en cliente sobre `todosLosProductos` (trae los no disponibles vía `incluir_no_disponibles=true`).
+- **`#listado-filter`**: `Más vendidos` (default) / `Por categoría` / `Recién agregados` / `Nombre A-Z` / `Precio ↑` / `Precio ↓`.
+  - `Más vendidos` ordena por `total_vendido` desc (ver backend), a igualdad por id desc.
+  - `Por categoría` (`agrupado`) dibuja una fila-encabezado `.group-row` por categoría (orden alfabético) y **dentro de cada bloque ordena por id desc** (el más nuevo arriba).
+- **Alta de producto**: `guardarProducto()` en la rama de creación fuerza `listado = "por categoría"`, limpia estado/categoría/texto y setea `idRecienCreado`; tras recargar, `renderTabla()` marca esa fila con `.row-nuevo` (realce animado ~2.4s) y hace `scrollIntoView`. Así el producto recién creado queda visible al tope de su categoría.
+- Backend: `select_productos_sql()` agrega `total_vendido` (subconsulta correlacionada: `SUM(detalle_pedidos.cantidad)` de pedidos no cancelados). Expuesto en `ProductoResponse.total_vendido` (`Optional[int]`). 0 para productos sin ventas.
+- Todos los controles llaman `onFiltroChange()` (resetea `mostrandoTodos` y re-filtra). `#count-label` (`.panel-count`) muestra el total de coincidencias.
+- Precio en la tabla: `formatearPrecio()` → `toLocaleString("es-AR")` (`$1.500`, decimales solo si el valor los tiene).
+
+### Modal de alta/edición de producto
+
+- **Sin campo de imagen.** El menú del cliente (`frontend/cliente/menu.js`, `renderProductoCard`) no muestra imagen por producto, así que se quitó `#f-imagen` del modal y la columna "Imagen" de la tabla. La columna `productos.imagen_url` y el campo en los schemas siguen existiendo (backend intacto), pero el frontend admin ya no los manda ni los lee. `menu.js` todavía usa `imagen_url` como *fallback* para la imagen de cabecera de categoría — al no venir nunca, cae en `config.imagen` (hardcodeado por categoría conocida) o la foto del local. Degradación aceptada.
+- **Categoría**: `#f-categoria` se llena dinámicamente con `poblarCategoriasModal()` — `CATEGORIAS_BASE` (`Comidas`, `Cervezas`, `Cocteleria`, `Postres`) ∪ categorías reales de `todosLosProductos` ∪ la del producto que se edita, más la opción `__nueva__` ("＋ Nueva categoría…") que muestra el input `#f-categoria-nueva`. Al guardar, si el valor es `__nueva__` se toma el texto del input. Esto arregla el bug anterior: el `<select>` era fijo de 4 opciones y editar un producto con otra categoría dejaba el campo vacío.
+- **Subcategoría**: ahora es un `<input type="text">` libre (antes era un `<select>` con un mapa hardcodeado que solo cubría `Comidas` y `Cocteleria`). Se eliminaron `subcategoriasPorCategoria` y `actualizarSubcategoriasAdmin()`.
+- **Validación inline**: errores en `#f-error` (`.modal-error` de `admin-shell.css`), no en toast. `mostrarErrorModal()` / `limpiarErrorModal()`. El modal queda abierto ante error de API (se ve el detalle sin perder lo cargado). El chequeo de precio ahora exige `> 0` (coincide con `ProductoCreate.precio = Field(gt=0)`).
+- **Checkbox "Controlar el stock de este producto"** (`#f-controla-stock`, tildado por default) → `body.controla_stock`. Se manda siempre (alta y edición). Backend: en alta hace `UPDATE productos SET controla_stock = %s` con el valor recibido (así desmarcar al crear también funciona); en edición entra en `campos_update` cuando está en `model_fields_set`. Ambos con guard `producto_tiene_columna(cursor, "controla_stock")`.
 
 ---
 
@@ -460,6 +489,7 @@ En `PATCH /pedidos/{id}/estado` cuando `body.estado == "entregado"`:
 - Si se elimina o modifica el carrito colaborativo (`MesaSessionManager`), revisar en cascada: detección de "mesa abandonada" (depende de él), `qr_token`/`session_key` (se cruza con él), y los consumidores frontend `frontend/cliente/menu.js` y `frontend/admin/js/mesas.js`.
 - Hay tres llamadas independientes a `load_dotenv()` (`main.py`, `database.py`, `security.py`) — es idempotente y no rompe nada, pero indica que no hay un único punto de carga de configuración.
 - Un análisis más detallado de endpoints, riesgos de eliminar cada feature y discrepancias con la documentación de producto está en [AUDITORIA.md](AUDITORIA.md).
+- **No pasar strings por `onclick` inline en las tablas del admin** (`onclick="fn(${p.id}, '${escapeHtml(p.nombre)}')"`): `escapeHtml` convierte `'` en `&#039;`, el navegador lo decodifica al parsear el atributo y un nombre como "Gordon's" rompe el JS con `SyntaxError` (el botón no hace nada, solo para ese producto). Patrón correcto: pasar solo el id numérico y buscar la fila en el array en memoria (`inventario.find(...)` / `todosLosProductos.find(...)`). Ya aplicado en `inventario.js` (`abrirModal`) y `productos.js` (`pedirConfirmacion`); `mesas.js` todavía pasa `qrEndpoint` así (bajo riesgo: es una ruta del server sin apóstrofos).
 
 ---
 
@@ -518,4 +548,4 @@ Después de guardar el token: si `data.user.must_change_password` es `true`, red
 
 ### Próxima migración
 
-La última migración aplicada es `012_drop_cierres_mesa_numero_mesa.sql` (ver tabla completa de migraciones más arriba). La siguiente incremental será `013_*.sql`. `init_app.sh` la va a recoger automáticamente (recorre `migrations/*.sql` y aplica todo lo que no empiece con `001`-`006`) — **no hace falta tocar el script**, pero la migración nueva tiene que ser idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `ADD CONSTRAINT IF NOT EXISTS`, `DROP COLUMN IF EXISTS`), porque se reaplica en cada arranque del contenedor.
+La última migración aplicada es `013_stock_opcional.sql` (ver tabla completa de migraciones más arriba). La siguiente incremental será `014_*.sql`. `init_app.sh` la va a recoger automáticamente (recorre `migrations/*.sql` y aplica todo lo que no empiece con `001`-`006`) — **no hace falta tocar el script**, pero la migración nueva tiene que ser idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `ADD CONSTRAINT IF NOT EXISTS`, `DROP COLUMN IF EXISTS`), porque se reaplica en cada arranque del contenedor.

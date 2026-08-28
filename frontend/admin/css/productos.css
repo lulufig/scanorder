@@ -57,74 +57,191 @@
   color: var(--state-alerta-text);
 }
 
-/* ===== Barra de búsqueda / filtro ===== */
-.table-toolbar {
+/* ===== Panel de catálogo ===== */
+/* Mismo lenguaje visual que .usuarios-panel / .inv-filters:
+   contenedor tipo tarjeta, encabezado con título + contador,
+   grilla de filtros con inputs redondeados. */
+.prod-panel {
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+}
+
+.prod-panel-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  padding: 14px 16px;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--color-border);
 }
 
-.search-field {
-  position: relative;
-  flex: 1 1 auto;
-  min-width: 260px;
+.prod-panel-header h2 {
+  color: var(--gray-900);
+  font-size: 0.98rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
-.search-field [data-lucide] {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 15px;
-  height: 15px;
-  color: var(--gray-400);
-  pointer-events: none;
+.prod-panel-header p {
+  margin-top: 3px;
+  color: var(--gray-500);
+  font-size: 0.82rem;
 }
 
-.search-input {
-  width: 100%;
-  padding: 9px 14px 9px 38px;
-}
-
-.filter-field {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  flex: 0 0 auto;
-}
-
-.filter-select {
-  width: 210px;
-}
-
-#count-label {
+.panel-count {
+  flex-shrink: 0;
   color: var(--gray-500);
   font-size: 0.78rem;
   white-space: nowrap;
 }
 
+.prod-filters {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(150px, 190px) minmax(160px, 200px) minmax(190px, 230px);
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.filter-search {
+  position: relative;
+  min-width: 0;
+}
+
+.filter-search [data-lucide] {
+  position: absolute;
+  top: 50%;
+  left: 13px;
+  width: 17px;
+  height: 17px;
+  color: var(--gray-400);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.filter-search input,
+.prod-filters select {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  color: var(--gray-800);
+  background: var(--gray-0);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.86rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.filter-search input {
+  padding-left: 38px;
+}
+
+.filter-search input:focus,
+.prod-filters select:focus {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-focus);
+}
+
 /* ===== Tabla ===== */
+/* Sin scroll vertical propio: crece con la página y el único scroll es
+   el de la ventana. Solo se permite scroll horizontal en pantallas
+   angostas (la tabla tiene un ancho mínimo). */
 #tabla-container {
   overflow-x: auto;
 }
 
+/* Fila-encabezado de categoría (vista "Por categoría") */
+.group-row td {
+  padding: 8px 16px;
+  text-align: left;
+  background: var(--gray-50);
+  color: var(--gray-600);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.group-row:hover td {
+  background: var(--gray-50);
+}
+
+.group-count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--gray-200);
+  color: var(--gray-600);
+  font-size: 0.7rem;
+}
+
+/* Realce del producto recién creado */
+.row-nuevo td {
+  animation: prod-nuevo 2.4s ease-out;
+}
+
+@keyframes prod-nuevo {
+  0%, 40% { background: var(--color-primary-soft); }
+  100%    { background: transparent; }
+}
+
+/* El atributo `hidden` pierde contra una clase que define `display`
+   (`.form-group`, `.ver-todos-row`) — hay que forzarlo. */
+.ver-todos-row[hidden],
+#f-categoria-nueva-group[hidden] {
+  display: none !important;
+}
+
+/* Ayuda debajo de un checkbox del modal */
+.form-hint {
+  margin-top: 4px;
+  margin-left: 24px;
+  color: var(--gray-500);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+/* ===== "Ver catálogo completo" ===== */
+.ver-todos-row {
+  display: flex;
+  justify-content: center;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.btn-ver-todos {
+  padding: 7px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--gray-0);
+  color: var(--gray-700);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-ver-todos:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
 table {
-  min-width: 960px;
+  min-width: 720px;
   table-layout: fixed;
 }
 
-.col-img       { width: 76px; }
-.col-producto  { width: 39%; }
-.col-categoria { width: 17%; }
-.col-precio    { width: 10%; }
-.col-estado    { width: 12%; }
-.col-acciones  { width: 190px; }
+.col-producto  { width: 42%; }
+.col-categoria { width: 18%; }
+.col-precio    { width: 12%; }
+.col-estado    { width: 13%; }
+.col-acciones  { width: 200px; }
 
-th:nth-child(1), td:nth-child(1) { text-align: center; }
-th:nth-child(6), td:nth-child(6) { text-align: right; }
+th:nth-child(5), td:nth-child(5) { text-align: right; }
 
 .table-actions {
   display: inline-flex;
@@ -132,28 +249,6 @@ th:nth-child(6), td:nth-child(6) { text-align: right; }
   gap: 8px;
   width: 100%;
   white-space: nowrap;
-}
-
-.product-img,
-.product-img-placeholder {
-  width: 42px;
-  height: 42px;
-  margin: 0 auto;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--gray-50);
-}
-
-.product-img {
-  display: block;
-  object-fit: cover;
-}
-
-.product-img-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--gray-400);
 }
 
 .product-name {
@@ -250,8 +345,6 @@ th:nth-child(6), td:nth-child(6) { text-align: right; }
   .stats-row { grid-template-columns: 1fr; }
   .stat-card { border-right: 0; border-bottom: 1px solid var(--color-border); }
   .stat-card:last-child { border-bottom: 0; }
-  .table-toolbar { align-items: stretch; flex-direction: column; }
-  .search-field { min-width: 0; }
-  .filter-field { align-items: stretch; flex-direction: column; gap: 8px; }
-  .filter-select { width: 100%; }
+  .prod-panel-header { flex-direction: column; gap: 6px; }
+  .prod-filters { grid-template-columns: 1fr; }
 }

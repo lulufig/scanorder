@@ -24,6 +24,7 @@ def producto_tiene_columna(cursor, columna: str) -> bool:
 def select_productos_sql(cursor) -> str:
     campo_subcategoria = "p.subcategoria" if producto_tiene_columna(cursor, "subcategoria") else "NULL AS subcategoria"
     campo_stock = "p.stock_actual" if producto_tiene_columna(cursor, "stock_actual") else "NULL AS stock_actual"
+    campo_controla = "p.controla_stock" if producto_tiene_columna(cursor, "controla_stock") else "FALSE AS controla_stock"
     return f"""
             SELECT
                 p.id_producto,
@@ -35,7 +36,15 @@ def select_productos_sql(cursor) -> str:
                 p.imagen_url,
                 p.disponible,
                 {campo_stock},
-                c.nombre AS categoria
+                {campo_controla},
+                c.nombre AS categoria,
+                COALESCE((
+                    SELECT SUM(dp.cantidad)
+                    FROM detalle_pedidos dp
+                    JOIN pedidos pe ON pe.id_pedido = dp.id_pedido
+                    WHERE dp.id_producto = p.id_producto
+                      AND pe.estado <> 'cancelado'
+                ), 0) AS total_vendido
             FROM productos p
             LEFT JOIN categorias c ON p.id_categoria = c.id_categoria
             """
@@ -277,9 +286,18 @@ def create_producto(
                 producto.disponible
             )
         cursor.execute(query, values)
+        nuevo_id = cursor.lastrowid
+
+        # controla_stock: se aplica siempre el valor del alta (default TRUE en el
+        # schema), así desmarcar el checkbox al crear también funciona.
+        if producto_tiene_columna(cursor, "controla_stock"):
+            cursor.execute(
+                "UPDATE productos SET controla_stock = %s WHERE id_producto = %s",
+                (bool(producto.controla_stock), nuevo_id),
+            )
+
         connection.commit()
 
-        nuevo_id = cursor.lastrowid
         cursor.execute(select_productos_sql(cursor) + "WHERE p.id_producto = %s", (nuevo_id,))
         return cursor.fetchone()
     except HTTPException:
@@ -350,6 +368,9 @@ def update_producto(
         if tiene_subcategoria:
             campos_update.append("subcategoria = %s")
             values.append(subcategoria)
+        if "controla_stock" in campos_enviados and producto_tiene_columna(cursor, "controla_stock"):
+            campos_update.append("controla_stock = %s")
+            values.append(bool(producto.controla_stock))
         campos_update.extend([
             "imagen_url = COALESCE(%s, imagen_url)",
             "disponible = COALESCE(%s, disponible)",

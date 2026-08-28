@@ -86,7 +86,7 @@ class TestValidarStockBatchUnidad:
         exactamente UNA query SELECT (la del IN), no una por producto.
         """
         cursor = MagicMock()
-        # SHOW COLUMNS (detectar si inventario activo) → columna existe
+        # SHOW COLUMNS (stock_actual y controla_stock) → columnas existen
         cursor.fetchone.return_value = {"Field": "stock_actual"}
         cursor.fetchall.return_value = [
             {"id_producto": 1, "nombre": "A", "stock_actual": 10},
@@ -101,8 +101,14 @@ class TestValidarStockBatchUnidad:
         with pytest.raises(InsufficientStockError) as exc_info:
             validar_stock_batch(cursor, items)
 
-        # Solo 1 execute para SHOW COLUMNS y 1 execute para SELECT IN → 2 en total
-        assert cursor.execute.call_count == 2
+        # 2 SHOW COLUMNS constantes (stock_actual + controla_stock) + 1 SELECT IN.
+        # Lo que importa: el SELECT de stock es uno solo, no uno por producto.
+        assert cursor.execute.call_count == 3
+        selects_stock = [
+            c for c in cursor.execute.call_args_list
+            if "SELECT" in str(c).upper() and "SHOW COLUMNS" not in str(c).upper()
+        ]
+        assert len(selects_stock) == 1
 
         # Todos los faltantes se detectan en ese único paso
         faltantes_ids = [f["id"] for f in exc_info.value.faltantes]
@@ -121,6 +127,24 @@ class TestValidarStockBatchUnidad:
         items = [{"id_producto": 1, "cantidad": 99999}]
         validar_stock_batch(cursor, items)  # no debe lanzar
         cursor.fetchall.assert_not_called()  # no llegó a consultar stock
+
+    def test_producto_sin_controla_stock_no_bloquea(self):
+        """
+        Con la migración 013 aplicada, un producto que no volvió en el SELECT
+        (porque controla_stock = FALSE lo filtró) no genera faltante aunque se
+        pida más de lo que "tiene".
+        """
+        cursor = MagicMock()
+        cursor.fetchone.return_value = {"Field": "controla_stock"}  # ambas columnas existen
+        cursor.fetchall.return_value = []  # el filtro AND controla_stock=TRUE no devolvió nada
+        items = [{"id_producto": 1, "cantidad": 99999}]
+        validar_stock_batch(cursor, items)  # no debe lanzar
+        # el SELECT lleva el filtro por controla_stock
+        select_call = [
+            c for c in cursor.execute.call_args_list
+            if "SELECT" in str(c).upper() and "SHOW COLUMNS" not in str(c).upper()
+        ][0]
+        assert "controla_stock = TRUE" in str(select_call)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
