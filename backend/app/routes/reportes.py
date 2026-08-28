@@ -1,8 +1,15 @@
-import csv
 import io
 from datetime import date, timedelta
+from html import escape
 
 from fastapi import APIRouter, HTTPException, Response, status, Depends, Query
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.database import close_db_connection, get_db_connection
 from app.utils.dependencies import require_role
@@ -14,6 +21,206 @@ router = APIRouter(
 
 ESTADOS_VENTA_SQL = "'confirmado', 'en_preparacion', 'listo', 'entregado'"
 _col_cache = {}
+EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+PDF_MEDIA_TYPE = "application/pdf"
+
+
+def _excel_response(workbook: Workbook, filename: str) -> Response:
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return Response(
+        content=output.getvalue(),
+        media_type=EXCEL_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _pdf_response(title: str, subtitle: str, sections: list[dict], filename: str) -> Response:
+    output = io.BytesIO()
+    doc = SimpleDocTemplate(
+        output,
+        pagesize=A4,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=34,
+        bottomMargin=34,
+        title=title,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "ScanOrderTitle",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=17,
+        leading=22,
+        textColor=colors.HexColor("#0B172A"),
+        spaceAfter=4,
+        alignment=1,
+    )
+    subtitle_style = ParagraphStyle(
+        "ScanOrderSubtitle",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#52617A"),
+        spaceAfter=16,
+        alignment=1,
+    )
+    section_style = ParagraphStyle(
+        "ScanOrderSection",
+        parent=styles["Heading3"],
+        fontName="Helvetica-Bold",
+        fontSize=10,
+        leading=13,
+        textColor=colors.HexColor("#145F72"),
+        spaceBefore=8,
+        spaceAfter=6,
+    )
+    header_cell_style = ParagraphStyle(
+        "ScanOrderHeaderCell",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor("#0B172A"),
+    )
+    body_cell_style = ParagraphStyle(
+        "ScanOrderBodyCell",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor("#243044"),
+    )
+
+    elements = [Paragraph(title, title_style), Paragraph(subtitle, subtitle_style)]
+    for section in sections:
+        elements.append(Paragraph(section["title"], section_style))
+        headers = section["headers"]
+        money_cols = set(section.get("money_cols", ()))
+        table_rows = [[Paragraph(escape(str(header)), header_cell_style) for header in headers]]
+        for row in section["rows"]:
+            table_rows.append([
+                Paragraph(
+                    escape(_format_money(value) if index in money_cols else str(value)),
+                    body_cell_style,
+                )
+                for index, value in enumerate(row, start=1)
+            ])
+
+        col_count = max(len(headers), 1)
+        col_widths = {
+            2: [250, 210],
+            3: [245, 95, 120],
+            4: [210, 90, 80, 80],
+        }.get(col_count)
+
+        table = Table(table_rows, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F4F7FB")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#0B172A")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+            ("LEADING", (0, 0), (-1, -1), 11),
+            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D9E2EC")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FBFCFE")]),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        elements.extend([table, Spacer(1, 8)])
+
+    doc.build(elements)
+    output.seek(0)
+    return Response(
+        content=output.getvalue(),
+        media_type=PDF_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _setup_report_sheet(title: str, subtitle: str):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Reporte"
+    sheet.append([title])
+    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=4)
+    sheet["A1"].font = Font(bold=True, size=16, color="0B172A")
+    sheet["A1"].alignment = Alignment(horizontal="center")
+    sheet.append([subtitle])
+    sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=4)
+    sheet["A2"].font = Font(size=11, color="52617A")
+    sheet["A2"].alignment = Alignment(horizontal="center")
+    sheet.append([])
+    return workbook, sheet
+
+
+def _build_excel_report(title: str, subtitle: str, sections: list[dict]) -> Workbook:
+    workbook, sheet = _setup_report_sheet(title, subtitle)
+    for section in sections:
+        _append_section(sheet, section["title"], section["headers"])
+        for row in section["rows"]:
+            _append_row(sheet, row, money_cols=section.get("money_cols", ()))
+    _finish_report_sheet(sheet)
+    return workbook
+
+
+def _append_section(sheet, title: str, headers=None):
+    if sheet.max_row > 3:
+        sheet.append([])
+    sheet.append([title])
+    row = sheet.max_row
+    sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+    sheet.cell(row=row, column=1).font = Font(bold=True, size=12, color="145F72")
+    sheet.cell(row=row, column=1).fill = PatternFill("solid", fgColor="E8F3F7")
+    sheet.cell(row=row, column=1).alignment = Alignment(horizontal="left")
+
+    if headers:
+        sheet.append(headers)
+        header_row = sheet.max_row
+        for col in range(1, len(headers) + 1):
+            cell = sheet.cell(row=header_row, column=col)
+            cell.font = Font(bold=True, color="0B172A")
+            cell.fill = PatternFill("solid", fgColor="F4F7FB")
+            cell.border = Border(bottom=Side(style="thin", color="D9E2EC"))
+
+
+def _append_row(sheet, values, money_cols=()):
+    sheet.append(values)
+    row = sheet.max_row
+    for col in money_cols:
+        sheet.cell(row=row, column=col).number_format = '$ #,##0.00'
+
+
+def _format_money(value) -> str:
+    number = float(value or 0)
+    return f"$ {number:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _finish_report_sheet(sheet):
+    thin = Side(style="thin", color="E5EAF0")
+    for row in sheet.iter_rows():
+        for cell in row:
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+            if cell.value is not None:
+                cell.border = Border(bottom=thin)
+
+    widths = {
+        "A": 30,
+        "B": 22,
+        "C": 18,
+        "D": 18,
+    }
+    for column, width in widths.items():
+        sheet.column_dimensions[column].width = width
+    for idx in range(1, sheet.max_column + 1):
+        sheet.column_dimensions[get_column_letter(idx)].width = max(
+            sheet.column_dimensions[get_column_letter(idx)].width or 0,
+            14,
+        )
 
 
 def pedidos_tiene_columna(cursor, columna: str) -> bool:
@@ -48,12 +255,13 @@ def fecha_venta_sql(cursor) -> str:
 def reporte_ventas(
     fecha_inicio: date = Query(..., description="Fecha de inicio (YYYY-MM-DD)"),
     fecha_fin: date    = Query(..., description="Fecha de fin (YYYY-MM-DD)"),
+    formato: str = Query("excel", pattern="^(excel|pdf)$", description="Formato de descarga: excel o pdf"),
     current_user: dict = Depends(require_role("admin"))
 ):
     """
-    Exporta un CSV con el reporte de ventas entre las fechas indicadas.
+    Exporta un archivo Excel con el reporte de ventas entre las fechas indicadas.
     Incluye resumen, pedidos por estado y productos más vendidos (top 10).
-    Solo administradores. El CSV usa separador ; y BOM UTF-8 para Excel (es-AR).
+    Solo administradores.
     """
     if fecha_inicio > fecha_fin:
         raise HTTPException(
@@ -112,51 +320,44 @@ def reporte_ventas(
         )
         estados = cursor.fetchall()
 
-        # ── Generar CSV ──────────────────────────────────────────────
-        # sep= en primera línea indica el separador a Excel sin depender del locale
-        buf = io.StringIO()
-        buf.write("sep=;\r\n")
-        w = csv.writer(buf, delimiter=";", lineterminator="\r\n")
+        title = "Maven Burger - Reporte de ventas"
+        subtitle = f"Periodo: {fecha_inicio} al {fecha_fin}"
+        sections = [
+            {
+                "title": "RESUMEN",
+                "headers": ["Metrica", "Valor"],
+                "rows": [
+                    ["Total de ventas", _format_money(resumen["total_ventas"])],
+                    ["Pedidos contabilizados", resumen["cantidad_pedidos"]],
+                    ["Estados de venta", "confirmado, en_preparacion, listo, entregado"],
+                ],
+            },
+            {
+                "title": "PEDIDOS POR ESTADO",
+                "headers": ["Estado", "Cantidad", "Total"],
+                "rows": [
+                    [row["estado"] or "sin_estado", row["cantidad"], float(row["total"])]
+                    for row in estados
+                ],
+                "money_cols": (3,),
+            },
+            {
+                "title": "PRODUCTOS MAS VENDIDOS",
+                "headers": ["Producto", "Cantidad vendida", "Ingresos"],
+                "rows": [
+                    [p["nombre"], p["total_vendido"], float(p["total_ingresos"])]
+                    for p in productos
+                ],
+                "money_cols": (3,),
+            },
+        ]
 
-        w.writerow(["Maven Burger — Reporte de Ventas"])
-        w.writerow([f"Período: {fecha_inicio} al {fecha_fin}"])
-        w.writerow([])
-
-        w.writerow(["RESUMEN"])
-        w.writerow(["Métrica", "Valor"])
-        w.writerow(["Total de ventas", f"{float(resumen['total_ventas']):.2f}"])
-        w.writerow(["Pedidos contabilizados", resumen["cantidad_pedidos"]])
-        w.writerow(["Estados de venta", "confirmado; en_preparacion; listo; entregado"])
-        w.writerow([])
-
-        w.writerow(["PEDIDOS POR ESTADO"])
-        w.writerow(["Estado", "Cantidad", "Total"])
-        for row in estados:
-            w.writerow([
-                row["estado"] or "sin_estado",
-                row["cantidad"],
-                f"{float(row['total']):.2f}",
-            ])
-        w.writerow([])
-
-        w.writerow(["PRODUCTOS MÁS VENDIDOS"])
-        w.writerow(["Producto", "Cantidad vendida", "Ingresos"])
-        for p in productos:
-            w.writerow([
-                p["nombre"],
-                p["total_vendido"],
-                f"{float(p['total_ingresos']):.2f}",
-            ])
-
-        # BOM UTF-8 (\xef\xbb\xbf) para que Excel lo abra con encoding correcto
-        csv_bytes = b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8")
-
-        filename = f"reporte_ventas_{fecha_inicio}_{fecha_fin}.csv"
-        return Response(
-            content=csv_bytes,
-            media_type="text/csv; charset=utf-8-sig",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
+        extension = formato.lower()
+        filename = f"reporte_ventas_{fecha_inicio}_{fecha_fin}.{ 'pdf' if extension == 'pdf' else 'xlsx' }"
+        if extension == "pdf":
+            return _pdf_response(title, subtitle, sections, filename)
+        workbook = _build_excel_report(title, subtitle, sections)
+        return _excel_response(workbook, filename)
 
     except HTTPException:
         raise
@@ -384,15 +585,15 @@ def dashboard_metricas(current_user: dict = Depends(require_role("admin"))):
 
 
 @router.get("/resumen-hoy")
-def resumen_hoy_csv(
+def resumen_hoy_excel(
     fecha: date = Query(default=None, description="Fecha (YYYY-MM-DD). Por defecto: hoy."),
+    formato: str = Query("excel", pattern="^(excel|pdf)$", description="Formato de descarga: excel o pdf"),
     current_user: dict = Depends(require_role("admin")),
 ):
     """
-    Exporta el resumen operativo del dia como CSV.
+    Exporta el resumen operativo del dia como Excel.
     Incluye: ventas totales, cobros por metodo de pago, mesa mas productiva,
     producto top, pedidos por estado y serie horaria.
-    El CSV usa separador ; y BOM UTF-8 para Excel (es-AR).
     """
     fecha_reporte = fecha or date.today()
 
@@ -496,67 +697,82 @@ def resumen_hoy_csv(
         )
         por_hora_raw = {int(r["hora"]): r for r in cursor.fetchall()}
 
-        # ── Construir CSV ────────────────────────────────────────────
-        buf = io.StringIO()
-        buf.write("sep=;\r\n")
-        w = csv.writer(buf, delimiter=";", lineterminator="\r\n")
-
-        w.writerow(["Maven Burger — Resumen del día"])
-        w.writerow([f"Fecha: {fecha_reporte}"])
-        w.writerow([])
-
-        w.writerow(["RESUMEN"])
-        w.writerow(["Métrica", "Valor"])
-        w.writerow(["Ventas totales", f"{float(resumen['ventas_totales']):.2f}"])
-        w.writerow(["Pedidos contabilizados", resumen["pedidos_contabilizados"]])
-        w.writerow(["Ticket promedio", f"{float(resumen['ticket_promedio']):.2f}"])
+        resumen_rows = [
+            ["Ventas totales", _format_money(resumen["ventas_totales"])],
+            ["Pedidos contabilizados", resumen["pedidos_contabilizados"]],
+            ["Ticket promedio", _format_money(resumen["ticket_promedio"])],
+        ]
         if mesa_top:
-            w.writerow(["Mesa más productiva", f"Mesa {mesa_top['numero_mesa']} (${float(mesa_top['total_consumido']):.2f})"])
+            resumen_rows.append([
+                "Mesa mas productiva",
+                f"Mesa {mesa_top['numero_mesa']} (${float(mesa_top['total_consumido']):.2f})",
+            ])
         else:
-            w.writerow(["Mesa más productiva", "—"])
+            resumen_rows.append(["Mesa mas productiva", "-"])
         if productos_top:
             p = productos_top[0]
-            w.writerow(["Producto más vendido", f"{p['nombre']} ({int(p['cantidad_vendida'])} unidades)"])
+            resumen_rows.append(["Producto mas vendido", f"{p['nombre']} ({int(p['cantidad_vendida'])} unidades)"])
         else:
-            w.writerow(["Producto más vendido", "—"])
-        w.writerow([])
+            resumen_rows.append(["Producto mas vendido", "-"])
 
+        sections = [{
+            "title": "RESUMEN",
+            "headers": ["Metrica", "Valor"],
+            "rows": resumen_rows,
+        }]
         if cobros_metodos:
-            w.writerow(["COBROS POR MÉTODO DE PAGO"])
-            w.writerow(["Método", "Cantidad de cierres", "Total cobrado"])
-            for row in cobros_metodos:
-                w.writerow([row["metodo_pago"], int(row["cantidad"]), f"{float(row['total']):.2f}"])
-            w.writerow([])
+            sections.append({
+                "title": "COBROS POR METODO DE PAGO",
+                "headers": ["Metodo", "Cantidad de cierres", "Total cobrado"],
+                "rows": [
+                    [row["metodo_pago"], int(row["cantidad"]), float(row["total"])]
+                    for row in cobros_metodos
+                ],
+                "money_cols": (3,),
+            })
 
-        w.writerow(["PEDIDOS POR ESTADO"])
-        w.writerow(["Estado", "Cantidad", "Total"])
-        for row in por_estado:
-            w.writerow([row["estado"] or "sin_estado", int(row["cantidad"]), f"{float(row['total']):.2f}"])
-        w.writerow([])
+        sections.extend([
+            {
+                "title": "PEDIDOS POR ESTADO",
+                "headers": ["Estado", "Cantidad", "Total"],
+                "rows": [
+                    [row["estado"] or "sin_estado", int(row["cantidad"]), float(row["total"])]
+                    for row in por_estado
+                ],
+                "money_cols": (3,),
+            },
+            {
+                "title": "PRODUCTOS MAS VENDIDOS (TOP 10)",
+                "headers": ["Producto", "Cantidad vendida", "Ingresos"],
+                "rows": [
+                    [p["nombre"], int(p["cantidad_vendida"]), float(p["total_ingresos"])]
+                    for p in productos_top
+                ],
+                "money_cols": (3,),
+            },
+            {
+                "title": "VENTAS POR HORA",
+                "headers": ["Hora", "Pedidos", "Ventas"],
+                "rows": [
+                    [
+                        f"{hora:02d}:00",
+                        int(por_hora_raw[hora]["pedidos"]) if hora in por_hora_raw else 0,
+                        float(por_hora_raw[hora]["ventas"]) if hora in por_hora_raw else 0.0,
+                    ]
+                    for hora in range(24)
+                ],
+                "money_cols": (3,),
+            },
+        ])
 
-        w.writerow(["PRODUCTOS MÁS VENDIDOS (TOP 10)"])
-        w.writerow(["Producto", "Cantidad vendida", "Ingresos"])
-        for p in productos_top:
-            w.writerow([p["nombre"], int(p["cantidad_vendida"]), f"{float(p['total_ingresos']):.2f}"])
-        w.writerow([])
-
-        w.writerow(["VENTAS POR HORA"])
-        w.writerow(["Hora", "Pedidos", "Ventas"])
-        for hora in range(24):
-            row = por_hora_raw.get(hora)
-            w.writerow([
-                f"{hora:02d}:00",
-                int(row["pedidos"]) if row else 0,
-                f"{float(row['ventas']):.2f}" if row else "0.00",
-            ])
-
-        csv_bytes = b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8")
-        filename = f"resumen_{fecha_reporte}.csv"
-        return Response(
-            content=csv_bytes,
-            media_type="text/csv; charset=utf-8-sig",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
+        title = "Maven Burger - Resumen del dia"
+        subtitle = f"Fecha: {fecha_reporte}"
+        extension = formato.lower()
+        filename = f"resumen_{fecha_reporte}.{ 'pdf' if extension == 'pdf' else 'xlsx' }"
+        if extension == "pdf":
+            return _pdf_response(title, subtitle, sections, filename)
+        workbook = _build_excel_report(title, subtitle, sections)
+        return _excel_response(workbook, filename)
 
     except HTTPException:
         raise

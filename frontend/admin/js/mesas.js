@@ -25,20 +25,28 @@
 
     // ── INICIALIZACIÓN ──────────────────────────────────────────
     document.addEventListener("DOMContentLoaded", () => {
+      const tieneMapaSalon = Boolean(document.getElementById("salon-floor"));
+      const tieneGestionQR = Boolean(document.getElementById("mesas-grid-container"));
+
       // GET /mesas (listado + gestión de QR) es solo-admin en el backend;
       // el mozo no ve esa sección, así que alcanza con el mapa del salón.
-      if (getUserRole() === ROLES.ADMIN) {
+      if (getUserRole() === ROLES.ADMIN && tieneGestionQR) {
         cargarMesas();
-      } else {
+      } else if (tieneMapaSalon) {
         cargarMapaMesas();
       }
-      conectarTiempoRealMesas();
-      mapaTimer = setInterval(cargarMapaMesas, 2500);
-    });
 
-    // Permitir crear con Enter
-    document.getElementById("input-numero").addEventListener("keydown", e => {
-      if (e.key === "Enter") crearMesa();
+      if (tieneMapaSalon) {
+        conectarTiempoRealMesas();
+        mapaTimer = setInterval(cargarMapaMesas, 2500);
+      }
+
+      const inputNumero = document.getElementById("input-numero");
+      if (inputNumero) {
+        inputNumero.addEventListener("keydown", e => {
+          if (e.key === "Enter") crearMesa();
+        });
+      }
     });
 
     // ── CARGAR MESAS ────────────────────────────────────────────
@@ -49,16 +57,18 @@
         todasLasMesas = Array.isArray(data) ? data : [];
         actualizarStats(todasLasMesas);
         renderMesas(todasLasMesas);
-        await cargarMapaMesas();
+        if (document.getElementById("salon-floor")) await cargarMapaMesas();
       } catch (error) {
-        document.getElementById("mesas-grid-container").innerHTML = `
+        const container = document.getElementById("mesas-grid-container");
+        if (container) container.innerHTML = `
           <div class="mesas-grid">
             <div class="empty-state">
               <div class="icon">️</div>
               <p>No se pudo cargar las mesas: ${escapeHtml(error.message)}</p>
             </div>
           </div>`;
-        document.getElementById("mesas-count-label").textContent = "Error al cargar";
+        const label = document.getElementById("mesas-count-label");
+        if (label) label.textContent = "Error al cargar";
       }
     }
 
@@ -81,12 +91,16 @@
 
     // ── STATS ───────────────────────────────────────────────────
     function actualizarStats(mesas) {
-      document.getElementById("stat-total").textContent = mesas.length;
+      const total = document.getElementById("stat-total");
+      const ultimaCreada = document.getElementById("stat-ultima");
+      if (!total || !ultimaCreada) return;
+
+      total.textContent = mesas.length;
       if (mesas.length > 0) {
         const ultima = mesas[mesas.length - 1];
-        document.getElementById("stat-ultima").textContent = `Mesa ${ultima.numero}`;
+        ultimaCreada.textContent = `Mesa ${ultima.numero}`;
       } else {
-        document.getElementById("stat-ultima").textContent = "—";
+        ultimaCreada.textContent = "—";
       }
     }
 

@@ -6,17 +6,29 @@
     const usuario = getUser();
     if (usuario) {
       document.getElementById("sidebar-username").textContent = usuario.nombre;
-      document.getElementById("welcome-nombre").textContent   = `Bienvenida, ${usuario.nombre} `;
+      const welcomeNombre = document.getElementById("welcome-nombre");
+      if (welcomeNombre) welcomeNombre.textContent = `Bienvenida, ${usuario.nombre} `;
     }
+
+    const tieneDashboard = Boolean(document.getElementById("ventas-chart"));
+    const tieneReportes = Boolean(document.getElementById("fecha-inicio"));
 
     // ── FECHAS POR DEFECTO (hoy) ─────────────────────────────────
     const hoy = new Date().toISOString().split("T")[0];
-    document.getElementById("fecha-inicio").value = hoy;
-    document.getElementById("fecha-fin").value    = hoy;
-    cargarDashboard();
-    cargarGraficoVentas();
-    cargarVentasSemana();
-    conectarNotificacionesAdmin();
+    if (tieneReportes) {
+      document.getElementById("fecha-inicio").value = hoy;
+      document.getElementById("fecha-fin").value = hoy;
+      const fechaResumen = document.getElementById("fecha-resumen");
+      if (fechaResumen) fechaResumen.value = hoy;
+    }
+
+    if (tieneDashboard) {
+      cargarDashboard();
+      cargarAlertaStock();
+      cargarGraficoVentas();
+      cargarVentasSemana();
+      conectarNotificacionesAdmin();
+    }
 
     const formatterPrecio = new Intl.NumberFormat("es-AR", {
       style: "currency",
@@ -98,6 +110,7 @@
           }
           if (data.type === "pedido_creado" || data.type === "pedido_actualizado") {
             cargarDashboard();
+            cargarAlertaStock();
             if (!data.estado || ["confirmado", "en_preparacion", "listo", "entregado"].includes(data.estado)) {
               cargarGraficoVentas();
               cargarVentasSemana();
@@ -105,6 +118,7 @@
           }
         } catch {
           cargarDashboard();
+          cargarAlertaStock();
           cargarGraficoVentas();
           cargarVentasSemana();
         }
@@ -135,6 +149,69 @@
 
     function formatPrecio(valor) {
       return formatterPrecio.format(Number(valor) || 0);
+    }
+
+    async function cargarAlertaStock() {
+      const alerta = document.getElementById("stock-alert-dashboard");
+      if (!alerta) return;
+
+      try {
+        const inventario = await fetchAPI("/inventario/", "GET");
+        const productos = Array.isArray(inventario) ? inventario : [];
+        const criticos = productos
+          .map(producto => ({ ...producto, estadoStock: normalizarEstadoStock(producto) }))
+          .filter(producto => producto.estadoStock !== "OK");
+
+        if (!criticos.length) {
+          alerta.hidden = true;
+          return;
+        }
+
+        const agotados = criticos.filter(producto => producto.estadoStock === "AGOTADO");
+        const bajoMinimo = criticos.filter(producto => producto.estadoStock === "BAJO");
+        const total = criticos.length;
+        const title = document.getElementById("stock-alert-title");
+        const metrics = document.getElementById("stock-alert-metrics");
+
+        if (title) {
+          title.textContent = "Revisión de stock requerida";
+        }
+
+        if (metrics) {
+          metrics.innerHTML = `
+            <div class="stock-alert-metric is-danger">
+              <strong>${agotados.length}</strong>
+              <span>Agotados</span>
+            </div>
+            <div class="stock-alert-metric">
+              <strong>${bajoMinimo.length}</strong>
+              <span>Bajo mínimo</span>
+            </div>
+          `;
+        }
+
+        alerta.hidden = false;
+        if (window.lucide) lucide.createIcons();
+      } catch (error) {
+        alerta.hidden = true;
+      }
+    }
+
+    function normalizarEstadoStock(producto) {
+      const actual = Number(producto.stock_actual) || 0;
+      const minimo = Number(producto.stock_minimo) || 0;
+      if (actual <= 0) return "AGOTADO";
+      if (minimo > 0 && actual < minimo) return "BAJO";
+      return "OK";
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
     }
 
     // Muestra "+X% vs ayer" solo si el backend envió el valor de ayer.
@@ -621,12 +698,14 @@
       renderCalendario();
     }
 
-    renderCalendario();
+    if (tieneReportes) renderCalendario();
 
     // ── GENERAR REPORTE DE VENTAS ────────────────────────────────
-    async function generarReporteVentas() {
+    async function generarReporteVentas(formato = "excel") {
       const fechaInicio = document.getElementById("fecha-inicio").value;
       const fechaFin    = document.getElementById("fecha-fin").value;
+      const extension = formato === "pdf" ? "pdf" : "xlsx";
+      const formatoLabel = formato === "pdf" ? "PDF" : "Excel";
 
       // Validaciones
       if (!fechaInicio || !fechaFin) {
@@ -638,26 +717,30 @@
         return;
       }
 
-      const btn = document.getElementById("btn-ventas");
+      const btn = document.getElementById(`btn-ventas-${formato}`);
+      const botones = document.querySelectorAll("[id^='btn-ventas-']");
+      botones.forEach(boton => boton.disabled = true);
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span> Generando CSV...';
+      btn.innerHTML = `<span class="spinner"></span> Generando ${formatoLabel}...`;
 
       try {
         // GET /reportes/ventas?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD
-        // Devuelve un CSV con BOM UTF-8 — usamos downloadFile() de api.js
-        const endpoint  = `/reportes/ventas?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
-        const filename  = `reporte_ventas_${fechaInicio}_${fechaFin}.csv`;
+        // Devuelve un archivo Excel o PDF — usamos downloadFile() de api.js
+        const endpoint  = `/reportes/ventas?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}&formato=${formato}`;
+        const filename  = `reporte_ventas_${fechaInicio}_${fechaFin}.${extension}`;
 
         await downloadFile(endpoint, filename);
 
-        mostrarToast("Reporte descargado correctamente.", "success");
+        mostrarToast(`Reporte ${formatoLabel} descargado correctamente.`, "success");
         agregarHistorial(filename, fechaInicio, fechaFin);
 
       } catch (error) {
         mostrarToast("Error al generar el reporte: " + error.message, "error");
       } finally {
-        btn.disabled = false;
-        btn.innerHTML = "Generar reporte de ventas";
+        botones.forEach(boton => boton.disabled = false);
+        document.getElementById("btn-ventas-excel").innerHTML = '<i data-lucide="file-spreadsheet"></i> Excel';
+        document.getElementById("btn-ventas-pdf").innerHTML = '<i data-lucide="file-text"></i> PDF';
+        if (window.lucide) lucide.createIcons();
       }
     }
 
@@ -699,21 +782,27 @@
     }
 
     // ── RESUMEN DEL DÍA ─────────────────────────────────────────
-    async function descargarResumenHoy() {
+    async function descargarResumenHoy(formato = "excel") {
       const fecha = document.getElementById("fecha-resumen")?.value;
       const params = fecha ? `?fecha=${fecha}` : "";
       const fechaLabel = fecha || new Date().toISOString().split("T")[0];
-      const btn = document.getElementById("btn-resumen");
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span> Generando...';
+      const extension = formato === "pdf" ? "pdf" : "xlsx";
+      const formatoLabel = formato === "pdf" ? "PDF" : "Excel";
+      const separator = params ? "&" : "?";
+      const btn = document.getElementById(`btn-resumen-${formato}`);
+      const botones = document.querySelectorAll("[id^='btn-resumen-']");
+      botones.forEach(boton => boton.disabled = true);
+      btn.innerHTML = `<span class="spinner"></span> Generando ${formatoLabel}...`;
       try {
-        await downloadFile(`/reportes/resumen-hoy${params}`, `resumen_${fechaLabel}.csv`);
-        mostrarToast("Resumen descargado correctamente.", "success");
+        await downloadFile(`/reportes/resumen-hoy${params}${separator}formato=${formato}`, `resumen_${fechaLabel}.${extension}`);
+        mostrarToast(`Resumen ${formatoLabel} descargado correctamente.`, "success");
       } catch (error) {
         mostrarToast("Error al generar el resumen: " + error.message, "error");
       } finally {
-        btn.disabled = false;
-        btn.innerHTML = "Descargar resumen del día";
+        botones.forEach(boton => boton.disabled = false);
+        document.getElementById("btn-resumen-excel").innerHTML = '<i data-lucide="file-spreadsheet"></i> Excel';
+        document.getElementById("btn-resumen-pdf").innerHTML = '<i data-lucide="file-text"></i> PDF';
+        if (window.lucide) lucide.createIcons();
       }
     }
 

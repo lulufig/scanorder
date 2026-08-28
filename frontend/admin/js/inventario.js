@@ -12,9 +12,19 @@
 
   // ── Carga inicial ────────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
+    aplicarFiltroDesdeUrl();
     cargarInventario();
     setInterval(cargarInventario, 5000);
   });
+
+  function aplicarFiltroDesdeUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const estado = params.get("estado");
+    const filtroEstado = document.getElementById("filtro-estado");
+    if (estado === "CRITICOS" && filtroEstado) {
+      filtroEstado.value = "CRITICOS";
+    }
+  }
 
   async function cargarInventario() {
     try {

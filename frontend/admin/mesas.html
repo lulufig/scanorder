@@ -28,17 +28,19 @@
     <div class="sidebar-logo">ScanOrder</div>
 
     <div class="sidebar-section" data-role="admin">Reportes</div>
-    <a href="index.html" class="sidebar-link" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
+    <a href="index.html" class="sidebar-link" data-role="admin"><i data-lucide="layout-dashboard"></i>Dashboard</a>
+    <a href="reportes.html" class="sidebar-link" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
 
     <div class="sidebar-section">Gestión</div>
     <a href="mesas.html"      class="sidebar-link active"><i data-lucide="layout-grid"></i>Mesas</a>
+    <a href="mesas-qr.html"   class="sidebar-link" data-role="admin"><i data-lucide="qr-code"></i>QR Mesas</a>
     <a href="productos.html"  class="sidebar-link" data-role="admin"><i data-lucide="utensils"></i>Productos</a>
     <a href="inventario.html" class="sidebar-link" data-role="admin"><i data-lucide="package"></i>Inventario</a>
     <a href="usuarios.html"   class="sidebar-link" data-role="admin"><i data-lucide="users"></i>Usuarios</a>
 
     <div class="sidebar-bottom">
       <div class="user-info">
-        Panel de administración
+        Administración
         <span class="user-name" id="sidebar-username">—</span>
       </div>
       <button class="btn-logout" onclick="logout()">Cerrar sesión</button>
@@ -49,8 +51,10 @@
   <main class="main">
 
     <div class="page-header">
-      <h1 class="page-title">Mesas</h1>
-      <p class="page-subtitle">Creá mesas y generá sus códigos QR</p>
+      <div>
+        <h1 class="page-title">Mesas</h1>
+        <p class="page-subtitle">Mapa del salón y estado operativo de mesas en tiempo real</p>
+      </div>
     </div>
 
     <div class="layout salon-layout">
@@ -103,69 +107,6 @@
 
     </div>
 
-    <!-- Gestión y QR existentes -->
-    <div class="card qr-admin-card" data-role="admin">
-      <div class="card-header qr-admin-header">
-        <div>
-          <div class="card-title">Mesas y códigos QR</div>
-          <div class="card-subtitle">Creá mesas, generá sus QR y descargalos para el salón</div>
-        </div>
-        <div class="qr-count-pill" id="mesas-count-label">Cargando...</div>
-      </div>
-
-      <div class="qr-admin-body">
-        <section class="qr-create-panel">
-          <div class="qr-panel-kicker">Nueva mesa</div>
-          <h2>Generar QR</h2>
-          <p>Ingresá el número visible de la mesa. El sistema crea el QR automáticamente.</p>
-
-          <label class="form-label" for="input-numero">Número de mesa</label>
-          <div class="qr-input-row">
-            <input
-              class="form-input"
-              id="input-numero"
-              type="number"
-              min="1"
-              max="999"
-              placeholder="Ej: 5"
-            />
-            <button class="btn-primary" id="btn-crear" onclick="crearMesa()">
-              Crear mesa
-            </button>
-          </div>
-
-          <div class="mini-stats qr-mini-stats">
-            <div class="mini-stat">
-              <div class="mini-stat-val" id="stat-total">—</div>
-              <div class="mini-stat-lbl">Total mesas</div>
-            </div>
-            <div class="mini-stat">
-              <div class="mini-stat-val" id="stat-ultima">—</div>
-              <div class="mini-stat-lbl">Última creada</div>
-            </div>
-          </div>
-        </section>
-
-        <section class="qr-list-panel">
-          <div class="qr-list-head">
-            <div>
-              <div class="qr-panel-kicker">Códigos activos</div>
-              <h2>QR del salón</h2>
-            </div>
-            <button class="btn-ghost" type="button" onclick="cargarMesas()">Actualizar</button>
-          </div>
-
-          <div id="mesas-grid-container">
-            <div class="mesas-grid">
-              <div class="empty-state">
-                <div class="icon">...</div>
-                <p>Cargando mesas...</p>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-    </div>
   </main>
 
   <!-- ===== MODAL VER QR ===== -->

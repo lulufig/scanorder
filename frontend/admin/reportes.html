@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ScanOrder — Reportes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <link rel="stylesheet" href="../assets/css/tokens.css" />
+  <link rel="stylesheet" href="css/admin-shell.css" />
+  <link rel="stylesheet" href="css/index.css" />
+</head>
+
+<body>
+  <div class="mobile-topbar">
+    <button class="mobile-menu-btn" type="button" onclick="toggleSidebar()" aria-label="Abrir menu">
+      <i data-lucide="menu"></i>
+    </button>
+    <div class="mobile-topbar-logo">ScanOrder</div>
+  </div>
+  <div class="sidebar-overlay" onclick="closeSidebar()"></div>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">ScanOrder</div>
+
+    <div class="sidebar-section" data-role="admin">Reportes</div>
+    <a href="index.html" class="sidebar-link" data-role="admin"><i data-lucide="layout-dashboard"></i>Dashboard</a>
+    <a href="reportes.html" class="sidebar-link active" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
+
+    <div class="sidebar-section">Gestion</div>
+    <a href="mesas.html" class="sidebar-link"><i data-lucide="layout-grid"></i>Mesas</a>
+    <a href="mesas-qr.html" class="sidebar-link" data-role="admin"><i data-lucide="qr-code"></i>QR Mesas</a>
+    <a href="productos.html" class="sidebar-link" data-role="admin"><i data-lucide="utensils"></i>Productos</a>
+    <a href="inventario.html" class="sidebar-link" data-role="admin"><i data-lucide="package"></i>Inventario</a>
+    <a href="usuarios.html" class="sidebar-link" data-role="admin"><i data-lucide="users"></i>Usuarios</a>
+
+    <div class="sidebar-bottom">
+      <div class="user-info">
+        Administración
+        <span class="user-name" id="sidebar-username">—</span>
+      </div>
+      <button class="btn-logout" onclick="logout()">Cerrar sesion</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="page-header fade-in">
+      <div>
+        <h1 class="page-title">Reportes de ventas</h1>
+        <p class="page-subtitle">Generá reportes de ventas y resúmenes diarios de la operación</p>
+      </div>
+    </div>
+
+      <div class="reportes-grid">
+        <div class="reporte-card calendar-card">
+          <div class="reporte-card-header">
+            <div class="reporte-icon"><i data-lucide="calendar-days"></i></div>
+            <div>
+              <div class="reporte-titulo">Calendario</div>
+              <div class="reporte-desc">Elegi un dia para completar las fechas de los reportes</div>
+            </div>
+          </div>
+          <div class="reporte-card-body">
+            <div class="cal-header">
+              <button class="cal-nav" type="button" onclick="calendarPrevMonth()" aria-label="Mes anterior"><i data-lucide="chevron-left"></i></button>
+              <span class="cal-month-label" id="cal-month-label">—</span>
+              <button class="cal-nav" type="button" onclick="calendarNextMonth()" aria-label="Mes siguiente"><i data-lucide="chevron-right"></i></button>
+            </div>
+            <div class="cal-weekdays">
+              <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+            </div>
+            <div class="cal-grid" id="cal-grid"></div>
+            <div class="cal-footer">
+              <button class="cal-hoy-btn" type="button" onclick="calendarIrHoy()">Ir a hoy</button>
+              <span class="cal-selected-label" id="cal-selected-label">Sin seleccion</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="reportes-stack">
+          <div class="reporte-card">
+            <div class="reporte-card-header">
+              <div class="reporte-icon"><i data-lucide="file-down"></i></div>
+              <div>
+                <div class="reporte-titulo">Reporte de ventas</div>
+                <div class="reporte-desc">Descarga en Excel o PDF con total, pedidos y productos mas vendidos</div>
+              </div>
+            </div>
+            <div class="reporte-card-body">
+              <div class="atajos-fecha">
+                <button class="atajo-btn" onclick="setAtajo('hoy')">Hoy</button>
+                <button class="atajo-btn" onclick="setAtajo('semana')">Esta semana</button>
+                <button class="atajo-btn" onclick="setAtajo('mes')">Este mes</button>
+                <button class="atajo-btn" onclick="setAtajo('mes_anterior')">Mes anterior</button>
+              </div>
+
+              <div class="fechas-row">
+                <div class="form-group">
+                  <label class="form-label" for="fecha-inicio">Fecha inicio</label>
+                  <input class="form-input" type="date" id="fecha-inicio" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="fecha-fin">Fecha fin</label>
+                  <input class="form-input" type="date" id="fecha-fin" />
+                </div>
+              </div>
+
+              <div class="reporte-actions">
+                <button class="btn-generar" id="btn-ventas-excel" onclick="generarReporteVentas('excel')">
+                  <i data-lucide="file-spreadsheet"></i>
+                  Excel
+                </button>
+                <button class="btn-generar btn-generar-outline" id="btn-ventas-pdf" onclick="generarReporteVentas('pdf')">
+                  <i data-lucide="file-text"></i>
+                  PDF
+                </button>
+              </div>
+
+              <div class="historial" id="historial-ventas">
+                <div class="historial-titulo">Ultimas descargas</div>
+                <div class="historial-empty" id="historial-ventas-empty">
+                  Aun no generaste ningun reporte en esta sesion.
+                </div>
+                <div id="historial-ventas-lista"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="reporte-card">
+            <div class="reporte-card-header">
+              <div class="reporte-icon"><i data-lucide="clipboard-list"></i></div>
+              <div>
+                <div class="reporte-titulo">Resumen del dia</div>
+                <div class="reporte-desc">Descarga en Excel o PDF con ventas, cobros, mesa y producto top</div>
+              </div>
+            </div>
+            <div class="reporte-card-body">
+              <p class="reporte-note">
+                Exporta el resumen operativo completo de hoy o de un dia especifico.
+              </p>
+              <div class="form-group reporte-fecha-single">
+                <label class="form-label" for="fecha-resumen">Fecha (por defecto: hoy)</label>
+                <input class="form-input" type="date" id="fecha-resumen" />
+              </div>
+              <div class="reporte-actions">
+                <button class="btn-generar" id="btn-resumen-excel" onclick="descargarResumenHoy('excel')">
+                  <i data-lucide="file-spreadsheet"></i>
+                  Excel
+                </button>
+                <button class="btn-generar btn-generar-outline" id="btn-resumen-pdf" onclick="descargarResumenHoy('pdf')">
+                  <i data-lucide="file-text"></i>
+                  PDF
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="../assets/js/config.js"></script>
+  <script src="../assets/js/auth.js"></script>
+  <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/sidebar-toggle.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer onload="lucide.createIcons()"></script>
+  <script src="js/index.js" defer></script>
+</body>
+</html>

@@ -240,7 +240,7 @@
 
 .users-filters {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) 170px 190px auto 180px;
+  grid-template-columns: minmax(360px, 1fr) minmax(150px, 180px) minmax(170px, 200px) minmax(230px, 280px);
   gap: 12px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--color-border);
@@ -250,22 +250,6 @@
   min-width: 0;
 }
 
-.check-filter {
-  height: 40px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  color: var(--gray-600);
-  background: var(--gray-0);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  font-size: 0.82rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.check-filter input,
 .user-select,
 .row-check input {
   width: 15px;

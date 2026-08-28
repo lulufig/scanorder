@@ -81,21 +81,28 @@
 
     function obtenerUsuariosVisibles() {
       const busqueda = normalizarTexto(document.getElementById("filtro-texto")?.value || "");
+      const filtroListado = document.getElementById("filtro-listado")?.value || "todos";
       const rol = document.getElementById("filtro-rol")?.value || "";
       const estadoFiltro = document.getElementById("filtro-estado")?.value || "";
-      const soloTemporales = document.getElementById("filtro-temporales")?.checked || false;
 
-      return [..._usuarios]
+      const usuariosBase = [..._usuarios]
         .filter(u => {
           const estado = estadoUsuario(u);
           const contenido = normalizarTexto(`${u.id_usuario} ${u.nombre || ""} ${u.email || ""} ${u.rol || ""}`);
           const pasaBusqueda = !busqueda || contenido.includes(busqueda);
           const pasaRol = !rol || String(u.rol || "") === rol;
           const pasaEstado = !estadoFiltro || estado === estadoFiltro;
-          const pasaTemporal = !soloTemporales || Boolean(u.debe_cambiar_password);
-          return pasaBusqueda && pasaRol && pasaEstado && pasaTemporal;
-        })
-        .sort(compararUsuarios);
+          const pasaListado = filtrarPorListado(u, filtroListado);
+          return pasaBusqueda && pasaRol && pasaEstado && pasaListado;
+        });
+
+      if (filtroListado === "recientes") {
+        return usuariosBase.sort(compararPorCreacionDesc).slice(0, 5);
+      }
+      if (filtroListado === "antiguos") {
+        return usuariosBase.sort(compararPorCreacionAsc);
+      }
+      return usuariosBase.sort(compararUsuarios);
     }
 
     function compararUsuarios(a, b) {
@@ -110,8 +117,27 @@
     function valorOrden(u, campo) {
       if (campo === "estado") return estadoUsuario(u);
       if (campo === "ultimo_acceso") return new Date(u.ultimo_acceso || u.last_login || u.ultimo_login || u.created_at || 0).getTime();
-      if (campo === "created_at") return new Date(u.created_at || 0).getTime();
+      if (campo === "created_at") return fechaCreacionValor(u);
       return normalizarTexto(u[campo] || "");
+    }
+
+    function fechaCreacionValor(u) {
+      const fecha = new Date(u.created_at || 0).getTime();
+      return Number.isNaN(fecha) || !fecha ? Number(u.id_usuario || 0) : fecha;
+    }
+
+    function compararPorCreacionDesc(a, b) {
+      return fechaCreacionValor(b) - fechaCreacionValor(a);
+    }
+
+    function compararPorCreacionAsc(a, b) {
+      return fechaCreacionValor(a) - fechaCreacionValor(b);
+    }
+
+    function filtrarPorListado(u, filtro) {
+      if (!filtro || ["todos", "recientes", "antiguos"].includes(filtro)) return true;
+      if (filtro === "temporal") return Boolean(u.debe_cambiar_password);
+      return true;
     }
 
     function ordenarPor(campo) {
@@ -119,14 +145,8 @@
         campo,
         dir: _sort.campo === campo && _sort.dir === "asc" ? "desc" : "asc",
       };
-      const ordenSelect = document.getElementById("filtro-orden");
-      if (ordenSelect) ordenSelect.value = `${_sort.campo}:${_sort.dir}`;
-      renderTabla();
-    }
-
-    function actualizarOrdenSelect() {
-      const [campo, dir] = document.getElementById("filtro-orden").value.split(":");
-      _sort = { campo, dir };
+      const filtroListado = document.getElementById("filtro-listado");
+      if (filtroListado) filtroListado.value = "todos";
       renderTabla();
     }
 

@@ -29,17 +29,19 @@
     <div class="sidebar-logo">ScanOrder</div>
 
     <div class="sidebar-section" data-role="admin">Reportes</div>
-    <a href="index.html" class="sidebar-link active" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
+    <a href="index.html" class="sidebar-link active" data-role="admin"><i data-lucide="layout-dashboard"></i>Dashboard</a>
+    <a href="reportes.html" class="sidebar-link" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
 
     <div class="sidebar-section">Gestión</div>
     <a href="mesas.html"      class="sidebar-link"><i data-lucide="layout-grid"></i>Mesas</a>
+    <a href="mesas-qr.html"   class="sidebar-link" data-role="admin"><i data-lucide="qr-code"></i>QR Mesas</a>
     <a href="productos.html"  class="sidebar-link" data-role="admin"><i data-lucide="utensils"></i>Productos</a>
     <a href="inventario.html" class="sidebar-link" data-role="admin"><i data-lucide="package"></i>Inventario</a>
     <a href="usuarios.html"   class="sidebar-link" data-role="admin"><i data-lucide="users"></i>Usuarios</a>
 
     <div class="sidebar-bottom">
       <div class="user-info">
-        Panel de administración
+        Administración
         <span class="user-name" id="sidebar-username">—</span>
       </div>
       <button class="btn-logout" onclick="logout()">Cerrar sesión</button>
@@ -62,52 +64,79 @@
       </div>
     </div>
 
-    <!-- Stat cards -->
-    <div class="stat-cards fade-in" style="animation-delay:0.05s;">
-      <div class="stat-card stat-card-primary">
-        <div class="stat-card-head">
-          <div class="stat-card-icon"><i data-lucide="wallet"></i></div>
-          <div class="stat-card-label">Ventas del día</div>
-        </div>
-        <div class="stat-card-value-row">
-          <div class="stat-card-value" id="metric-ventas-hoy">—</div>
-          <span class="stat-card-compare" id="compare-ventas-hoy"></span>
+    <!-- Dashboard -->
+    <section class="report-section dashboard-section fade-in" style="animation-delay:0.05s;">
+      <div class="report-section-head">
+        <div>
+          <div class="section-eyebrow">Dashboard</div>
+          <h2 class="section-heading">Indicadores y gráficos</h2>
+          <p class="section-copy">Seguimiento visual de ventas, pedidos, cobros y rendimiento operativo.</p>
         </div>
       </div>
-      <div class="stat-card">
-        <div class="stat-card-head">
-          <div class="stat-card-icon"><i data-lucide="receipt"></i></div>
-          <div class="stat-card-label">Pedidos del día</div>
-        </div>
-        <div class="stat-card-value-row">
-          <div class="stat-card-value" id="metric-pedidos-hoy">—</div>
-          <span class="stat-card-compare" id="compare-pedidos-hoy"></span>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-card-head">
-          <div class="stat-card-icon"><i data-lucide="receipt-text"></i></div>
-          <div class="stat-card-label">Ticket promedio</div>
-        </div>
-        <div class="stat-card-value-row">
-          <div class="stat-card-value" id="metric-ticket">—</div>
-          <span class="stat-card-compare" id="compare-ticket"></span>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-card-head">
-          <div class="stat-card-icon"><i data-lucide="flame"></i></div>
-          <div class="stat-card-label">Pedidos activos ahora</div>
-        </div>
-        <div class="stat-card-value-row">
-          <div class="stat-card-value" id="metric-activos">—</div>
-          <span class="stat-card-compare" id="compare-activos"></span>
-        </div>
-      </div>
-    </div>
 
-    <!-- Gráfico principal + panel secundario -->
-    <div class="dash-main-grid fade-in" style="animation-delay:0.1s;">
+      <div class="stock-alert-dashboard" id="stock-alert-dashboard" hidden>
+        <div class="stock-alert-main">
+          <div class="stock-alert-icon">
+            <i data-lucide="triangle-alert"></i>
+          </div>
+          <div class="stock-alert-content">
+            <span class="stock-alert-kicker">ALERTA</span>
+            <strong id="stock-alert-title">Revisión de stock requerida</strong>
+          </div>
+        </div>
+        <div class="stock-alert-metrics" id="stock-alert-metrics"></div>
+        <a class="stock-alert-action" href="inventario.html?estado=CRITICOS">
+          Revisar inventario
+          <i data-lucide="arrow-right"></i>
+        </a>
+      </div>
+
+      <!-- Stat cards -->
+      <div class="stat-cards">
+        <div class="stat-card stat-card-primary">
+          <div class="stat-card-head">
+            <div class="stat-card-icon"><i data-lucide="wallet"></i></div>
+            <div class="stat-card-label">Ventas del día</div>
+          </div>
+          <div class="stat-card-value-row">
+            <div class="stat-card-value" id="metric-ventas-hoy">—</div>
+            <span class="stat-card-compare" id="compare-ventas-hoy"></span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-head">
+            <div class="stat-card-icon"><i data-lucide="receipt"></i></div>
+            <div class="stat-card-label">Pedidos del día</div>
+          </div>
+          <div class="stat-card-value-row">
+            <div class="stat-card-value" id="metric-pedidos-hoy">—</div>
+            <span class="stat-card-compare" id="compare-pedidos-hoy"></span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-head">
+            <div class="stat-card-icon"><i data-lucide="receipt-text"></i></div>
+            <div class="stat-card-label">Ticket promedio</div>
+          </div>
+          <div class="stat-card-value-row">
+            <div class="stat-card-value" id="metric-ticket">—</div>
+            <span class="stat-card-compare" id="compare-ticket"></span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-head">
+            <div class="stat-card-icon"><i data-lucide="flame"></i></div>
+            <div class="stat-card-label">Pedidos activos ahora</div>
+          </div>
+          <div class="stat-card-value-row">
+            <div class="stat-card-value" id="metric-activos">—</div>
+            <span class="stat-card-compare" id="compare-activos"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gráfico principal + panel secundario -->
+      <div class="dash-main-grid">
 
       <section class="chart-panel">
         <div class="chart-panel-head">
@@ -157,10 +186,10 @@
 
       </aside>
 
-    </div>
+      </div>
 
-    <!-- Estado de pedidos + tendencia semanal -->
-    <div class="dash-main-grid dash-main-grid-reverse fade-in" style="animation-delay:0.12s;">
+      <!-- Estado de pedidos + tendencia semanal -->
+      <div class="dash-main-grid dash-main-grid-reverse">
 
       <aside class="side-panel">
 
@@ -210,115 +239,8 @@
         </div>
       </section>
 
-    </div>
-
-    <!-- Sección Reportes -->
-    <div id="seccion-reportes" class="fade-in" style="animation-delay:0.2s;">
-      <div class="section-title">Reportes de ventas</div>
-
-      <div class="reportes-grid">
-
-        <!-- Calendario -->
-        <div class="reporte-card calendar-card">
-          <div class="reporte-card-header">
-            <div class="reporte-icon"><i data-lucide="calendar-days"></i></div>
-            <div>
-              <div class="reporte-titulo">Calendario</div>
-              <div class="reporte-desc">Elegí un día para completar las fechas de los reportes</div>
-            </div>
-          </div>
-          <div class="reporte-card-body">
-            <div class="cal-header">
-              <button class="cal-nav" type="button" onclick="calendarPrevMonth()" aria-label="Mes anterior"><i data-lucide="chevron-left"></i></button>
-              <span class="cal-month-label" id="cal-month-label">—</span>
-              <button class="cal-nav" type="button" onclick="calendarNextMonth()" aria-label="Mes siguiente"><i data-lucide="chevron-right"></i></button>
-            </div>
-            <div class="cal-weekdays">
-              <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
-            </div>
-            <div class="cal-grid" id="cal-grid"></div>
-            <div class="cal-footer">
-              <button class="cal-hoy-btn" type="button" onclick="calendarIrHoy()">Ir a hoy</button>
-              <span class="cal-selected-label" id="cal-selected-label">Sin selección</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Reporte de ventas + Resumen del día, apilados a la derecha -->
-        <div class="reportes-stack">
-
-          <!-- Reporte de ventas -->
-          <div class="reporte-card">
-            <div class="reporte-card-header">
-              <div class="reporte-icon"><i data-lucide="file-down"></i></div>
-              <div>
-                <div class="reporte-titulo">Reporte de ventas</div>
-                <div class="reporte-desc">CSV con total, pedidos y productos más vendidos por rango de fechas</div>
-              </div>
-            </div>
-            <div class="reporte-card-body">
-
-              <!-- Atajos de fecha -->
-              <div class="atajos-fecha">
-                <button class="atajo-btn" onclick="setAtajo('hoy')">Hoy</button>
-                <button class="atajo-btn" onclick="setAtajo('semana')">Esta semana</button>
-                <button class="atajo-btn" onclick="setAtajo('mes')">Este mes</button>
-                <button class="atajo-btn" onclick="setAtajo('mes_anterior')">Mes anterior</button>
-              </div>
-
-              <!-- Fechas -->
-              <div class="fechas-row">
-                <div class="form-group">
-                  <label class="form-label" for="fecha-inicio">Fecha inicio</label>
-                  <input class="form-input" type="date" id="fecha-inicio" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label" for="fecha-fin">Fecha fin</label>
-                  <input class="form-input" type="date" id="fecha-fin" />
-                </div>
-              </div>
-
-              <!-- Botón generar -->
-              <button class="btn-generar" id="btn-ventas" onclick="generarReporteVentas()">Generar reporte de ventas</button>
-
-              <!-- Historial de esta sesión -->
-              <div class="historial" id="historial-ventas">
-                <div class="historial-titulo">Últimas descargas</div>
-                <div class="historial-empty" id="historial-ventas-empty">
-                  Aún no generaste ningún reporte en esta sesión.
-                </div>
-                <div id="historial-ventas-lista"></div>
-              </div>
-
-            </div>
-          </div>
-
-          <!-- Resumen del día -->
-          <div class="reporte-card">
-            <div class="reporte-card-header">
-              <div class="reporte-icon"><i data-lucide="clipboard-list"></i></div>
-              <div>
-                <div class="reporte-titulo">Resumen del día</div>
-                <div class="reporte-desc">CSV con ventas, cobros por método, mesa y producto top</div>
-              </div>
-            </div>
-            <div class="reporte-card-body">
-              <p class="reporte-note">
-                Exporta el resumen operativo completo de hoy o de un día específico.
-              </p>
-              <div class="form-group reporte-fecha-single">
-                <label class="form-label" for="fecha-resumen">Fecha (por defecto: hoy)</label>
-                <input class="form-input" type="date" id="fecha-resumen" />
-              </div>
-              <button class="btn-generar" id="btn-resumen" onclick="descargarResumenHoy()">Descargar resumen del día</button>
-            </div>
-          </div>
-
-        </div>
-
       </div>
-
-    </div>
+    </section>
 
   </main>
 

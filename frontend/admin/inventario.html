@@ -29,17 +29,19 @@
     <div class="sidebar-logo">ScanOrder</div>
 
     <div class="sidebar-section" data-role="admin">Reportes</div>
-    <a href="index.html" class="sidebar-link" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
+    <a href="index.html" class="sidebar-link" data-role="admin"><i data-lucide="layout-dashboard"></i>Dashboard</a>
+    <a href="reportes.html" class="sidebar-link" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
 
     <div class="sidebar-section">Gestión</div>
     <a href="mesas.html"      class="sidebar-link"><i data-lucide="layout-grid"></i>Mesas</a>
+    <a href="mesas-qr.html"   class="sidebar-link" data-role="admin"><i data-lucide="qr-code"></i>QR Mesas</a>
     <a href="productos.html"  class="sidebar-link" data-role="admin"><i data-lucide="utensils"></i>Productos</a>
     <a href="inventario.html" class="sidebar-link active" data-role="admin"><i data-lucide="package"></i>Inventario</a>
     <a href="usuarios.html"   class="sidebar-link" data-role="admin"><i data-lucide="users"></i>Usuarios</a>
 
     <div class="sidebar-bottom">
       <div class="user-info">
-        Panel de administración
+        Administración
         <span class="user-name" id="sidebar-username">—</span>
       </div>
       <button class="btn-logout" onclick="logout()">Cerrar sesión</button>
@@ -70,6 +72,7 @@
       </div>
       <select id="filtro-estado" onchange="renderTabla()">
         <option value="">Todos los estados</option>
+        <option value="CRITICOS">Críticos</option>
         <option value="OK">Stock OK</option>
         <option value="BAJO">Bajo mínimo</option>
         <option value="AGOTADO">Agotado</option>
