@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ScanOrder — Inventario</title>
+  <title>ScanOrder — Reposición rápida</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
@@ -11,11 +11,12 @@
   <link rel="stylesheet" href="css/admin-shell.css" />
   <link rel="stylesheet" href="css/mesas.css" />
   <link rel="stylesheet" href="css/inventario.css" />
+  <link rel="stylesheet" href="css/inventario-rapida.css" />
 </head>
 
 <body>
 
-  <!-- ===== BARRA MÓVIL (solo visible en pantallas chicas) ===== -->
+  <!-- ===== BARRA MÓVIL ===== -->
   <div class="mobile-topbar">
     <button class="mobile-menu-btn" type="button" onclick="toggleSidebar()" aria-label="Abrir menú">
       <i data-lucide="menu"></i>
@@ -53,86 +54,60 @@
 
     <div class="page-header">
       <div>
-        <h1 class="page-title">Inventario</h1>
-        <p class="page-subtitle">Control de stock por producto</p>
+        <a class="volver-link" href="inventario.html"><i data-lucide="arrow-left"></i>Volver a Inventario</a>
+        <h1 class="page-title">Reposición rápida</h1>
+        <p class="page-subtitle">Editá el stock de varios productos en una sola pantalla y guardá todo junto.</p>
       </div>
-      <a class="btn-primary" href="inventario-rapida.html">
-        <i data-lucide="list-checks"></i>
-        Reposición rápida
-      </a>
     </div>
 
-    <!-- Banner de alerta global -->
-    <div class="alerta-banner" id="alerta-bajo-minimo">
-      <i data-lucide="triangle-alert"></i>
-      Hay <strong id="alerta-count">0</strong> producto(s) con stock por debajo del mínimo
-    </div>
-
-    <!-- Filtros -->
+    <!-- Filtro -->
     <div class="inv-filters">
       <div class="inv-search">
         <i data-lucide="search"></i>
         <input type="text" id="filtro-nombre" placeholder="Buscar producto…" oninput="renderTabla()" />
       </div>
-      <select id="filtro-estado" onchange="renderTabla()">
-        <option value="CRITICOS">Críticos</option>
-        <option value="">Todos los estados</option>
-        <option value="OK">Stock OK</option>
-        <option value="BAJO">Bajo mínimo</option>
-        <option value="AGOTADO">Agotado</option>
+      <select id="filtro-categoria" onchange="renderTabla()">
+        <option value="">Todas las categorías</option>
       </select>
     </div>
 
     <!-- Tabla -->
     <div class="inv-table-wrap">
-      <table class="inv-table">
+      <table class="inv-table rapida-table">
         <thead>
           <tr>
             <th>Producto</th>
             <th>Categoría</th>
-            <th>Stock</th>
-            <th>Estado</th>
-            <th>Acciones</th>
+            <th>Stock actual</th>
+            <th>Nuevo stock</th>
           </tr>
         </thead>
-        <tbody id="inv-tbody">
-          <tr><td colspan="5" style="text-align:center;padding:2rem;color:#888">Cargando…</td></tr>
+        <tbody id="rapida-tbody">
+          <tr><td colspan="4" class="table-empty">Cargando…</td></tr>
         </tbody>
       </table>
     </div>
 
   </main>
 
-  <!-- ===== MODAL AJUSTE ===== -->
-  <div class="modal-overlay" id="modal-ajuste">
-    <div class="modal-box">
-      <h3>Ajustar Stock — <span id="modal-nombre-prod">—</span></h3>
-      <input type="hidden" id="modal-id-prod" />
-      <div>
-        <label>Stock actual</label>
-        <input type="number" id="modal-stock-actual" min="0" />
-      </div>
-      <div>
-        <label>Stock mínimo (umbral de alerta)</label>
-        <input type="number" id="modal-stock-minimo" min="0" />
-      </div>
-      <div>
-        <label>Motivo</label>
-        <textarea id="modal-motivo" rows="2" placeholder="Ej: reposición semanal"></textarea>
-      </div>
-      <div class="modal-actions">
-        <button class="btn-cancel" onclick="cerrarModal()">Cancelar</button>
-        <button class="btn-guardar" onclick="guardarAjuste()">Guardar</button>
-      </div>
+  <!-- ===== BARRA DE GUARDADO ===== -->
+  <div class="save-bar" id="save-bar" hidden>
+    <span class="save-bar-text"><strong id="save-count">0</strong> producto(s) con cambios</span>
+    <div class="save-bar-actions">
+      <button class="btn-cancel" type="button" onclick="descartarCambios()">Descartar</button>
+      <button class="btn-guardar" type="button" id="btn-guardar-todo" onclick="guardarTodo()">Guardar cambios</button>
     </div>
   </div>
 
-  <!-- Scripts — orden obligatorio -->
+  <!-- ===== TOAST ===== -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Scripts -->
   <script src="../assets/js/config.js"></script>
   <script src="../assets/js/auth.js"></script>
   <script src="../assets/js/api.js"></script>
   <script src="../assets/js/sidebar-toggle.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer onload="lucide.createIcons()"></script>
-  <script src="js/inventario.js"></script>
+  <script src="js/inventario-rapida.js"></script>
 </body>
 </html>

@@ -1,0 +1,126 @@
+/* ============================================================
+   ScanOrder Admin — Reposición rápida
+   Complementa inventario.css (tabla, filtros) y admin-shell.css.
+   ============================================================ */
+
+.volver-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 8px;
+  color: var(--gray-500);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.volver-link:hover {
+  color: var(--color-primary);
+}
+
+.volver-link [data-lucide] {
+  width: 15px;
+  height: 15px;
+}
+
+/* ===== Tabla ===== */
+.rapida-table {
+  min-width: 640px;
+}
+
+.rapida-table th:nth-child(1),
+.rapida-table td:nth-child(1) { width: 42%; }
+
+.rapida-table th:nth-child(2),
+.rapida-table td:nth-child(2) { width: 26%; }
+
+.rapida-table th:nth-child(3),
+.rapida-table td:nth-child(3) { width: 16%; }
+
+.rapida-table th:nth-child(4),
+.rapida-table td:nth-child(4) { width: 16%; }
+
+.stock-actual-cell {
+  color: var(--gray-500);
+  font-family: 'DM Mono', Consolas, monospace;
+  font-size: 0.9rem;
+}
+
+.stock-input {
+  width: 100%;
+  max-width: 110px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--gray-0);
+  color: var(--gray-900);
+  font-family: 'DM Mono', Consolas, monospace;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.stock-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-focus);
+}
+
+.rapida-table tbody tr.row-tocada td {
+  background: var(--color-primary-soft);
+}
+
+/* ===== Barra de guardado flotante ===== */
+.save-bar {
+  position: fixed;
+  bottom: 22px;
+  left: calc(50% + (var(--sidebar-w, 0px) / 2));
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 16px 12px 20px;
+  background: var(--gray-900);
+  color: var(--gray-0);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-lg, 0 10px 30px rgba(0, 0, 0, 0.25));
+}
+
+.save-bar[hidden] {
+  display: none !important;
+}
+
+.save-bar-text {
+  font-size: 0.86rem;
+}
+
+.save-bar-text strong {
+  font-weight: 700;
+}
+
+.save-bar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.save-bar .btn-cancel {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.3);
+  color: var(--gray-0);
+}
+
+.save-bar .btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* A partir de 900px la sidebar es off-canvas y .main pierde el margen. */
+@media (max-width: 900px) {
+  .save-bar {
+    left: 12px;
+    right: 12px;
+    transform: none;
+    border-radius: var(--radius-lg);
+    justify-content: space-between;
+  }
+}
