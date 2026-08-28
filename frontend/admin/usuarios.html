@@ -99,6 +99,10 @@
           <p>Gestión de accesos, roles y estado de las cuentas.</p>
         </div>
         <div class="panel-tools">
+          <button type="button" class="btn-panel-detail" id="btn-detalle-seleccion" onclick="abrirDetalleSeleccionado()" disabled>
+            <i data-lucide="eye"></i>
+            Detalles
+          </button>
           <span class="panel-count" id="usuarios-count-label">—</span>
           <div class="view-toggle" aria-label="Cambiar vista">
             <button type="button" class="view-btn active" id="btn-view-list" onclick="cambiarVista('lista')" title="Vista lista">
@@ -128,9 +132,11 @@
           <option value="temporal">Contraseña temporal</option>
         </select>
         <select id="filtro-listado" onchange="actualizarFiltros()">
-          <option value="todos">Todos los usuarios</option>
           <option value="recientes">Últimos añadidos</option>
+          <option value="todos">Todos los usuarios</option>
           <option value="antiguos">Más antiguos</option>
+          <option value="az">Nombre A-Z</option>
+          <option value="za">Nombre Z-A</option>
           <option value="temporal">Contraseña temporal</option>
         </select>
       </div>
@@ -157,30 +163,41 @@
         </div>
       </div>
 
-      <div class="usu-table-wrap">
-        <table class="usu-table">
-          <thead>
-            <tr>
-              <th>
-                <div class="row-check">
-                  <input type="checkbox" id="select-all" onchange="toggleSeleccionTodos(this.checked)" />
-                  <button type="button" class="sort-th" onclick="ordenarPor('nombre')">Usuario <i data-lucide="chevrons-up-down"></i></button>
-                </div>
-              </th>
-              <th><button class="sort-th" onclick="ordenarPor('email')">Email <i data-lucide="chevrons-up-down"></i></button></th>
-              <th><button class="sort-th" onclick="ordenarPor('rol')">Rol <i data-lucide="chevrons-up-down"></i></button></th>
-              <th><button class="sort-th" onclick="ordenarPor('estado')">Estado <i data-lucide="chevrons-up-down"></i></button></th>
-              <th><button class="sort-th" onclick="ordenarPor('ultimo_acceso')">Último acceso <i data-lucide="chevrons-up-down"></i></button></th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="tabla-body">
-            <tr><td colspan="6" class="empty-state">Cargando...</td></tr>
-          </tbody>
-        </table>
-      </div>
+      <div class="usuarios-content">
+        <div class="usuarios-list-area">
+          <div class="usu-table-wrap">
+            <table class="usu-table">
+              <thead>
+                <tr>
+                  <th>
+                    <div class="row-check">
+                      <input type="checkbox" id="select-all" onchange="toggleSeleccionTodos(this.checked)" />
+                      <button type="button" class="sort-th" onclick="ordenarPor('nombre')">Usuario <i data-lucide="chevrons-up-down"></i></button>
+                    </div>
+                  </th>
+                  <th><button class="sort-th" onclick="ordenarPor('email')">Email <i data-lucide="chevrons-up-down"></i></button></th>
+                  <th><button class="sort-th" onclick="ordenarPor('rol')">Rol <i data-lucide="chevrons-up-down"></i></button></th>
+                  <th><button class="sort-th" onclick="ordenarPor('estado')">Estado <i data-lucide="chevrons-up-down"></i></button></th>
+                  <th><button class="sort-th" onclick="ordenarPor('ultimo_acceso')">Último acceso <i data-lucide="chevrons-up-down"></i></button></th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-body">
+                <tr><td colspan="6" class="empty-state">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
 
-      <div class="users-grid" id="users-grid" hidden></div>
+          <div class="users-grid" id="users-grid" hidden></div>
+        </div>
+
+        <aside class="user-detail-pane" id="user-detail-pane" aria-live="polite">
+          <button type="button" class="detail-close" onclick="cerrarModalDetalles()" aria-label="Cerrar detalles">
+            <i data-lucide="x"></i>
+          </button>
+          <div id="detalle-usuario-content"></div>
+        </aside>
+      </div>
     </div>
 
   </main>

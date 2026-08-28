@@ -81,7 +81,7 @@
 
     function obtenerUsuariosVisibles() {
       const busqueda = normalizarTexto(document.getElementById("filtro-texto")?.value || "");
-      const filtroListado = document.getElementById("filtro-listado")?.value || "todos";
+      const filtroListado = document.getElementById("filtro-listado")?.value || "recientes";
       const rol = document.getElementById("filtro-rol")?.value || "";
       const estadoFiltro = document.getElementById("filtro-estado")?.value || "";
 
@@ -101,6 +101,12 @@
       }
       if (filtroListado === "antiguos") {
         return usuariosBase.sort(compararPorCreacionAsc);
+      }
+      if (filtroListado === "az") {
+        return usuariosBase.sort((a, b) => normalizarTexto(a.nombre || "").localeCompare(normalizarTexto(b.nombre || ""), "es"));
+      }
+      if (filtroListado === "za") {
+        return usuariosBase.sort((a, b) => normalizarTexto(b.nombre || "").localeCompare(normalizarTexto(a.nombre || ""), "es"));
       }
       return usuariosBase.sort(compararUsuarios);
     }
@@ -135,9 +141,18 @@
     }
 
     function filtrarPorListado(u, filtro) {
-      if (!filtro || ["todos", "recientes", "antiguos"].includes(filtro)) return true;
+      if (!filtro || ["todos", "recientes", "az", "za"].includes(filtro)) return true;
+      if (filtro === "antiguos") return creadoHaceAlMenosMeses(u, 2);
       if (filtro === "temporal") return Boolean(u.debe_cambiar_password);
       return true;
+    }
+
+    function creadoHaceAlMenosMeses(u, meses) {
+      const creado = new Date(u.created_at || 0);
+      if (Number.isNaN(creado.getTime())) return false;
+      const limite = new Date();
+      limite.setMonth(limite.getMonth() - meses);
+      return creado <= limite;
     }
 
     function ordenarPor(campo) {
@@ -280,6 +295,13 @@
       const count = _seleccionados.size;
       document.getElementById("selected-count").textContent = count;
       bulk.classList.toggle("visible", count > 0);
+      const detalleBtn = document.getElementById("btn-detalle-seleccion");
+      if (detalleBtn) {
+        detalleBtn.disabled = count !== 1;
+        detalleBtn.classList.toggle("is-ready", count === 1);
+        detalleBtn.title = count === 1 ? "Ver detalles del usuario seleccionado" : "Seleccioná un usuario para ver sus detalles";
+      }
+      if (count !== 1) cerrarModalDetalles();
     }
 
     function actualizarSelectAll() {
@@ -313,6 +335,94 @@
       a.download = "usuarios_seleccionados.csv";
       a.click();
       URL.revokeObjectURL(url);
+    }
+
+    function abrirDetalleSeleccionado() {
+      if (_seleccionados.size !== 1) {
+        showToast("Seleccioná un solo usuario para ver sus detalles.", "error");
+        return;
+      }
+      abrirModalDetalles([..._seleccionados][0]);
+    }
+
+    function abrirModalDetalles(id) {
+      const usuario = _usuarios.find(u => u.id_usuario === id);
+      if (!usuario) {
+        showToast("No se encontró el usuario seleccionado.", "error");
+        return;
+      }
+
+      const content = document.getElementById("detalle-usuario-content");
+      content.innerHTML = `
+        <div class="detail-profile">
+          ${fotoUsuario(usuario)}
+          <div>
+            <span class="detail-kicker">Ficha de usuario</span>
+            <h3>${esc(usuario.nombre || "Sin nombre")}</h3>
+            <div class="detail-badges">
+              ${rolBadge(usuario.rol)}
+              ${estadoBadge(usuario)}
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-grid">
+          ${detalleItem("ID de usuario", `#${usuario.id_usuario || "-"}`)}
+          ${detalleItem("Correo", usuario.email || "-")}
+          ${detalleItem("Rol", rolTexto(usuario.rol))}
+          ${detalleItem("Estado", estadoTexto(usuario))}
+          ${detalleItem("Último acceso", fechaCompleta(usuario.ultimo_acceso || usuario.last_login || usuario.ultimo_login))}
+          ${detalleItem("Creado", fechaCompleta(usuario.created_at))}
+        </div>
+      `;
+      document.getElementById("user-detail-pane").classList.add("open");
+      lucide.createIcons();
+    }
+
+    function cerrarModalDetalles() {
+      document.getElementById("user-detail-pane")?.classList.remove("open");
+    }
+
+    function detalleItem(label, value) {
+      return `
+        <div class="detail-item">
+          <span>${esc(label)}</span>
+          <strong>${esc(value)}</strong>
+        </div>
+      `;
+    }
+
+    function fotoUsuario(usuario) {
+      const src = usuario.foto_url || usuario.foto || usuario.avatar_url || usuario.imagen || "";
+      if (src) {
+        return `<img class="detail-avatar-img" src="${esc(src)}" alt="Foto de ${esc(usuario.nombre || "usuario")}">`;
+      }
+      return `<span class="detail-avatar">${inicialesUsuario(usuario.nombre)}</span>`;
+    }
+
+    function rolTexto(rol) {
+      const limpio = String(rol || "").trim();
+      if (!limpio) return "-";
+      return limpio === "admin" ? "Administrador" : "Mozo";
+    }
+
+    function estadoTexto(usuario) {
+      if (!usuario.activo) return "Inactivo";
+      if (usuario.debe_cambiar_password) return "Contraseña temporal";
+      return "Activo";
+    }
+
+    function fechaCompleta(valor) {
+      if (!valor) return "Sin registro";
+      const fecha = new Date(valor);
+      if (Number.isNaN(fecha.getTime())) return "Sin registro";
+      return fecha.toLocaleString("es-AR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
     }
 
     function abrirModalCambiarRol() {
