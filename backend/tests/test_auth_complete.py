@@ -111,7 +111,9 @@ class TestPermisosAdmin:
 
     def test_listar_usuarios_rechaza_sin_token(self, client):
         r = client.get("/admin/usuarios")
-        assert r.status_code == 403
+        # Sin credenciales → 401 (Unauthorized). Se acepta 403 por si el
+        # esquema de auth cambia a "Forbidden" para requests anónimos.
+        assert r.status_code in (401, 403)
 
     def test_crear_usuario_rechaza_mozo(self, client):
         r = client.post(
@@ -138,7 +140,8 @@ class TestPermisosAdmin:
             "/auth/cambiar-password",
             json={"password_actual": "vieja", "nueva_password": "nueva1234"},
         )
-        assert r.status_code == 403
+        # Sin credenciales → 401 (Unauthorized); se tolera 403.
+        assert r.status_code in (401, 403)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

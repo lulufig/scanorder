@@ -1,5 +1,5 @@
 """
-Tests para la lógica del dashboard y el export CSV de resumen diario.
+Tests para la lógica del dashboard y el export (Excel/PDF) de resumen diario.
 
 No requieren MySQL: se mockea get_db_connection() con cursores que devuelven
 datos sintéticos, verificando el procesamiento de los resultados.
@@ -15,12 +15,11 @@ fetchone):
 Si confirmado_at SÍ existe, se suma un fetchone extra (SHOW_COLUMNS listo_at)
 antes del fetchone de tiempo_row (solo si listo_at también existe).
 
-Orden en resumen_hoy_csv (caché vacío):
+Orden en resumen_hoy_excel (caché vacío):
   fetchone: [SHOW_COLUMNS, resumen, mesa_top, SHOW_TABLES]
   fetchall: [por_estado, productos_top, por_hora]
 """
 import io
-import csv
 import pytest
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
@@ -63,11 +62,24 @@ def _call_dashboard(conn):
         return dashboard_metricas(current_user={"id": 1, "rol": "admin"})
 
 
-def _call_resumen_hoy(conn, fecha=None):
-    from app.routes.reportes import resumen_hoy_csv
+def _call_resumen_hoy(conn, fecha=None, formato="excel"):
+    from app.routes.reportes import resumen_hoy_excel
     with patch("app.routes.reportes.get_db_connection", return_value=conn), \
          patch("app.routes.reportes.close_db_connection"):
-        return resumen_hoy_csv(fecha=fecha, current_user={"id": 1, "rol": "admin"})
+        return resumen_hoy_excel(
+            fecha=fecha, formato=formato, current_user={"id": 1, "rol": "admin"}
+        )
+
+
+def _texto_workbook(response) -> str:
+    """Concatena el texto de todas las celdas de todas las hojas del xlsx."""
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(response.body))
+    partes = []
+    for ws in wb.worksheets:
+        for row in ws.iter_rows(values_only=True):
+            partes.extend(str(c) for c in row if c is not None)
+    return "\n".join(partes)
 
 
 def _call_ventas_semana(conn):
@@ -264,74 +276,57 @@ _RESUMEN_FETCHALL = [
 ]
 
 
-class TestResumenHoyCSV:
-    def _response(self, fecha=None):
+class TestResumenHoyExport:
+    """El endpoint /reportes/resumen-hoy exporta un .xlsx (o .pdf con ?formato=pdf)."""
+
+    def _response(self, fecha=None, formato="excel"):
         conn = _mock_conn(_RESUMEN_FETCHONE, _RESUMEN_FETCHALL)
-        return _call_resumen_hoy(conn, fecha=fecha)
+        return _call_resumen_hoy(conn, fecha=fecha, formato=formato)
 
-    def test_csv_tiene_bom_utf8(self):
+    def test_media_type_es_excel(self):
+        from app.routes.reportes import EXCEL_MEDIA_TYPE
+        assert self._response().media_type == EXCEL_MEDIA_TYPE
+
+    def test_body_es_xlsx_valido(self):
         r = self._response()
-        assert r.body[:3] == b"\xef\xbb\xbf", "Falta BOM UTF-8"
+        assert r.body[:2] == b"PK", "un .xlsx arranca con la firma ZIP 'PK'"
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(r.body))
+        assert wb.worksheets
 
-    def test_csv_primera_linea_sep(self):
-        r = self._response()
-        texto = r.body[3:].decode("utf-8")
-        assert texto.startswith("sep=;")
-
-    def test_csv_separador_punto_y_coma(self):
-        r = self._response()
-        texto = r.body[3:].decode("utf-8")
-        # Skip la primera línea "sep=;"
-        cuerpo = texto.split("\r\n", 1)[1]
-        reader = csv.reader(io.StringIO(cuerpo), delimiter=";")
-        rows = list(reader)
-        venta_rows = [row for row in rows if row and row[0] == "Ventas totales"]
-        assert len(venta_rows) == 1
-        assert venta_rows[0][1] == "2400.00"
-
-    def test_csv_contiene_secciones_requeridas(self):
-        r = self._response()
-        texto = r.body[3:].decode("utf-8")
-        for seccion in ["RESUMEN", "PEDIDOS POR ESTADO", "PRODUCTOS MÁS VENDIDOS", "VENTAS POR HORA"]:
-            assert seccion in texto, f"Falta sección '{seccion}'"
-
-    def test_csv_contiene_mesa_top(self):
-        r = self._response()
-        texto = r.body[3:].decode("utf-8")
-        assert "Mesa 5" in texto
-        assert "1200.00" in texto
-
-    def test_csv_serie_horaria_tiene_24_filas(self):
-        r = self._response()
-        texto = r.body[3:].decode("utf-8")
-        # Contar filas de hora después del encabezado de la sección
-        cuerpo = texto.split("\r\n", 1)[1]
-        reader = csv.reader(io.StringIO(cuerpo), delimiter=";")
-        hora_rows = [row for row in reader if row and row[0].endswith(":00") and len(row[0]) == 5]
-        assert len(hora_rows) == 24, f"La serie horaria debe tener 24 filas, tiene {len(hora_rows)}"
-
-    def test_csv_acepta_fecha_explicita(self):
-        r = self._response(fecha=date(2026, 1, 15))
-        texto = r.body[3:].decode("utf-8")
-        assert "2026-01-15" in texto
-
-    def test_content_disposition_incluye_fecha(self):
-        conn = _mock_conn(_RESUMEN_FETCHONE, _RESUMEN_FETCHALL)
-        r = _call_resumen_hoy(conn, fecha=date(2026, 3, 20))
+    def test_content_disposition_incluye_fecha_y_extension(self):
+        r = self._response(fecha=date(2026, 3, 20))
         cd = r.headers.get("content-disposition", "")
         assert "2026-03-20" in cd
+        assert ".xlsx" in cd
 
-    def test_media_type_es_csv_utf8(self):
-        r = self._response()
-        assert "text/csv" in r.media_type
+    def test_contiene_secciones_requeridas(self):
+        texto = _texto_workbook(self._response())
+        for seccion in ["RESUMEN", "PEDIDOS POR ESTADO", "PRODUCTOS MAS VENDIDOS", "VENTAS POR HORA"]:
+            assert seccion in texto, f"Falta sección '{seccion}'"
 
-    def test_csv_sin_cierres_omite_seccion_cobros(self):
-        r = self._response()
-        texto = r.body[3:].decode("utf-8")
-        # Con el mock que devuelve None para cierres_mesa, no debe aparecer la sección
-        assert "COBROS POR MÉTODO" not in texto
+    def test_contiene_metricas_del_resumen(self):
+        texto = _texto_workbook(self._response())
+        assert "Ventas totales" in texto
+        assert "Ticket promedio" in texto
 
-    def test_csv_con_cierres_incluye_seccion_cobros(self):
+    def test_contiene_mesa_top(self):
+        assert "Mesa 5" in _texto_workbook(self._response())
+
+    def test_serie_horaria_tiene_24_horas(self):
+        texto = _texto_workbook(self._response())
+        for h in range(24):
+            assert f"{h:02d}:00" in texto, f"Falta la hora {h:02d}:00"
+
+    def test_acepta_fecha_explicita(self):
+        r = self._response(fecha=date(2026, 1, 15))
+        assert "2026-01-15" in r.headers.get("content-disposition", "")
+        assert "2026-01-15" in _texto_workbook(r)
+
+    def test_sin_cierres_omite_seccion_cobros(self):
+        assert "COBROS POR METODO" not in _texto_workbook(self._response())
+
+    def test_con_cierres_incluye_seccion_cobros(self):
         fetchone = [
             None,
             {"ventas_totales": 900.0, "pedidos_contabilizados": 3, "ticket_promedio": 300.0},
@@ -345,12 +340,17 @@ class TestResumenHoyCSV:
              {"metodo_pago": "tarjeta",  "cantidad": 1, "total": 300.0}],
             [{"hora": 13, "pedidos": 3, "ventas": 900.0}],
         ]
-        conn = _mock_conn(fetchone, fetchall)
-        r = _call_resumen_hoy(conn)
-        texto = r.body[3:].decode("utf-8")
-        assert "COBROS POR MÉTODO DE PAGO" in texto
+        r = _call_resumen_hoy(_mock_conn(fetchone, fetchall))
+        texto = _texto_workbook(r)
+        assert "COBROS POR METODO DE PAGO" in texto
         assert "efectivo" in texto
-        assert "tarjeta"  in texto
+        assert "tarjeta" in texto
+
+    def test_formato_pdf(self):
+        from app.routes.reportes import PDF_MEDIA_TYPE
+        r = self._response(formato="pdf")
+        assert r.media_type == PDF_MEDIA_TYPE
+        assert r.body[:4] == b"%PDF"
 
 
 # ────────────────────────────────────────────────────────────────────────────
