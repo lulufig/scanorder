@@ -17,20 +17,6 @@
     <!-- Panel de marca -->
     <div class="login-brand">
 
-      <!-- Decoración: fija al panel, nunca se superpone con las tarjetas -->
-      <div class="illu-deco-marks" aria-hidden="true">
-        <span class="illu-mark illu-mark-sq"></span>
-        <span class="illu-mark illu-mark-x">×</span>
-        <span class="illu-mark illu-mark-dash"></span>
-      </div>
-      <div class="illu-play-deco" aria-hidden="true"><i data-lucide="play"></i></div>
-
-      <div class="login-brand-chip">
-        <span class="chip-mark">S</span>
-        <span class="chip-name">ScanOrder</span>
-      </div>
-      <p class="login-brand-caption">Sistema de gestión de pedidos</p>
-
       <div class="login-brand-main">
 
       <!-- Ilustración: mockup estático del panel (no son datos reales) -->
@@ -39,26 +25,26 @@
       </div>
 
       <div class="login-brand-copy">
-        <h2 class="login-brand-headline">Gestioná tu salón<br>con menos <span class="accent">fricción.</span></h2>
-        <p class="login-brand-sub">ScanOrder te ayuda a tomar pedidos, gestionar tu cocina, controlar mesas y potenciar tus ventas desde un solo lugar.</p>
+        <h2 class="login-brand-headline">Tu operación<br>en tiempo real.</h2>
+        <p class="login-brand-sub">Mesas, pedidos, cocina y ventas sincronizados desde un solo panel.</p>
       </div>
 
       </div>
 
-      <div class="login-brand-footer">
-        <div class="illu-dot-grid"></div>
-        <div class="illu-pagination"><span></span><span class="active"></span><span></span></div>
-      </div>
     </div>
 
     <!-- Card de login -->
     <div class="login-card">
       <div class="login-card-inner" id="login-card">
 
+      <div class="auth-logo-wrap">
+        <img src="assets/img/logo-scanorder.png" alt="ScanOrder" class="auth-logo" />
+      </div>
+
       <h1 class="login-title">Iniciar sesión</h1>
       <p class="login-subtitle">Ingresá con tu cuenta para acceder al panel</p>
 
-      <div class="login-form">
+      <form class="login-form" id="login-form" novalidate>
 
         <!-- Email -->
         <div class="field-boxed">
@@ -69,6 +55,8 @@
             type="email"
             placeholder="Correo electrónico"
             autocomplete="email"
+            autocapitalize="none"
+            spellcheck="false"
           />
         </div>
 
@@ -95,13 +83,13 @@
         </div>
 
         <!-- Error -->
-        <div class="error-box" id="error-box">
+        <div class="error-box" id="error-box" role="alert">
           <span class="error-icon">!</span>
           <span id="error-msg">Credenciales inválidas</span>
         </div>
 
         <!-- Botón -->
-        <button class="btn-login" id="btn-login" onclick="handleLogin()">
+        <button type="submit" class="btn-login" id="btn-login">
           Iniciar sesión
         </button>
 
@@ -112,7 +100,7 @@
           </a>
         </p>
 
-      </div>
+      </form>
 
       <!-- Footer -->
       <p class="footer-text">

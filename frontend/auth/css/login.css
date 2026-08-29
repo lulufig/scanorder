@@ -1,13 +1,14 @@
 /* ============================================================
    ScanOrder — Login
-   Split screen a pantalla completa: marca + ilustración a la
-   izquierda, formulario a la derecha. Colores de marca de
-   ScanOrder (teal), sin gradientes decorativos ni blur.
+   Split screen a pantalla completa: ilustración de producto + copy
+   a la izquierda (panel teal), formulario a la derecha con el logo
+   ScanOrder arriba. Sin chip ni footer decorativo en el panel.
 
-   Modelo de alto: cada panel es exactamente 100vh (no min-height)
-   para que nunca aparezca scroll de página. El contenido interno
-   está dimensionado para entrar cómodo en esa altura; overflow:
-   hidden actúa como red de seguridad, no como estrategia principal.
+   Modelo de alto: en pantallas normales cada panel es exactamente
+   100vh (no min-height) para que nunca aparezca scroll de página;
+   overflow: hidden actúa como red de seguridad. En pantallas de poca
+   altura (< 780px, ver media query al final) se libera el alto y se
+   permite scroll de página para no recortar el panel de marca.
    ============================================================ */
 
 .sr-only {
@@ -30,12 +31,12 @@ html, body {
 
 body {
   font-family: var(--font-sans);
-  background: var(--color-surface);
+  background: var(--color-bg);
 }
 
 .login-shell {
   display: grid;
-  grid-template-columns: minmax(400px, 50%) 1fr;
+  grid-template-columns: minmax(420px, 48%) 1fr;
   width: 100%;
   height: 100vh;
 }
@@ -46,130 +47,23 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 24px 48px 18px;
+  padding: 28px 52px 24px;
   color: var(--gray-0);
   overflow: hidden;
 
-  /* Degradado sutil (más claro arriba-izquierda, más oscuro
-     abajo-derecha) + textura de puntos muy tenue para dar
-     profundidad sin competir con las tarjetas. */
   background-image:
-    radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1.4px),
-    linear-gradient(135deg, var(--brand-500) 0%, var(--brand-700) 100%);
-  background-size: 18px 18px, 100% 100%;
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(145deg, var(--brand-500) 0%, var(--brand-700) 58%, var(--brand-800) 100%);
+  background-size: 28px 28px, 28px 28px, 100% 100%;
   background-position: 0 0, 0 0;
 }
 
-/* Centra verticalmente la ilustración + el copy en el espacio libre
-   entre el chip de arriba y el footer de abajo, sin importar el
-   alto real de la ventana (si sobra alto, el margen se reparte
-   arriba y abajo por igual). */
+/* El panel de marca no tiene chip ni footer: la ilustración + el copy
+   se centran verticalmente ocupando todo el alto disponible. */
 .login-brand-main {
   margin-top: auto;
   margin-bottom: auto;
-}
-
-.login-brand-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  align-self: flex-start;
-  padding: 5px 12px 5px 5px;
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: var(--radius-pill);
-  position: relative;
-  z-index: 2;
-}
-
-.chip-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  background: var(--gray-0);
-  color: var(--brand-600);
-  font-weight: 800;
-  font-size: 0.78rem;
-}
-
-.chip-name {
-  font-weight: 700;
-  font-size: 0.78rem;
-}
-
-.login-brand-caption {
-  margin-top: 7px;
-  color: rgba(255, 255, 255, 0.65);
-  font-size: 0.68rem;
-  letter-spacing: 0.04em;
-  position: relative;
-  z-index: 2;
-}
-
-/* ---- Decoración fija del panel (no interactúa con las tarjetas) ---- */
-.illu-deco-marks {
-  position: absolute;
-  top: 22px;
-  right: 28px;
-  width: 56px;
-  height: 40px;
-  z-index: 0;
-  opacity: 0.3;
-  pointer-events: none;
-}
-
-.illu-mark {
-  position: absolute;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.illu-mark-sq {
-  width: 14px;
-  height: 14px;
-  border: 1.5px solid currentColor;
-  border-radius: 3px;
-  top: 0;
-  left: 0;
-}
-
-.illu-mark-x {
-  font-size: 0.85rem;
-  line-height: 1;
-  top: 2px;
-  left: 26px;
-}
-
-.illu-mark-dash {
-  width: 2px;
-  height: 14px;
-  background: currentColor;
-  border-radius: 1px;
-  top: 20px;
-  left: 44px;
-}
-
-.illu-play-deco {
-  position: absolute;
-  right: 32px;
-  bottom: 90px;
-  width: 44px;
-  height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  transform: rotate(-14deg);
-  color: rgba(255, 255, 255, 0.4);
-  z-index: 0;
-  pointer-events: none;
-}
-
-.illu-play-deco [data-lucide] {
-  width: 18px;
-  height: 18px;
 }
 
 /* ---- Ilustración: una sola imagen estática (preview-cards.png) ---- */
@@ -184,75 +78,34 @@ body {
   display: block;
   width: auto;
   height: auto;
-  max-width: 75%;
-  max-height: 420px;
-  /* Sombra difusa y suave (no box-shadow, que rectangularía el
-     recorte transparente) para que las tarjetas floten con
-     naturalidad sobre el fondo en vez de verse "pegadas". */
-  filter: drop-shadow(0 26px 34px rgba(2, 20, 24, 0.28))
-          drop-shadow(0 8px 10px rgba(2, 20, 24, 0.16));
+  max-width: min(96%, 700px);
+  max-height: 500px;
+  filter: drop-shadow(0 28px 36px rgba(2, 20, 24, 0.28))
+          drop-shadow(0 10px 14px rgba(2, 20, 24, 0.14));
 }
 
 /* ---- Titular + copy ---- */
 .login-brand-copy {
   position: relative;
   z-index: 1;
-  margin-top: 14px;
+  margin-top: 18px;
   text-align: center;
 }
 
 .login-brand-headline {
-  font-size: 1.60rem;
+  margin: 0;
+  font-size: 1.75rem;
   font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
-}
-
-.login-brand-headline .accent {
-  color: var(--brand-200);
+  line-height: 1.18;
+  letter-spacing: 0;
 }
 
 .login-brand-sub {
-  margin: 8px auto 0;
-  max-width: 300px;
-  color: rgba(255, 255, 255, 0.68);
-  font-size: 0.65rem;
-  line-height: 1.45;
-}
-
-/* ---- Footer del panel de marca ---- */
-.login-brand-footer {
-  margin-top: auto;
-  padding-top: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-}
-
-.illu-dot-grid {
-  width: 52px;
-  height: 28px;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.35) 1.2px, transparent 1.2px);
-  background-size: 9px 9px;
-}
-
-.illu-pagination {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.illu-pagination span {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.35);
-}
-
-.illu-pagination span.active {
-  width: 20px;
-  background: var(--gray-0);
+  margin: 10px auto 0;
+  max-width: 340px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.84rem;
+  line-height: 1.5;
 }
 
 /* ---- Card / formulario ---- */
@@ -261,15 +114,28 @@ body {
   align-items: center;
   justify-content: center;
   height: 100vh;
-  padding: 32px;
+  padding: 40px 32px;
   overflow: hidden;
+  background: var(--gray-0);
 }
 
 .login-card-inner {
   width: 100%;
-  max-width: 420px;
+  max-width: 400px;
   display: flex;
   flex-direction: column;
+}
+
+/* ---- Logo sobre el formulario (PNG con fondo transparente) ---- */
+.auth-logo-wrap {
+  margin-bottom: 30px;
+}
+
+.auth-logo {
+  display: block;
+  width: 190px;
+  max-width: 58%;
+  height: auto;
 }
 
 .login-card-inner.shake {
@@ -284,9 +150,11 @@ body {
 }
 
 .login-title {
-  font-size: 1.5rem;
+  margin: 0;
+  font-size: 1.45rem;
   font-weight: 700;
   color: var(--gray-900);
+  letter-spacing: 0;
 }
 
 .login-subtitle {
@@ -309,9 +177,13 @@ body {
   padding: 0 14px;
   height: 48px;
   background: var(--gray-0);
-  border: 1.5px solid var(--gray-200);
-  border-radius: 14px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-md);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field-boxed:hover:not(:focus-within) {
+  border-color: var(--gray-400);
 }
 
 .field-boxed:focus-within {
@@ -346,13 +218,26 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-right: -6px;
   background: none;
   border: none;
+  border-radius: var(--radius-sm);
   color: var(--gray-400);
   flex-shrink: 0;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 
 .field-toggle:hover {
+  color: var(--gray-600);
+  background: var(--gray-100);
+}
+
+.field-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
   color: var(--gray-600);
 }
 
@@ -369,17 +254,36 @@ body {
   font-size: 0.95rem;
   font-weight: 700;
   border: none;
-  border-radius: 14px;
-  transition: background 0.15s ease;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-login:hover {
   background: var(--color-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-login:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-login:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-md), var(--shadow-focus);
 }
 
 .btn-login:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+.btn-login:disabled:hover {
+  transform: none;
+  box-shadow: var(--shadow-sm);
 }
 
 .spinner {
@@ -414,6 +318,13 @@ body {
   color: var(--color-primary);
 }
 
+.link-muted:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+  color: var(--color-primary);
+}
+
 .error-box {
   display: none;
   align-items: center;
@@ -429,6 +340,12 @@ body {
 
 .error-box.visible {
   display: flex;
+  animation: errorIn 0.2s ease both;
+}
+
+@keyframes errorIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .error-icon {
@@ -479,7 +396,7 @@ body {
 
 .footer-text {
   margin-top: 28px;
-  color: var(--gray-400);
+  color: var(--gray-500);
   font-size: 0.78rem;
   text-align: center;
 }
@@ -495,15 +412,49 @@ body {
   }
   .login-brand {
     height: auto;
-    padding: 24px 24px 20px;
+    padding: 20px 24px 18px;
   }
   .login-brand-main { margin: 0; }
   .login-illustration { display: none; }
-  .illu-deco-marks, .illu-play-deco { display: none; }
-  .login-brand-footer { padding-top: 16px; }
+  .login-brand-copy {
+    margin-top: 18px;
+    text-align: left;
+  }
+  .login-brand-headline {
+    font-size: 1.35rem;
+  }
+  .login-brand-sub {
+    max-width: none;
+    margin-left: 0;
+    font-size: 0.82rem;
+  }
   .login-card {
     height: auto;
-    padding: 32px 24px;
+    padding: 34px 24px;
     overflow: visible;
+  }
+  .auth-logo-wrap {
+    margin-bottom: 24px;
+  }
+}
+
+/* Pantallas de poca altura (notebooks 13", ventanas a media pantalla):
+   el split de 100vh no entra y el panel de marca quedaba recortado por
+   overflow:hidden. Acá se libera el alto y se permite scroll de página. */
+@media (min-width: 861px) and (max-height: 780px) {
+  html, body {
+    height: auto;
+    overflow-y: auto;
+  }
+  .login-shell {
+    height: auto;
+  }
+  .login-brand,
+  .login-card {
+    height: auto;
+    min-height: 100vh;
+  }
+  .illu-preview-img {
+    max-height: 360px;
   }
 }
