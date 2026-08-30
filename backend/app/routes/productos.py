@@ -4,6 +4,7 @@ from typing import List, Optional
 from app.database import get_db_connection, close_db_connection
 from app.schemas.productos import ProductoCreate, ProductoUpdate, ProductoResponse
 from app.utils.dependencies import require_role, get_current_user_optional
+from app.utils.pagination import respuesta_paginada, normalizar_limit, offset as _offset
 
 router = APIRouter(
     prefix="/productos",
@@ -142,6 +143,107 @@ def listar_productos(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener productos: {str(e)}"
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
+_ORDEN_CATALOGO = {
+    "mas-vendidos": "total_vendido DESC, p.id_producto DESC",
+    "categoria":    "c.nombre IS NULL, c.nombre ASC, p.id_producto DESC",
+    "recientes":    "p.id_producto DESC",
+    "az":           "p.nombre ASC",
+    "precio-asc":   "p.precio ASC, p.id_producto DESC",
+    "precio-desc":  "p.precio DESC, p.id_producto DESC",
+}
+
+
+def _filtro_catalogo(cursor, q, estado, categoria):
+    """Arma el WHERE compartido por el COUNT y el SELECT del catálogo paginado."""
+    clauses, params = [], []
+    if estado == "disponibles":
+        clauses.append("p.disponible = TRUE")
+    elif estado == "no-disponibles":
+        clauses.append("p.disponible = FALSE")
+    if categoria:
+        clauses.append("c.nombre = %s")
+        params.append(categoria)
+    if q:
+        like = f"%{q.strip()}%"
+        campos = ["p.nombre LIKE %s", "p.descripcion LIKE %s", "c.nombre LIKE %s"]
+        vals = [like, like, like]
+        if producto_tiene_columna(cursor, "subcategoria"):
+            campos.append("p.subcategoria LIKE %s")
+            vals.append(like)
+        clauses.append("(" + " OR ".join(campos) + ")")
+        params.extend(vals)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    return where, params
+
+
+@router.get("/catalogo")
+def catalogo_paginado(
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
+    q: Optional[str] = Query(None, description="Busca en nombre, descripción, categoría, subcategoría"),
+    estado: str = Query("disponibles", description="disponibles | no-disponibles | todos"),
+    categoria: Optional[str] = Query(None, description="Nombre exacto de categoría"),
+    orden: str = Query("mas-vendidos", description="mas-vendidos | categoria | recientes | az | precio-asc | precio-desc"),
+    current_user: dict = Depends(require_role("admin", "mozo")),
+):
+    """Catálogo de productos paginado para el panel admin (incluye los dados de baja).
+    Devuelve `{items, total, page, limit, pages, resumen}` — `resumen` trae los
+    contadores globales (total / disponibles / no_disponibles) para las tarjetas."""
+    limit = normalizar_limit(limit)
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos",
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+        where, params = _filtro_catalogo(cursor, q, estado, categoria)
+        order_by = _ORDEN_CATALOGO.get(orden, _ORDEN_CATALOGO["mas-vendidos"])
+
+        cursor.execute(
+            f"SELECT COUNT(*) AS total FROM productos p "
+            f"LEFT JOIN categorias c ON p.id_categoria = c.id_categoria {where}",
+            params,
+        )
+        total = cursor.fetchone()["total"]
+
+        cursor.execute(
+            select_productos_sql(cursor) + f"{where} ORDER BY {order_by} LIMIT %s OFFSET %s",
+            [*params, limit, _offset(page, limit)],
+        )
+        items = cursor.fetchall()
+
+        cursor.execute(
+            "SELECT COUNT(*) AS total, COALESCE(SUM(disponible), 0) AS disponibles FROM productos"
+        )
+        r = cursor.fetchone()
+        resumen = {
+            "total": int(r["total"]),
+            "disponibles": int(r["disponibles"]),
+            "no_disponibles": int(r["total"]) - int(r["disponibles"]),
+        }
+
+        cursor.execute(
+            "SELECT DISTINCT c.nombre AS nombre FROM categorias c "
+            "JOIN productos p ON p.id_categoria = c.id_categoria "
+            "WHERE c.nombre IS NOT NULL ORDER BY c.nombre"
+        )
+        categorias = [row["nombre"] for row in cursor.fetchall()]
+
+        return respuesta_paginada(items, total, page, limit, resumen=resumen, categorias=categorias)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener el catálogo: {str(e)}",
         )
     finally:
         cursor.close()

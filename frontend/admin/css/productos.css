@@ -170,16 +170,6 @@
   background: var(--gray-50);
 }
 
-.group-count {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 7px;
-  border-radius: var(--radius-pill);
-  background: var(--gray-200);
-  color: var(--gray-600);
-  font-size: 0.7rem;
-}
-
 /* Realce del producto recién creado */
 .row-nuevo td {
   animation: prod-nuevo 2.4s ease-out;
@@ -191,8 +181,7 @@
 }
 
 /* El atributo `hidden` pierde contra una clase que define `display`
-   (`.form-group`, `.ver-todos-row`) — hay que forzarlo. */
-.ver-todos-row[hidden],
+   (`.form-group`) — hay que forzarlo. */
 #f-categoria-nueva-group[hidden] {
   display: none !important;
 }
@@ -204,30 +193,6 @@
   color: var(--gray-500);
   font-size: 0.78rem;
   line-height: 1.35;
-}
-
-/* ===== "Ver catálogo completo" ===== */
-.ver-todos-row {
-  display: flex;
-  justify-content: center;
-  padding: 12px 16px;
-  border-top: 1px solid var(--color-border);
-}
-
-.btn-ver-todos {
-  padding: 7px 18px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  background: var(--gray-0);
-  color: var(--gray-700);
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.btn-ver-todos:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
 }
 
 table {

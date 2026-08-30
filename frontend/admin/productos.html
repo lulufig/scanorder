@@ -83,7 +83,7 @@
       <div class="prod-panel-header">
         <div>
           <h2>Catálogo</h2>
-          <p>Arranca con los 10 más vendidos. Elegí una categoría o cambiá el orden para ver el resto.</p>
+          <p>Ordenado por más vendidos. Buscá, filtrá o cambiá el orden — se pagina de a 15.</p>
         </div>
         <span class="panel-count" id="count-label" aria-live="polite">—</span>
       </div>
@@ -95,7 +95,7 @@
             type="search"
             id="search-input"
             placeholder="Buscar por nombre, categoría o descripción…"
-            oninput="onFiltroChange()"
+            oninput="onBusquedaInput()"
           />
         </div>
         <select id="estado-filter" onchange="onFiltroChange()">
@@ -123,11 +123,7 @@
         </div>
       </div>
 
-      <div id="ver-todos-row" class="ver-todos-row" hidden>
-        <button type="button" class="btn-ver-todos" onclick="mostrarTodos()">
-          Ver el catálogo completo (<span id="ver-todos-count">0</span>)
-        </button>
-      </div>
+      <div id="paginador" class="paginador" hidden></div>
     </div>
 
   </main>
@@ -220,6 +216,7 @@
   <script src="../assets/js/config.js"></script>
   <script src="../assets/js/auth.js"></script>
   <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/paginador.js"></script>
   <script src="../assets/js/sidebar-toggle.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer onload="lucide.createIcons()"></script>
 

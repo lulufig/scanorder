@@ -458,21 +458,22 @@ En `PATCH /pedidos/{id}/estado` cuando `body.estado == "entregado"`:
 - **Reactivar** reusa el `PUT /productos/{id}` existente (no es un endpoint nuevo) mandando solo `{ "disponible": true }` — el `UPDATE` hace `COALESCE` campo por campo, así que el resto de los datos del producto queda intacto. En la fila de la tabla, el botón "Reactivar" (verde) reemplaza a "Desactivar" cuando el producto ya está de baja.
 - La UI nunca habla de "eliminar": el botón dice **"Desactivar"** y el cartel de confirmación aclara que el producto solo deja de aparecer en el menú y se puede reactivar (mismo modelo que la baja lógica de usuarios). El endpoint sigue siendo `DELETE /productos/{id}` (baja lógica, no borra la fila).
 
-### Panel de catálogo — filtros, "más vendidos" y vista agrupada (`productos.html` / `productos.js` / `productos.css`)
+### Panel de catálogo — paginación server-side (`productos.html` / `productos.js` / `productos.css`)
 
-Rediseñado para usar el mismo lenguaje visual que `usuarios.html` / `inventario.html`: contenedor `.prod-panel` (tarjeta con encabezado + contador), grilla `.prod-filters` con inputs redondeados de 40px y foco con anillo (`--shadow-focus`).
+Contenedor `.prod-panel` (tarjeta con encabezado + contador), grilla `.prod-filters` con inputs redondeados. Mismo lenguaje visual que `usuarios.html` / `inventario.html`.
 
-- **`#tabla-container`**: solo `overflow-x: auto` (scroll horizontal en pantallas angostas). Sin scroll vertical propio ni `<thead>` sticky — el único scroll vertical es el de la ventana (evita el doble scroll).
-- **Tope de 10 + botón "Ver el catálogo completo (N)"** (`#ver-todos-row` → `mostrarTodos()` → `mostrandoTodos = true`): aparece **solo en la vista por defecto** (`esVistaPorDefecto` = `listado === "mas-vendidos"` **y** `#category-filter` vacío **y** `#estado-filter === "disponibles"` **y** sin búsqueda). Cualquier otro filtro muestra la lista completa de ese filtro sin botón — cada categoría tiene su propia cantidad, un "ver N más" global no aplica. `#count-label` siempre muestra el total de coincidencias.
-- **Gotcha del atributo `hidden`:** `.ver-todos-row` y `#f-categoria-nueva-group` (`.form-group`) definen `display` vía clase, que le gana a `[hidden]` en especificidad → el `hidden` no ocultaba nada. Hay una regla `.ver-todos-row[hidden], #f-categoria-nueva-group[hidden] { display: none !important }` en `productos.css` (mismo patrón que `.usu-table-wrap[hidden]` en `usuarios.css`). Si se agrega otro elemento que se togglea con `hidden` y tiene `display` por clase, sumarlo ahí.
-- **`#estado-filter`**: `Disponibles` (default) / `No disponibles` / `Todos`. Filtrado 100% en cliente sobre `todosLosProductos` (trae los no disponibles vía `incluir_no_disponibles=true`).
-- **`#listado-filter`**: `Más vendidos` (default) / `Por categoría` / `Recién agregados` / `Nombre A-Z` / `Precio ↑` / `Precio ↓`.
-  - `Más vendidos` ordena por `total_vendido` desc (ver backend), a igualdad por id desc.
-  - `Por categoría` (`agrupado`) dibuja una fila-encabezado `.group-row` por categoría (orden alfabético) y **dentro de cada bloque ordena por id desc** (el más nuevo arriba).
-- **Alta de producto**: `guardarProducto()` en la rama de creación fuerza `listado = "por categoría"`, limpia estado/categoría/texto y setea `idRecienCreado`; tras recargar, `renderTabla()` marca esa fila con `.row-nuevo` (realce animado ~2.4s) y hace `scrollIntoView`. Así el producto recién creado queda visible al tope de su categoría.
-- Backend: `select_productos_sql()` agrega `total_vendido` (subconsulta correlacionada: `SUM(detalle_pedidos.cantidad)` de pedidos no cancelados). Expuesto en `ProductoResponse.total_vendido` (`Optional[int]`). 0 para productos sin ventas.
-- Todos los controles llaman `onFiltroChange()` (resetea `mostrandoTodos` y re-filtra). `#count-label` (`.panel-count`) muestra el total de coincidencias.
-- Precio en la tabla: `formatearPrecio()` → `toLocaleString("es-AR")` (`$1.500`, decimales solo si el valor los tiene).
+**Paginación en el servidor** (`GET /productos/catalogo`, 15 por página):
+- Endpoint **nuevo y separado** de `GET /productos/` — este último se deja intacto para el menú público (`frontend/cliente/menu.js` espera un array). `/catalogo` es admin/mozo (`require_role`), devuelve `{items, total, page, limit, pages, resumen, categorias}` (contrato de `app/utils/pagination.py` + extras).
+  - `resumen`: `{total, disponibles, no_disponibles}` globales — para las tarjetas de stats (no dependen del filtro).
+  - `categorias`: nombres de categoría con al menos un producto — llena `#category-filter` y el `<select>` del modal.
+- Query params: `page`, `limit`, `q` (nombre/desc/categoría/subcategoría, `LIKE`), `estado` (`disponibles`|`no-disponibles`|`todos`), `categoria` (nombre exacto), `orden` (`mas-vendidos`|`categoria`|`recientes`|`az`|`precio-asc`|`precio-desc` — ver `_ORDEN_CATALOGO`).
+- `_filtro_catalogo(cursor, q, estado, categoria)` arma el `WHERE` compartido por el `COUNT` y el `SELECT` (reusa `select_productos_sql`, que ya trae `total_vendido` como subconsulta correlacionada).
+- Frontend: `cargarProductos()` construye el query string desde los filtros + `paginaActual` y pega a `/catalogo`. Los `<select>` recargan al toque; el buscador con **debounce de 300ms** (`onBusquedaInput()`). Cualquier cambio de filtro vuelve a `paginaActual = 1`. Si borrás el último ítem de la última página, `cargarProductos()` detecta `paginaActual > data.pages` y recarga la anterior.
+- **`renderPaginador()`** vive en `frontend/assets/js/paginador.js` (compartido con inventario y usuarios); estilos `.paginador` / `.pag-*` en `admin-shell.css`.
+- **Vista "Por categoría"**: el backend ordena por `(c.nombre, id desc)`; `filasAgrupadas()` inserta una fila-encabezado `.group-row` al cambiar de categoría — si un bloque cruza de página, el encabezado se repite en la siguiente (a propósito).
+- **Alta de producto**: `guardarProducto()` deja `orden = "recientes"`, `estado = "todos"`, `#category-filter` = la categoría del nuevo, `paginaActual = 1` → el producto recién creado queda como fila 1, con realce `.row-nuevo` (~2.4s) + `scrollIntoView`.
+- Precio en la tabla: `formatearPrecio()` → `toLocaleString("es-AR")` (`$1.500`).
+- **Gotcha del atributo `hidden`:** `#f-categoria-nueva-group` (`.form-group`) define `display` por clase, que le gana a `[hidden]` → hay `#f-categoria-nueva-group[hidden] { display: none !important }` en `productos.css`.
 
 ### Modal de alta/edición de producto
 

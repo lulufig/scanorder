@@ -11,13 +11,15 @@
     }
 
     // ── ESTADO LOCAL ────────────────────────────────────────────
-    let todosLosProductos = [];   // cache de productos para filtrado local
-    let modoEdicion       = false;
-    let idEditando        = null;
-    let idAEliminar       = null;
-    let idRecienCreado    = null;  // se resalta la fila del último producto creado
-    let mostrandoTodos    = false; // expande el top de "Más vendidos" a la lista completa
-    const TOPE_MAS_VENDIDOS = 10;
+    let todosLosProductos     = [];   // items de la página actual (no todos)
+    let categoriasDisponibles = [];   // nombres de categoría con productos (del backend)
+    let modoEdicion           = false;
+    let idEditando            = null;
+    let idAEliminar           = null;
+    let idRecienCreado        = null; // se resalta la fila del último producto creado
+    let paginaActual          = 1;
+    let debounceBusqueda      = null;
+    const LIMITE_PAGINA = 15;
     // Categorías que siempre aparecen en el modal aunque todavía no tengan productos.
     const CATEGORIAS_BASE = ["Comidas", "Cervezas", "Cocteleria", "Postres"];
 
@@ -26,37 +28,60 @@
       cargarProductos();
     });
 
-    // ── CARGAR PRODUCTOS ────────────────────────────────────────
+    // ── CARGAR PRODUCTOS (server-side: filtros + orden + paginación) ──
+    function paramsCatalogo() {
+      const p = new URLSearchParams();
+      p.set("page", paginaActual);
+      p.set("limit", LIMITE_PAGINA);
+      const q = document.getElementById("search-input").value.trim();
+      if (q) p.set("q", q);
+      p.set("estado", document.getElementById("estado-filter").value || "disponibles");
+      const cat = document.getElementById("category-filter").value;
+      if (cat) p.set("categoria", cat);
+      p.set("orden", document.getElementById("listado-filter").value || "mas-vendidos");
+      return p.toString();
+    }
+
     async function cargarProductos() {
       mostrarCargando();
       try {
-        // GET /productos — incluye dados de baja porque el panel admin
-        // necesita poder verlos y reactivarlos (el menú público no manda este param).
-        const data = await fetchAPI("/productos?incluir_no_disponibles=true");
-        todosLosProductos = ordenarProductos(Array.isArray(data) ? data : []);
-        actualizarFiltroCategorias(todosLosProductos);
-        actualizarStats(todosLosProductos);
-        filtrarTabla();
+        const data = await fetchAPI(`/productos/catalogo?${paramsCatalogo()}`);
+
+        // Si borrás/desactivás el último ítem de la última página, volvés a la anterior.
+        if (data.pages && paginaActual > data.pages) {
+          paginaActual = data.pages;
+          return cargarProductos();
+        }
+
+        todosLosProductos     = Array.isArray(data.items) ? data.items : [];
+        categoriasDisponibles = Array.isArray(data.categorias) ? data.categorias : [];
+        actualizarFiltroCategorias(categoriasDisponibles);
+        actualizarStats(data.resumen || {});
+
+        const agrupado = document.getElementById("listado-filter").value === "categoria";
+        renderTabla(todosLosProductos, agrupado);
+
+        document.getElementById("count-label").textContent =
+          data.total === 1 ? "1 producto" : `${data.total} productos`;
+
+        renderPaginador("paginador", {
+          page: data.page, pages: data.pages, total: data.total, limit: data.limit,
+          onPage: (n) => {
+            paginaActual = n;
+            cargarProductos();
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          },
+        });
       } catch (error) {
         mostrarError("No se pudo cargar la lista de productos: " + error.message);
       }
     }
 
-    function ordenarProductos(productos) {
-      return [...productos].sort((a, b) => {
-        const idA = Number(a.id_producto) || 0;
-        const idB = Number(b.id_producto) || 0;
-        return idB - idA;
-      });
-    }
-
     // ── STATS ───────────────────────────────────────────────────
-    function actualizarStats(productos) {
-      const disponibles    = productos.filter(p => p.disponible).length;
-      const noDisponibles  = productos.length - disponibles;
-      document.getElementById("stat-total").textContent        = productos.length;
-      document.getElementById("stat-disponibles").textContent  = disponibles;
-      document.getElementById("stat-nodisponibles").textContent = noDisponibles;
+    function actualizarStats(resumen) {
+      document.getElementById("stat-total").textContent        = resumen.total ?? "—";
+      document.getElementById("stat-disponibles").textContent  = resumen.disponibles ?? "—";
+      document.getElementById("stat-nodisponibles").textContent = resumen.no_disponibles ?? "—";
     }
 
     // ── RENDER TABLA ────────────────────────────────────────────
@@ -135,26 +160,21 @@
       `;
     }
 
+    // El backend ya ordena por (categoría, id desc) cuando el orden es "categoria".
+    // Acá solo insertamos una fila-encabezado al cambiar de categoría; si un bloque
+    // cruza de página, el encabezado se repite en la página siguiente (a propósito).
     function filasAgrupadas(productos) {
-      const grupos = new Map();
+      let html = "";
+      let catActual = null;
       productos.forEach(p => {
         const cat = p.categoria || "Sin categoría";
-        if (!grupos.has(cat)) grupos.set(cat, []);
-        grupos.get(cat).push(p);
+        if (cat !== catActual) {
+          catActual = cat;
+          html += `<tr class="group-row"><td colspan="5">${escapeHtml(cat)}</td></tr>`;
+        }
+        html += filaProducto(p);
       });
-
-      const categoriasOrdenadas = [...grupos.keys()].sort((a, b) => a.localeCompare(b, "es"));
-
-      return categoriasOrdenadas.map(cat => {
-        // Dentro de cada categoría: los más nuevos primero, para que un producto
-        // recién agregado aparezca al tope de su bloque.
-        const items = grupos.get(cat).sort((a, b) => (Number(b.id_producto) || 0) - (Number(a.id_producto) || 0));
-        const encabezado = `
-          <tr class="group-row">
-            <td colspan="5">${escapeHtml(cat)} <span class="group-count">${items.length}</span></td>
-          </tr>`;
-        return encabezado + items.map(filaProducto).join("");
-      }).join("");
+      return html;
     }
 
     function resaltarRecienCreado() {
@@ -167,110 +187,32 @@
       idRecienCreado = null;
     }
 
-    // ── FILTRO DE BÚSQUEDA ──────────────────────────────────────
-    // Cualquier cambio de filtro colapsa la expansión "ver catálogo completo".
+    // ── FILTROS ────────────────────────────────────────────────
+    // Selects → recargan al instante; el buscador con debounce de 300ms.
+    // Cualquier cambio de filtro vuelve a la página 1.
     function onFiltroChange() {
-      mostrandoTodos = false;
-      filtrarTabla();
+      paginaActual = 1;
+      cargarProductos();
     }
 
-    function filtrarTabla() {
-      const q = document.getElementById("search-input").value.toLowerCase();
-      const categoria = document.getElementById("category-filter")?.value || "";
-      const estado = document.getElementById("estado-filter")?.value || "disponibles";
-      const listado = document.getElementById("listado-filter")?.value || "mas-vendidos";
-
-      let filtrados = todosLosProductos.filter(p => {
-        const pasaEstado =
-          estado === "todos" ||
-          (estado === "disponibles" && p.disponible) ||
-          (estado === "no-disponibles" && !p.disponible);
-        const pasaCategoria = !categoria || (p.categoria || "") === categoria;
-        const pasaTexto =
-          (p.nombre || "").toLowerCase().includes(q) ||
-          (p.descripcion || "").toLowerCase().includes(q) ||
-          (p.categoria || "").toLowerCase().includes(q) ||
-          (p.subcategoria || "").toLowerCase().includes(q);
-        return pasaEstado && pasaCategoria && pasaTexto;
-      });
-
-      const agrupado = listado === "categoria";
-      filtrados = ordenarPorListado(filtrados, listado);
-      const totalCoincidencias = filtrados.length;
-
-      // El tope de 10 + botón SOLO aparecen en la vista por defecto:
-      // orden "Más vendidos", "Todas las categorías", estado "Disponibles" y sin
-      // búsqueda. Cualquier otro filtro muestra la lista completa de ese filtro
-      // (cada categoría tiene su propia cantidad — un "ver N más" global no aplica).
-      const esVistaPorDefecto =
-        listado === "mas-vendidos" && !categoria && !q && estado === "disponibles";
-      let recortado = false;
-      if (esVistaPorDefecto && !mostrandoTodos && totalCoincidencias > TOPE_MAS_VENDIDOS) {
-        filtrados = filtrados.slice(0, TOPE_MAS_VENDIDOS);
-        recortado = true;
-      }
-
-      renderTabla(filtrados, agrupado);
-
-      document.getElementById("count-label").textContent =
-        totalCoincidencias === 1 ? "1 producto" : `${totalCoincidencias} productos`;
-
-      const row = document.getElementById("ver-todos-row");
-      if (row) {
-        row.hidden = !recortado;
-        if (recortado) {
-          document.getElementById("ver-todos-count").textContent = totalCoincidencias;
-        }
-      }
+    function onBusquedaInput() {
+      clearTimeout(debounceBusqueda);
+      debounceBusqueda = setTimeout(() => {
+        paginaActual = 1;
+        cargarProductos();
+      }, 300);
     }
 
-    function mostrarTodos() {
-      mostrandoTodos = true;
-      filtrarTabla();
-    }
-
-    function ordenarPorListado(lista, listado) {
-      const arr = [...lista];
-      const porNuevo = (a, b) => (Number(b.id_producto) || 0) - (Number(a.id_producto) || 0);
-      switch (listado) {
-        case "mas-vendidos":
-          // Más unidades vendidas primero; a igualdad, el más nuevo.
-          return arr.sort((a, b) =>
-            (Number(b.total_vendido) || 0) - (Number(a.total_vendido) || 0) || porNuevo(a, b)
-          );
-        case "az":
-          return arr.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "", "es"));
-        case "precio-asc":
-          return arr.sort((a, b) => (Number(a.precio) || 0) - (Number(b.precio) || 0));
-        case "precio-desc":
-          return arr.sort((a, b) => (Number(b.precio) || 0) - (Number(a.precio) || 0));
-        // "recientes" y "categoria" (el agrupado reordena por bloque después)
-        default:
-          return arr.sort(porNuevo);
-      }
-    }
-
-    function actualizarFiltroCategorias(productos) {
+    function actualizarFiltroCategorias(categorias) {
       const select = document.getElementById("category-filter");
       if (!select) return;
-
-      const seleccionActual = select.value;
-      const categorias = [...new Set(
-        productos
-          .map(p => p.categoria)
-          .filter(Boolean)
-      )].sort((a, b) => a.localeCompare(b, "es"));
-
-      select.innerHTML = `
-        <option value="">Todas las categorías</option>
-        ${categorias.map(categoria => (
-          `<option value="${escapeHtml(categoria)}">${escapeHtml(categoria)}</option>`
-        )).join("")}
-      `;
-
-      if (categorias.includes(seleccionActual)) {
-        select.value = seleccionActual;
-      }
+      const sel = select.value;
+      // Mantiene la selección actual aunque el filtro combinado la deje sin resultados.
+      const todas = [...new Set([...(categorias || []), sel].filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, "es"));
+      select.innerHTML = `<option value="">Todas las categorías</option>` +
+        todas.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+      select.value = sel;
     }
 
     // ── MODAL CREAR ─────────────────────────────────────────────
@@ -343,14 +285,14 @@
           // POST /productos
           const creado = await fetchAPI("/productos", "POST", body);
           mostrarToast("Producto creado correctamente.", "success");
-          // Mostrar el nuevo al tope de su categoría: pasamos a la vista agrupada,
-          // sin filtro de estado/categoría/texto que lo pueda esconder.
+          // Dejar el nuevo producto visible como fila 1: filtramos por su categoría
+          // y ordenamos por "recién agregados".
           idRecienCreado = creado?.id_producto ?? null;
-          document.getElementById("listado-filter").value = "categoria";
+          document.getElementById("listado-filter").value = "recientes";
           document.getElementById("estado-filter").value = "todos";
-          document.getElementById("category-filter").value = "";
+          document.getElementById("category-filter").value = creado?.categoria || "";
           document.getElementById("search-input").value = "";
-          mostrandoTodos = false;
+          paginaActual = 1;
         }
         cerrarModal();
         await cargarProductos(); // recarga la tabla
@@ -452,7 +394,7 @@
     function poblarCategoriasModal(seleccion = "") {
       const select = document.getElementById("f-categoria");
       const categorias = new Set(CATEGORIAS_BASE);
-      todosLosProductos.forEach(p => { if (p.categoria) categorias.add(p.categoria); });
+      categoriasDisponibles.forEach(c => categorias.add(c));
       if (seleccion) categorias.add(seleccion);
 
       const ordenadas = [...categorias].sort((a, b) => a.localeCompare(b, "es"));
