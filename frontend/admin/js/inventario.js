@@ -7,14 +7,19 @@
   if (nombre) document.getElementById("sidebar-username").textContent = nombre;
 
   // ── Estado ───────────────────────────────────────────────────────────────
-  let inventario = [];
+  let inventario = [];        // items de la página actual
+  let resumenActual = {};     // contadores globales (ok/bajo/agotado/criticos)
+  let paginaActual = 1;
+  let debounceBusqueda = null;
   const STOCK_REFERENCIAS_KEY = "scanorder_stock_referencias";
+  const LIMITE_PAGINA = 15;
 
   // ── Carga inicial ────────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
     aplicarFiltroDesdeUrl();
     cargarInventario();
-    setInterval(cargarInventario, 5000);
+    // Refresco en vivo del stock; mantiene la página y los filtros actuales.
+    setInterval(() => cargarInventario(true), 5000);
   });
 
   function aplicarFiltroDesdeUrl() {
@@ -26,12 +31,36 @@
     }
   }
 
-  async function cargarInventario() {
+  function paramsInventario() {
+    const p = new URLSearchParams();
+    p.set("page", paginaActual);
+    p.set("limit", LIMITE_PAGINA);
+    const q = document.getElementById("filtro-nombre").value.trim();
+    if (q) p.set("q", q);
+    const est = document.getElementById("filtro-estado").value;
+    if (est) p.set("estado", est);
+    return p.toString();
+  }
+
+  async function cargarInventario(silencioso = false) {
     try {
-      inventario = await fetchAPI("/inventario/", "GET");
+      const data = await fetchAPI(`/inventario/?${paramsInventario()}`, "GET");
+
+      if (data.pages && paginaActual > data.pages) {
+        paginaActual = data.pages;
+        return cargarInventario(silencioso);
+      }
+
+      inventario = Array.isArray(data.items) ? data.items : [];
+      resumenActual = data.resumen || {};
       actualizarAlerta();
       renderTabla();
+      renderPaginador("paginador", {
+        page: data.page, pages: data.pages, total: data.total, limit: data.limit,
+        onPage: (n) => { paginaActual = n; cargarInventario(); window.scrollTo({ top: 0, behavior: "smooth" }); },
+      });
     } catch (err) {
+      if (silencioso) return;  // un poll fallido no pisa la tabla
       document.getElementById("inv-tbody").innerHTML =
         `<tr><td colspan="5" class="table-empty">
            Error al cargar inventario: ${escapeHtml(err.message)}
@@ -39,12 +68,23 @@
     }
   }
 
+  // ── Filtros ──────────────────────────────────────────────────────────────
+  function onFiltroChange() {
+    paginaActual = 1;
+    cargarInventario();
+  }
+
+  function onBusquedaInput() {
+    clearTimeout(debounceBusqueda);
+    debounceBusqueda = setTimeout(() => { paginaActual = 1; cargarInventario(); }, 300);
+  }
+
   // ── Alerta global de stock bajo ──────────────────────────────────────────
   function actualizarAlerta() {
-    const bajos = inventario.filter(p => normalizarEstado(p) !== "OK").length;
+    const criticos = Number(resumenActual.criticos) || 0;
     const banner = document.getElementById("alerta-bajo-minimo");
-    if (bajos > 0) {
-      document.getElementById("alerta-count").textContent = bajos;
+    if (criticos > 0) {
+      document.getElementById("alerta-count").textContent = criticos;
       banner.classList.add("visible");
     } else {
       banner.classList.remove("visible");
@@ -52,31 +92,22 @@
   }
 
   // ── Render de tabla ──────────────────────────────────────────────────────
+  // `inventario` ya viene filtrado y paginado por el backend.
   function renderTabla() {
-    const filtroEstado = document.getElementById("filtro-estado").value;
-    const filtroNombre = document.getElementById("filtro-nombre").value.trim().toLowerCase();
-
-    const filtrado = inventario.filter(p => {
-      const estado = normalizarEstado(p);
-      const pasaEstado =
-        !filtroEstado ||
-        (filtroEstado === "CRITICOS" ? estado !== "OK" : estado === filtroEstado);
-      const pasaNombre = !filtroNombre || p.nombre.toLowerCase().includes(filtroNombre);
-      return pasaEstado && pasaNombre;
-    });
-
     const tbody = document.getElementById("inv-tbody");
 
-    if (filtrado.length === 0) {
-      const mensaje = inventario.length === 0
-        ? `No hay productos con control de stock. Revisá el checkbox
-           "Controlar el stock de este producto" en <a href="productos.html">Productos</a>.`
-        : "Sin resultados para el filtro.";
+    if (inventario.length === 0) {
+      const hayFiltro = document.getElementById("filtro-nombre").value.trim() ||
+                        document.getElementById("filtro-estado").value;
+      const mensaje = hayFiltro
+        ? "Sin resultados para el filtro."
+        : `No hay productos con control de stock. Revisá el checkbox
+           "Controlar el stock de este producto" en <a href="productos.html">Productos</a>.`;
       tbody.innerHTML = `<tr><td colspan="5" class="table-empty">${mensaje}</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = filtrado.map(p => {
+    tbody.innerHTML = inventario.map(p => {
       const estado = normalizarEstado(p);
       const subcategoria = p.subcategoria ? `<div class="inv-subcategory">${escapeHtml(p.subcategoria)}</div>` : "";
 
@@ -170,7 +201,7 @@
 
   function verCriticos() {
     document.getElementById("filtro-estado").value = "CRITICOS";
-    renderTabla();
+    onFiltroChange();
   }
 
   // ── Modal de ajuste ──────────────────────────────────────────────────────

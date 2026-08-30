@@ -6,58 +6,86 @@
   if (nombreUsuario) document.getElementById("sidebar-username").textContent = nombreUsuario;
 
   // ── Estado ───────────────────────────────────────────────────────────────
-  let productos = [];
-  // id_producto -> nuevo valor de stock (solo filas que el admin tocó)
+  let productos = [];          // items de la página actual
+  // id_producto -> { nuevoStock, stockMinimo, nombre } — persiste entre páginas
   const cambios = new Map();
+  let paginaActual = 1;
+  let debounceBusqueda = null;
+  const LIMITE_PAGINA = 15;
 
-  document.addEventListener("DOMContentLoaded", cargar);
+  document.addEventListener("DOMContentLoaded", () => cargar());
+
+  function paramsRapida() {
+    const p = new URLSearchParams();
+    p.set("page", paginaActual);
+    p.set("limit", LIMITE_PAGINA);
+    const q = document.getElementById("filtro-nombre").value.trim();
+    if (q) p.set("q", q);
+    const cat = document.getElementById("filtro-categoria").value;
+    if (cat) p.set("categoria", cat);
+    return p.toString();
+  }
 
   async function cargar() {
     try {
-      productos = await fetchAPI("/inventario/", "GET");
-      poblarCategorias();
+      const data = await fetchAPI(`/inventario/?${paramsRapida()}`, "GET");
+
+      if (data.pages && paginaActual > data.pages) {
+        paginaActual = data.pages;
+        return cargar();
+      }
+
+      productos = Array.isArray(data.items) ? data.items : [];
+      poblarCategorias(data.categorias || []);
       renderTabla();
+      renderPaginador("paginador", {
+        page: data.page, pages: data.pages, total: data.total, limit: data.limit,
+        onPage: (n) => { paginaActual = n; cargar(); window.scrollTo({ top: 0, behavior: "smooth" }); },
+      });
     } catch (err) {
       document.getElementById("rapida-tbody").innerHTML =
         `<tr><td colspan="4" class="table-empty">Error al cargar: ${escapeHtml(err.message)}</td></tr>`;
     }
   }
 
-  function poblarCategorias() {
+  function onFiltroChange() {
+    paginaActual = 1;
+    cargar();
+  }
+
+  function onBusquedaInput() {
+    clearTimeout(debounceBusqueda);
+    debounceBusqueda = setTimeout(() => { paginaActual = 1; cargar(); }, 300);
+  }
+
+  function poblarCategorias(categorias) {
     const select = document.getElementById("filtro-categoria");
-    const seleccion = select.value;
-    const categorias = [...new Set(productos.map(p => p.categoria).filter(Boolean))]
+    const sel = select.value;
+    const todas = [...new Set([...(categorias || []), sel].filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, "es"));
     select.innerHTML =
       `<option value="">Todas las categorías</option>` +
-      categorias.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
-    if (categorias.includes(seleccion)) select.value = seleccion;
+      todas.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+    select.value = sel;
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
+  // `productos` ya viene filtrado y paginado por el backend.
   function renderTabla() {
-    const q = document.getElementById("filtro-nombre").value.trim().toLowerCase();
-    const categoria = document.getElementById("filtro-categoria").value;
-
-    const filtrados = productos.filter(p => {
-      const pasaNombre = !q || (p.nombre || "").toLowerCase().includes(q);
-      const pasaCategoria = !categoria || (p.categoria || "") === categoria;
-      return pasaNombre && pasaCategoria;
-    });
-
     const tbody = document.getElementById("rapida-tbody");
-    if (filtrados.length === 0) {
-      const mensaje = productos.length === 0
-        ? `No hay productos con control de stock.`
-        : "Sin resultados para el filtro.";
-      tbody.innerHTML = `<tr><td colspan="4" class="table-empty">${mensaje}</td></tr>`;
+    if (productos.length === 0) {
+      const hayFiltro = document.getElementById("filtro-nombre").value.trim() ||
+                        document.getElementById("filtro-categoria").value;
+      tbody.innerHTML = `<tr><td colspan="4" class="table-empty">${
+        hayFiltro ? "Sin resultados para el filtro." : "No hay productos con control de stock."
+      }</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = filtrados.map(p => {
+    tbody.innerHTML = productos.map(p => {
       const actual = Number(p.stock_actual) || 0;
-      const valor = cambios.has(p.id_producto) ? cambios.get(p.id_producto) : actual;
       const tocado = cambios.has(p.id_producto);
+      const valor = tocado ? cambios.get(p.id_producto).nuevoStock : actual;
       return `
         <tr class="${tocado ? "row-tocada" : ""}">
           <td><div class="inv-product-name">${escapeHtml(p.nombre)}</div></td>
@@ -66,6 +94,7 @@
           <td>
             <input type="number" min="0" step="1" class="stock-input"
               value="${valor}" data-id="${p.id_producto}" data-actual="${actual}"
+              data-min="${Number(p.stock_minimo) || 0}" data-nombre="${escapeHtml(p.nombre)}"
               oninput="onStockInput(this)" />
           </td>
         </tr>`;
@@ -80,7 +109,11 @@
     if (nuevo === null || Number.isNaN(nuevo) || nuevo === actual || nuevo < 0) {
       cambios.delete(id);
     } else {
-      cambios.set(id, nuevo);
+      cambios.set(id, {
+        nuevoStock: nuevo,
+        stockMinimo: Number(input.dataset.min) || 0,
+        nombre: input.dataset.nombre || `#${id}`,
+      });
     }
     input.closest("tr").classList.toggle("row-tocada", cambios.has(id));
     actualizarBarra();
@@ -99,23 +132,20 @@
     btn.disabled = true;
     btn.textContent = "Guardando…";
 
-    const pendientes = [...cambios.entries()];
     let ok = 0;
     const errores = [];
 
-    for (const [id, nuevoStock] of pendientes) {
-      const prod = productos.find(p => p.id_producto === id);
-      if (!prod) continue;
+    for (const [id, cambio] of [...cambios.entries()]) {
       try {
         await fetchAPI(`/inventario/${id}`, "PUT", {
-          stock_actual: nuevoStock,
-          stock_minimo: Number(prod.stock_minimo) || 0,
+          stock_actual: cambio.nuevoStock,
+          stock_minimo: cambio.stockMinimo,
           motivo: "Reposición rápida",
         });
         cambios.delete(id);
         ok++;
       } catch (err) {
-        errores.push(`${prod.nombre}: ${err.message}`);
+        errores.push(`${cambio.nombre}: ${err.message}`);
       }
     }
 

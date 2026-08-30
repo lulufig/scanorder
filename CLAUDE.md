@@ -413,8 +413,8 @@ Helpers de columna: `_inventario_activo(cursor)` (¿migración 010?) y `_control
 
 | Endpoint | Método | Requiere | Descripción |
 |---|---|---|---|
-| `GET /inventario/` | GET | admin | Lista los productos con `controla_stock = TRUE` (por defecto todos), con estado OK/BAJO/AGOTADO. Soporta `?estado=BAJO`. |
-| `GET /inventario/bajo-minimo` | GET | admin | Solo productos con déficit. |
+| `GET /inventario/` | GET | admin | **Paginado** (15/pág, contrato `app/utils/pagination.py`). Productos con `controla_stock = TRUE`. Params: `page`, `limit`, `q` (nombre), `estado` (`OK`/`BAJO`/`AGOTADO`/`CRITICOS` — ver `_FILTRO_ESTADO`), `categoria`. Devuelve `{items (con `estado`), total, page, limit, pages, resumen, categorias}`. `resumen` = `{total, ok, bajo, agotado, criticos}` globales (alimenta el banner de alerta). Lo consumen `inventario.js` y `inventario-rapida.js`. |
+| `GET /inventario/bajo-minimo` | GET | admin | Solo productos con déficit (no paginado). |
 | `PUT /inventario/{id}` | PUT | admin | Ajuste manual de stock y mínimo. |
 | `POST /inventario/{id}/entrada` | POST | admin | Entrada de stock (compra, reposición). |
 | `GET /movimientos-stock/` | GET | admin | Historial paginado. Filtros: `producto_id`, `tipo`, `desde`, `hasta`, `page`, `limit`. |
@@ -438,14 +438,13 @@ En `PATCH /pedidos/{id}/estado` cuando `body.estado == "entregado"`:
 ### UI Admin
 
 `frontend/admin/inventario.html` + `frontend/admin/js/inventario.js`:
-- Tabla con columnas: Producto, Categoría, Stock actual, Stock mínimo, Estado, Acciones.
-- Badge de estado: `OK` (verde), `BAJO` (amarillo), `AGOTADO` (rojo).
-- Banner de alerta global si hay productos con estado ≠ OK.
-- Modal "Ajustar Stock" con campos `stock_actual`, `stock_minimo`, `motivo`.
-- Polling automático cada 5 s (`setInterval(cargarInventario, 5000)`).
-- El botón "Ajustar" pasa **solo `id_producto`** al `onclick`; `abrirModal()` busca la fila en el array `inventario` (ver gotcha de apóstrofos en "Notas para cambios futuros").
+- Tabla con columnas: Producto, Categoría, Stock, Estado, Acciones. **Paginada (15/pág)** — el paginador compartido (`assets/js/paginador.js`, `#paginador`); búsqueda con debounce 300ms.
+- Los filtros (`#filtro-nombre`, `#filtro-estado`) van al backend; cualquier cambio vuelve a `paginaActual = 1`. `verCriticos()` setea el filtro y recarga.
+- Banner de alerta global: usa `resumen.criticos` de la respuesta (global, no la página).
+- Polling cada 5 s: `setInterval(() => cargarInventario(true), 5000)` — el flag `silencioso` evita que un poll fallido pise la tabla; mantiene página y filtros.
+- El botón "Ajustar" pasa **solo `id_producto`** al `onclick`; `abrirModal()` busca la fila en el array `inventario` (que ahora es solo la página actual — la fila siempre está porque venís de clickearla). Ver gotcha de apóstrofos en "Notas para cambios futuros".
 
-**Reposición rápida** (`frontend/admin/inventario-rapida.html` + `js/inventario-rapida.js` + `css/inventario-rapida.css`) — link desde el header de `inventario.html`. Tabla con un `<input number>` de stock por fila, prellenado con el valor actual; el admin edita las que quiera y una barra flotante (`#save-bar`) muestra cuántas cambió. "Guardar cambios" hace un `PUT /inventario/{id}` por fila modificada (`motivo: "Reposición rápida"`), secuencial, reportando errores por producto. **Sin backend nuevo** — reusa el endpoint existente. Sin polling (para no pisar lo que el admin está tipeando). `.save-bar[hidden]` necesita `display: none !important` (gotcha del atributo `hidden`).
+**Reposición rápida** (`frontend/admin/inventario-rapida.html` + `js/inventario-rapida.js` + `css/inventario-rapida.css`) — link desde el header de `inventario.html`. También **paginada (15/pág)** contra `GET /inventario/`. Un `<input number>` de stock por fila; el `Map` `cambios` guarda `{nuevoStock, stockMinimo, nombre}` por id y **persiste entre páginas** (editás la pág. 1, vas a la 2, "Guardar cambios" manda todo). La barra flotante (`#save-bar`) muestra el total de filas tocadas. Cada `PUT /inventario/{id}` lleva `motivo: "Reposición rápida"`. `.save-bar[hidden]` necesita `display: none !important` (gotcha del atributo `hidden`).
 
 ---
 

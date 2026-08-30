@@ -112,3 +112,20 @@ class TestFiltroCatalogo:
         from app.routes.productos import _ORDEN_CATALOGO
         for opcion in ["mas-vendidos", "categoria", "recientes", "az", "precio-asc", "precio-desc"]:
             assert opcion in _ORDEN_CATALOGO
+
+
+class TestEstadoInventario:
+    def test_estado_stock_espeja_normalizarEstado_js(self):
+        from app.routes.inventario import _estado_stock
+        assert _estado_stock(0, 5) == "AGOTADO"
+        assert _estado_stock(-1, 5) == "AGOTADO"
+        assert _estado_stock(3, 10) == "BAJO"
+        assert _estado_stock(10, 10) == "OK"
+        assert _estado_stock(3, 0) == "OK"     # sin mínimo definido → nunca "BAJO"
+        assert _estado_stock(20, 5) == "OK"
+
+    def test_filtro_estado_cubre_las_opciones_del_frontend(self):
+        from app.routes.inventario import _FILTRO_ESTADO
+        for opcion in ["OK", "BAJO", "AGOTADO", "CRITICOS"]:
+            assert opcion in _FILTRO_ESTADO
+            assert "p.stock_actual" in _FILTRO_ESTADO[opcion]

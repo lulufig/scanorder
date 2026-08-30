@@ -72,9 +72,9 @@
     <div class="inv-filters">
       <div class="inv-search">
         <i data-lucide="search"></i>
-        <input type="text" id="filtro-nombre" placeholder="Buscar producto…" oninput="renderTabla()" />
+        <input type="text" id="filtro-nombre" placeholder="Buscar producto…" oninput="onBusquedaInput()" />
       </div>
-      <select id="filtro-estado" onchange="renderTabla()">
+      <select id="filtro-estado" onchange="onFiltroChange()">
         <option value="CRITICOS">Críticos</option>
         <option value="">Todos los estados</option>
         <option value="OK">Stock OK</option>
@@ -99,6 +99,7 @@
           <tr><td colspan="5" style="text-align:center;padding:2rem;color:#888">Cargando…</td></tr>
         </tbody>
       </table>
+      <div id="paginador" class="paginador" hidden></div>
     </div>
 
   </main>
@@ -131,6 +132,7 @@
   <script src="../assets/js/config.js"></script>
   <script src="../assets/js/auth.js"></script>
   <script src="../assets/js/api.js"></script>
+  <script src="../assets/js/paginador.js"></script>
   <script src="../assets/js/sidebar-toggle.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" defer onload="lucide.createIcons()"></script>
   <script src="js/inventario.js"></script>

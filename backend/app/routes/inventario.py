@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from app.database import get_db_connection, close_db_connection
 from app.utils.dependencies import require_role
+from app.utils.pagination import respuesta_paginada, normalizar_limit, offset as _offset
 from app.services.inventory_service import (
     ajustar_stock_manual,
     incrementar_stock,
@@ -32,9 +33,9 @@ class EntradaStockBody(BaseModel):
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _estado_stock(stock_actual: int, stock_minimo: int) -> str:
-    if stock_actual == 0:
+    if stock_actual <= 0:
         return "AGOTADO"
-    if stock_actual < stock_minimo:
+    if stock_minimo > 0 and stock_actual < stock_minimo:
         return "BAJO"
     return "OK"
 
@@ -49,17 +50,32 @@ def _controla_stock_existe(cursor) -> bool:
     return cursor.fetchone() is not None
 
 
+# Fragmentos SQL del estado calculado (deben espejar _estado_stock / normalizarEstado en JS)
+_SQL_AGOTADO = "p.stock_actual <= 0"
+_SQL_BAJO = "(p.stock_actual > 0 AND p.stock_minimo > 0 AND p.stock_actual < p.stock_minimo)"
+_FILTRO_ESTADO = {
+    "OK":       f"(NOT ({_SQL_AGOTADO}) AND NOT {_SQL_BAJO})",
+    "BAJO":     _SQL_BAJO,
+    "AGOTADO":  f"({_SQL_AGOTADO})",
+    "CRITICOS": f"(({_SQL_AGOTADO}) OR {_SQL_BAJO})",
+}
+
+
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
-@router.get("/", summary="Listado completo de inventario")
+@router.get("/", summary="Inventario paginado")
 def listar_inventario(
-    estado: Optional[str] = Query(None, description="Filtrar por estado: OK, BAJO, AGOTADO"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
+    q: Optional[str] = Query(None, description="Busca por nombre de producto"),
+    estado: Optional[str] = Query(None, description="OK | BAJO | AGOTADO | CRITICOS"),
+    categoria: Optional[str] = Query(None, description="Nombre exacto de categoría"),
     current_user: dict = Depends(require_role("admin")),
 ):
-    """
-    Lista todos los productos con su stock actual, mínimo y estado calculado.
-    Soporta ?estado=bajo para filtrar solo los alertas.
-    """
+    """Productos con seguimiento de stock, paginados (15 por página).
+    Devuelve `{items, total, page, limit, pages, resumen, categorias}` — cada item
+    trae `estado` (OK/BAJO/AGOTADO); `resumen` son los contadores globales."""
+    limit = normalizar_limit(limit)
     connection = get_db_connection()
     if not connection:
         raise HTTPException(status_code=500, detail="Error de conexión a la base de datos")
@@ -70,30 +86,64 @@ def listar_inventario(
                 status_code=503,
                 detail="Módulo de inventario no configurado. Aplicar migración 010_inventory.sql.",
             )
+        tiene_flag = _controla_stock_existe(cursor)
 
-        # Con la migración 013 solo se listan los productos con seguimiento activo.
-        filtro_controla = "WHERE p.controla_stock = TRUE" if _controla_stock_existe(cursor) else ""
+        clauses, params = [], []
+        if tiene_flag:
+            clauses.append("p.controla_stock = TRUE")
+        if q:
+            clauses.append("p.nombre LIKE %s")
+            params.append(f"%{q.strip()}%")
+        if categoria:
+            clauses.append("c.nombre = %s")
+            params.append(categoria)
+        if estado and estado.upper() in _FILTRO_ESTADO:
+            clauses.append(_FILTRO_ESTADO[estado.upper()])
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        base_from = "FROM productos p LEFT JOIN categorias c ON c.id_categoria = p.id_categoria"
+
+        cursor.execute(f"SELECT COUNT(*) AS total {base_from} {where}", params)
+        total = cursor.fetchone()["total"]
+
         cursor.execute(
             f"""SELECT p.id_producto, p.nombre, p.disponible,
-                       p.stock_actual, p.stock_minimo,
-                       c.nombre AS categoria
-                FROM productos p
-                LEFT JOIN categorias c ON c.id_categoria = p.id_categoria
-                {filtro_controla}
-                ORDER BY c.nombre, p.nombre"""
+                       p.stock_actual, p.stock_minimo, c.nombre AS categoria
+                {base_from} {where}
+                ORDER BY c.nombre IS NULL, c.nombre, p.nombre
+                LIMIT %s OFFSET %s""",
+            [*params, limit, _offset(page, limit)],
         )
-        productos = cursor.fetchall()
+        items = [
+            {**p, "estado": _estado_stock(p["stock_actual"], p["stock_minimo"])}
+            for p in cursor.fetchall()
+        ]
 
-        resultado = []
-        for p in productos:
-            estado_calc = _estado_stock(p["stock_actual"], p["stock_minimo"])
-            if estado and estado.upper() != estado_calc:
-                continue
-            resultado.append({
-                **p,
-                "estado": estado_calc,
-            })
-        return resultado
+        # Resumen global (mismo filtro controla_stock, sin q / estado / categoría)
+        base_controla = "WHERE p.controla_stock = TRUE" if tiene_flag else ""
+        cursor.execute(f"""
+            SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN {_SQL_AGOTADO} THEN 1 ELSE 0 END) AS agotado,
+                   SUM(CASE WHEN {_SQL_BAJO}    THEN 1 ELSE 0 END) AS bajo
+            FROM productos p {base_controla}
+        """)
+        r = cursor.fetchone()
+        agotado, bajo = int(r["agotado"] or 0), int(r["bajo"] or 0)
+        resumen = {
+            "total": int(r["total"]),
+            "agotado": agotado,
+            "bajo": bajo,
+            "ok": int(r["total"]) - agotado - bajo,
+            "criticos": agotado + bajo,
+        }
+
+        cats_where = "WHERE c.nombre IS NOT NULL" + (" AND p.controla_stock = TRUE" if tiene_flag else "")
+        cursor.execute(
+            f"SELECT DISTINCT c.nombre AS nombre FROM categorias c "
+            f"JOIN productos p ON p.id_categoria = c.id_categoria {cats_where} ORDER BY c.nombre"
+        )
+        categorias = [row["nombre"] for row in cursor.fetchall()]
+
+        return respuesta_paginada(items, total, page, limit, resumen=resumen, categorias=categorias)
     except HTTPException:
         raise
     except Exception as e:
