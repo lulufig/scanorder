@@ -311,8 +311,7 @@
 
 .usu-table {
   width: 100%;
-  min-width: 1240px;
-  table-layout: fixed;
+  min-width: 900px;
   border-collapse: collapse;
   font-size: 0.86rem;
 }
@@ -355,33 +354,17 @@
 }
 
 .usu-table th:nth-child(1),
-.usu-table td:nth-child(1) {
-  width: 22%;
-}
+.usu-table td:nth-child(1) { width: 30%; }
 
 .usu-table th:nth-child(2),
-.usu-table td:nth-child(2) {
-  width: 20%;
-}
-
-.usu-table th:nth-child(3),
-.usu-table td:nth-child(3) {
-  width: 11%;
-}
-
-.usu-table th:nth-child(4),
-.usu-table td:nth-child(4) {
-  width: 15%;
-}
+.usu-table td:nth-child(2) { width: 24%; }
 
 .usu-table th:nth-child(5),
-.usu-table td:nth-child(5) {
-  width: 16%;
-}
+.usu-table td:nth-child(5) { white-space: nowrap; }
 
 .usu-table th:nth-child(6),
 .usu-table td:nth-child(6) {
-  width: 16%;
+  width: 1%;
   text-align: right;
 }
 
@@ -554,14 +537,15 @@
 
 .acciones-cell {
   display: inline-flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 7px;
-  width: 100%;
+  gap: 8px;
   white-space: nowrap;
 }
 
-.usu-table .acciones-cell {
-  min-width: 132px;
+.acciones-cell .btn-edit {
+  height: 32px;
+  padding: 0 12px;
 }
 
 .btn-icon {

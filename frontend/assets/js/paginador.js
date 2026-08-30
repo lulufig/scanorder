@@ -29,9 +29,9 @@ function renderPaginador(containerId, { page, pages, total, limit, onPage }) {
   const hasta = Math.min(page * limit, total);
   const numeros = _paginasVisibles(page, pages);
 
-  const botones = pages <= 1
-    ? ""
-    : `
+  // Los controles se muestran siempre (aunque haya una sola página, desactivados)
+  // para que quede claro que el listado es paginado.
+  const botones = `
       <div class="pag-controls">
         <button type="button" class="pag-btn pag-nav" ${page <= 1 ? "disabled" : ""}
           data-page="${page - 1}" aria-label="Página anterior">‹</button>
