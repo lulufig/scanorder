@@ -185,7 +185,7 @@ def _filtro_catalogo(cursor, q, estado, categoria):
 @router.get("/catalogo")
 def catalogo_paginado(
     page: int = Query(1, ge=1),
-    limit: int = Query(15, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=100),
     q: Optional[str] = Query(None, description="Busca en nombre, descripción, categoría, subcategoría"),
     estado: str = Query("disponibles", description="disponibles | no-disponibles | todos"),
     categoria: Optional[str] = Query(None, description="Nombre exacto de categoría"),

@@ -12,7 +12,7 @@
   let paginaActual = 1;
   let debounceBusqueda = null;
   const STOCK_REFERENCIAS_KEY = "scanorder_stock_referencias";
-  const LIMITE_PAGINA = 15;
+  const LIMITE_PAGINA = 10;
 
   // ── Carga inicial ────────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {

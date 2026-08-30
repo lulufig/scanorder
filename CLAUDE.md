@@ -161,7 +161,7 @@ Para el MVP académico: comportamiento aceptado y documentado.
 | `frontend/cambiar-password.html` | Formulario con campo `password_actual` + `nueva_password` + confirmación. Subtitle dinámico según si es primer login. Redirect post-cambio: admin→`admin/index.html`, mozo→`admin/mesas.html`. |
 | `frontend/forgot-password.html` | Formulario de email. Llama `POST /auth/forgot-password`. Siempre muestra "si el email existe recibirás un correo" (nunca confirma ni niega). Maneja 429 explícitamente. |
 | `frontend/reset-password.html` | Lee `?token=` de la URL. Formulario nueva/confirmar. En 400 (token expirado/usado) muestra estado de error inline con link a forgot-password. |
-| `frontend/admin/usuarios.html` | Panel admin **paginado (15/pág)** — mismo diseño que Productos (tarjetas de stats planas, sin íconos ni vista cuadrícula). `GET /admin/usuarios` server-side: params `page`, `limit`, `q`, `rol`, `estado` (`activo`/`inactivo`/`temporal`), `orden` (`recientes`/`antiguos`/`az`/`za`); devuelve `{items, total, page, limit, pages, resumen}` (`resumen` = total/activos/temporales/inactivos globales). El listado `resumen` (5 recientes, sin paginador) es una opción del `#filtro-listado`. Selección múltiple: `_seleccionados` es un `Map<id,usuario>` que **persiste entre páginas** (las acciones en lote operan sobre todo lo tildado). Se mantienen el panel lateral de "Detalles", exportar CSV, cambiar rol y desactivar en lote. Modal crear (nombre, email, rol) + modal editar. Usa `requireAuth(ROLES.ADMIN)`. |
+| `frontend/admin/usuarios.html` | Panel admin **paginado (10/pág)** — mismo diseño que Productos (tarjetas de stats planas, sin íconos ni vista cuadrícula). `GET /admin/usuarios` server-side: params `page`, `limit`, `q`, `rol`, `estado` (`activo`/`inactivo`/`temporal`), `orden` (`recientes`/`antiguos`/`az`/`za`); devuelve `{items, total, page, limit, pages, resumen}` (`resumen` = total/activos/temporales/inactivos globales). El listado `resumen` (5 recientes, sin paginador) es una opción del `#filtro-listado`. Selección múltiple: `_seleccionados` es un `Map<id,usuario>` que **persiste entre páginas** (las acciones en lote operan sobre todo lo tildado). Se mantienen el panel lateral de "Detalles", exportar CSV, cambiar rol y desactivar en lote. Modal crear (nombre, email, rol) + modal editar. Usa `requireAuth(ROLES.ADMIN)`. |
 
 `fetchAPI(endpoint, method, body, auth=false)` — el 4to parámetro `false` omite el Bearer header para endpoints públicos (`forgot-password`, `reset-password`).
 
@@ -413,7 +413,7 @@ Helpers de columna: `_inventario_activo(cursor)` (¿migración 010?) y `_control
 
 | Endpoint | Método | Requiere | Descripción |
 |---|---|---|---|
-| `GET /inventario/` | GET | admin | **Paginado** (15/pág, contrato `app/utils/pagination.py`). Productos con `controla_stock = TRUE`. Params: `page`, `limit`, `q` (nombre), `estado` (`OK`/`BAJO`/`AGOTADO`/`CRITICOS` — ver `_FILTRO_ESTADO`), `categoria`. Devuelve `{items (con `estado`), total, page, limit, pages, resumen, categorias}`. `resumen` = `{total, ok, bajo, agotado, criticos}` globales (alimenta el banner de alerta). Lo consumen `inventario.js` y `inventario-rapida.js`. |
+| `GET /inventario/` | GET | admin | **Paginado** (10/pág, contrato `app/utils/pagination.py`). Productos con `controla_stock = TRUE`. Params: `page`, `limit`, `q` (nombre), `estado` (`OK`/`BAJO`/`AGOTADO`/`CRITICOS` — ver `_FILTRO_ESTADO`), `categoria`. Devuelve `{items (con `estado`), total, page, limit, pages, resumen, categorias}`. `resumen` = `{total, ok, bajo, agotado, criticos}` globales (alimenta el banner de alerta). Lo consumen `inventario.js` y `inventario-rapida.js`. |
 | `GET /inventario/bajo-minimo` | GET | admin | Solo productos con déficit (no paginado). |
 | `PUT /inventario/{id}` | PUT | admin | Ajuste manual de stock y mínimo. |
 | `POST /inventario/{id}/entrada` | POST | admin | Entrada de stock (compra, reposición). |
@@ -438,13 +438,13 @@ En `PATCH /pedidos/{id}/estado` cuando `body.estado == "entregado"`:
 ### UI Admin
 
 `frontend/admin/inventario.html` + `frontend/admin/js/inventario.js`:
-- Tabla con columnas: Producto, Categoría, Stock, Estado, Acciones. **Paginada (15/pág)** — el paginador compartido (`assets/js/paginador.js`, `#paginador`); búsqueda con debounce 300ms.
+- Tabla con columnas: Producto, Categoría, Stock, Estado, Acciones. **Paginada (10/pág)** — el paginador compartido (`assets/js/paginador.js`, `#paginador`); búsqueda con debounce 300ms.
 - Los filtros (`#filtro-nombre`, `#filtro-estado`) van al backend; cualquier cambio vuelve a `paginaActual = 1`. `verCriticos()` setea el filtro y recarga.
 - Banner de alerta global: usa `resumen.criticos` de la respuesta (global, no la página).
 - Polling cada 5 s: `setInterval(() => cargarInventario(true), 5000)` — el flag `silencioso` evita que un poll fallido pise la tabla; mantiene página y filtros.
 - El botón "Ajustar" pasa **solo `id_producto`** al `onclick`; `abrirModal()` busca la fila en el array `inventario` (que ahora es solo la página actual — la fila siempre está porque venís de clickearla). Ver gotcha de apóstrofos en "Notas para cambios futuros".
 
-**Reposición rápida** (`frontend/admin/inventario-rapida.html` + `js/inventario-rapida.js` + `css/inventario-rapida.css`) — link desde el header de `inventario.html`. También **paginada (15/pág)** contra `GET /inventario/`. Un `<input number>` de stock por fila; el `Map` `cambios` guarda `{nuevoStock, stockMinimo, nombre}` por id y **persiste entre páginas** (editás la pág. 1, vas a la 2, "Guardar cambios" manda todo). La barra flotante (`#save-bar`) muestra el total de filas tocadas. Cada `PUT /inventario/{id}` lleva `motivo: "Reposición rápida"`. `.save-bar[hidden]` necesita `display: none !important` (gotcha del atributo `hidden`).
+**Reposición rápida** (`frontend/admin/inventario-rapida.html` + `js/inventario-rapida.js` + `css/inventario-rapida.css`) — link desde el header de `inventario.html`. También **paginada (10/pág)** contra `GET /inventario/`. Un `<input number>` de stock por fila; el `Map` `cambios` guarda `{nuevoStock, stockMinimo, nombre}` por id y **persiste entre páginas** (editás la pág. 1, vas a la 2, "Guardar cambios" manda todo). La barra flotante (`#save-bar`) muestra el total de filas tocadas. Cada `PUT /inventario/{id}` lleva `motivo: "Reposición rápida"`. `.save-bar[hidden]` necesita `display: none !important` (gotcha del atributo `hidden`).
 
 ---
 
@@ -461,7 +461,7 @@ En `PATCH /pedidos/{id}/estado` cuando `body.estado == "entregado"`:
 
 Contenedor `.prod-panel` (tarjeta con encabezado + contador), grilla `.prod-filters` con inputs redondeados. Mismo lenguaje visual que `usuarios.html` / `inventario.html`.
 
-**Paginación en el servidor** (`GET /productos/catalogo`, 15 por página):
+**Paginación en el servidor** (`GET /productos/catalogo`, 10 por página):
 - Endpoint **nuevo y separado** de `GET /productos/` — este último se deja intacto para el menú público (`frontend/cliente/menu.js` espera un array). `/catalogo` es admin/mozo (`require_role`), devuelve `{items, total, page, limit, pages, resumen, categorias}` (contrato de `app/utils/pagination.py` + extras).
   - `resumen`: `{total, disponibles, no_disponibles}` globales — para las tarjetas de stats (no dependen del filtro).
   - `categorias`: nombres de categoría con al menos un producto — llena `#category-filter` y el `<select>` del modal.

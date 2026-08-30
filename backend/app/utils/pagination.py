@@ -15,7 +15,7 @@ import math
 from typing import Any
 
 
-LIMITE_DEFAULT = 15
+LIMITE_DEFAULT = 10
 LIMITE_MAX = 100
 
 

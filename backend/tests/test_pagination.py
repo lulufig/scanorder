@@ -48,8 +48,9 @@ class TestNormalizarLimit:
         assert normalizar_limit(15) == 15
 
     def test_cero_o_negativo_cae_al_default(self):
-        assert normalizar_limit(0) == 15
-        assert normalizar_limit(-3) == 15
+        from app.utils.pagination import LIMITE_DEFAULT
+        assert normalizar_limit(0) == LIMITE_DEFAULT
+        assert normalizar_limit(-3) == LIMITE_DEFAULT
 
     def test_tope_maximo(self):
         assert normalizar_limit(9999) == 100

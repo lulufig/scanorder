@@ -11,7 +11,7 @@
     let _paginaActual = 1;
     let _debounce = null;
     let _editandoId = null;
-    const LIMITE_PAGINA = 15;
+    const LIMITE_PAGINA = 10;
     const LIMITE_RESUMEN = 5;
 
     // ── Carga (server-side) ────────────────────────────────────────────────────

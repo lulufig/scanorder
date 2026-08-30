@@ -89,7 +89,7 @@ def _filtro_usuarios(cursor, q, rol, estado):
 @router.get("/usuarios", dependencies=[Depends(require_role("admin"))])
 def listar_usuarios(
     page: int = Query(1, ge=1),
-    limit: int = Query(15, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=100),
     q: Optional[str] = Query(None, description="Busca en nombre, email, id, rol"),
     rol: Optional[str] = Query(None, description="admin | mozo"),
     estado: Optional[str] = Query(None, description="activo | inactivo | temporal"),

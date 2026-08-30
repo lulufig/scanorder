@@ -19,7 +19,7 @@
     let idRecienCreado        = null; // se resalta la fila del último producto creado
     let paginaActual          = 1;
     let debounceBusqueda      = null;
-    const LIMITE_PAGINA = 15;
+    const LIMITE_PAGINA = 10;
     // Categorías que siempre aparecen en el modal aunque todavía no tengan productos.
     const CATEGORIAS_BASE = ["Comidas", "Cervezas", "Cocteleria", "Postres"];
 

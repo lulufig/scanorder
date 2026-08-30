@@ -11,7 +11,7 @@
   const cambios = new Map();
   let paginaActual = 1;
   let debounceBusqueda = null;
-  const LIMITE_PAGINA = 15;
+  const LIMITE_PAGINA = 10;
 
   document.addEventListener("DOMContentLoaded", () => cargar());
 
