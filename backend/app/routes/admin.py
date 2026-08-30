@@ -3,12 +3,13 @@ import secrets
 import string
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr
 
 from app.database import close_db_connection, get_db_connection
 from app.services import email_service
 from app.utils.dependencies import require_role
+from app.utils.pagination import respuesta_paginada, normalizar_limit, offset as _offset
 from app.utils.security import hash_password
 
 logger = logging.getLogger(__name__)
@@ -56,24 +57,97 @@ def _normalizar_usuario(row: dict) -> dict:
 
 # ── GET /admin/usuarios ───────────────────────────────────────────────────────
 
+_ORDEN_USUARIOS = {
+    "recientes": "created_at DESC, id_usuario DESC",
+    "antiguos":  "created_at ASC, id_usuario ASC",
+    "az":        "nombre ASC",
+    "za":        "nombre DESC",
+}
+
+
+def _filtro_usuarios(cursor, q, rol, estado):
+    """WHERE compartido por el COUNT y el SELECT del listado paginado."""
+    tiene_mcp = usuarios_tiene_columna(cursor, "must_change_password")
+    clauses, params = [], []
+    if q:
+        like = f"%{q.strip()}%"
+        clauses.append("(nombre LIKE %s OR email LIKE %s OR CAST(id_usuario AS CHAR) LIKE %s OR rol LIKE %s)")
+        params += [like, like, like, like]
+    if rol:
+        clauses.append("rol = %s")
+        params.append(rol)
+    if estado == "inactivo":
+        clauses.append("activo = FALSE")
+    elif estado == "activo":
+        clauses.append("activo = TRUE" + (" AND (must_change_password = FALSE OR must_change_password IS NULL)" if tiene_mcp else ""))
+    elif estado == "temporal" and tiene_mcp:
+        clauses.append("activo = TRUE AND must_change_password = TRUE")
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    return where, params
+
+
 @router.get("/usuarios", dependencies=[Depends(require_role("admin"))])
-def listar_usuarios():
+def listar_usuarios(
+    page: int = Query(1, ge=1),
+    limit: int = Query(15, ge=1, le=100),
+    q: Optional[str] = Query(None, description="Busca en nombre, email, id, rol"),
+    rol: Optional[str] = Query(None, description="admin | mozo"),
+    estado: Optional[str] = Query(None, description="activo | inactivo | temporal"),
+    orden: str = Query("recientes", description="recientes | antiguos | az | za"),
+):
+    """Listado de usuarios paginado (15 por página).
+    Devuelve `{items, total, page, limit, pages, resumen}` — `resumen` trae los
+    contadores globales (total / activos / temporales / inactivos)."""
+    limit = normalizar_limit(limit)
     connection = get_db_connection()
     if not connection:
         raise HTTPException(status_code=500, detail="Error de conexión a DB")
     try:
         cursor = connection.cursor(dictionary=True)
-        campo_mcp = "must_change_password" if usuarios_tiene_columna(cursor, "must_change_password") else "FALSE"
+        tiene_mcp = usuarios_tiene_columna(cursor, "must_change_password")
+        campo_mcp = "must_change_password" if tiene_mcp else "FALSE"
+        where, params = _filtro_usuarios(cursor, q, rol, estado)
+        order_by = _ORDEN_USUARIOS.get(orden, _ORDEN_USUARIOS["recientes"])
+
+        cursor.execute(f"SELECT COUNT(*) AS total FROM usuarios {where}", params)
+        total = cursor.fetchone()["total"]
+
         cursor.execute(
-            f"""
-            SELECT id_usuario, nombre, email, rol,
-                   {campo_mcp} AS debe_cambiar_password,
-                   activo, created_at
-              FROM usuarios
-             ORDER BY created_at DESC
-            """
+            f"""SELECT id_usuario, nombre, email, rol,
+                       {campo_mcp} AS debe_cambiar_password,
+                       activo, created_at
+                FROM usuarios {where}
+                ORDER BY {order_by}
+                LIMIT %s OFFSET %s""",
+            [*params, limit, _offset(page, limit)],
         )
-        return [_normalizar_usuario(row) for row in cursor.fetchall()]
+        items = [_normalizar_usuario(row) for row in cursor.fetchall()]
+
+        if tiene_mcp:
+            cursor.execute(
+                """SELECT COUNT(*) AS total,
+                          SUM(activo = TRUE AND (must_change_password = FALSE OR must_change_password IS NULL)) AS activos,
+                          SUM(activo = TRUE AND must_change_password = TRUE) AS temporales,
+                          SUM(activo = FALSE) AS inactivos
+                   FROM usuarios"""
+            )
+        else:
+            cursor.execute(
+                """SELECT COUNT(*) AS total,
+                          SUM(activo = TRUE) AS activos,
+                          0 AS temporales,
+                          SUM(activo = FALSE) AS inactivos
+                   FROM usuarios"""
+            )
+        r = cursor.fetchone()
+        resumen = {
+            "total": int(r["total"]),
+            "activos": int(r["activos"] or 0),
+            "temporales": int(r["temporales"] or 0),
+            "inactivos": int(r["inactivos"] or 0),
+        }
+
+        return respuesta_paginada(items, total, page, limit, resumen=resumen)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error al listar usuarios: {exc}")
     finally:

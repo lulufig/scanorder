@@ -634,7 +634,12 @@ class TestMustChangePasswordColumnaAusente:
                 cursor = MagicMock()
                 conn.cursor.return_value = cursor
 
-                cursor.fetchone.return_value = None  # usuarios_tiene_columna → no existe
+                # fetchone: SHOW COLUMNS (ausente) → COUNT → resumen (rama sin mcp)
+                cursor.fetchone.side_effect = [
+                    None,
+                    {"total": 1},
+                    {"total": 1, "activos": 1, "temporales": 0, "inactivos": 0},
+                ]
                 cursor.fetchall.return_value = [
                     {
                         "id_usuario": 1,
@@ -650,4 +655,7 @@ class TestMustChangePasswordColumnaAusente:
                 r = client.get("/admin/usuarios", headers=_auth("admin"))
 
         assert r.status_code == 200
-        assert r.json()[0]["debe_cambiar_password"] is False
+        body = r.json()
+        assert body["items"][0]["debe_cambiar_password"] is False
+        assert body["total"] == 1
+        assert body["resumen"]["activos"] == 1

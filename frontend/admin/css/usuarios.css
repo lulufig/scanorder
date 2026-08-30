@@ -1,8 +1,15 @@
 /* ============================================================
    ScanOrder Admin — Usuarios
    Estilos propios de esta página. El shell (sidebar, layout,
-   modales, tablas base, toast) vive en admin-shell.css.
+   modales, tablas base, toast, paginador) vive en admin-shell.css.
    ============================================================ */
+
+.modal-hint {
+  margin: -2px 0 2px;
+  color: var(--gray-500);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
 
 .filter-search {
   position: relative;
@@ -48,7 +55,8 @@
   display: none !important;
 }
 
-.usuarios-summary {
+/* ===== Tarjetas de resumen (mismo estilo que Productos) ===== */
+.stats-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   overflow: hidden;
@@ -56,17 +64,16 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xs);
 }
 
-.summary-item {
+.stat-card {
   position: relative;
-  min-height: 108px;
-  padding: 16px 18px 15px 22px;
+  min-height: 78px;
+  padding: 15px 18px 15px 22px;
   border-right: 1px solid var(--color-border);
 }
 
-.summary-item::before {
+.stat-card::before {
   content: "";
   position: absolute;
   inset: 14px auto 14px 0;
@@ -75,60 +82,12 @@
   border-radius: 0 999px 999px 0;
 }
 
-.summary-item:nth-child(2)::before {
-  background: var(--state-libre-dot);
-}
+.stat-card:nth-child(2)::before { background: var(--state-libre-dot); }
+.stat-card:nth-child(3)::before { background: var(--state-esperando-dot); }
+.stat-card:nth-child(4)::before { background: var(--gray-400); }
+.stat-card:last-child { border-right: 0; }
 
-.summary-item:nth-child(3)::before {
-  background: var(--state-esperando-dot);
-}
-
-.summary-item:nth-child(4)::before {
-  background: var(--gray-400);
-}
-
-.summary-item:last-child {
-  border-right: 0;
-}
-
-.summary-icon {
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 11px;
-  color: var(--color-primary);
-  background: var(--color-primary-soft);
-  border: 1px solid var(--color-primary-border);
-  border-radius: var(--radius-sm);
-}
-
-.summary-icon [data-lucide] {
-  width: 18px;
-  height: 18px;
-}
-
-.summary-icon.success {
-  color: var(--state-libre-text);
-  background: var(--state-libre-bg);
-  border-color: var(--state-libre-border);
-}
-
-.summary-icon.warning {
-  color: var(--state-esperando-text);
-  background: var(--state-esperando-bg);
-  border-color: var(--state-esperando-border);
-}
-
-.summary-icon.muted {
-  color: var(--gray-500);
-  background: var(--gray-100);
-  border-color: var(--color-border);
-}
-
-.summary-label {
-  display: block;
+.stat-label {
   margin-bottom: 10px;
   color: var(--gray-500);
   font-size: 0.7rem;
@@ -137,33 +96,20 @@
   text-transform: uppercase;
 }
 
-.summary-value {
+.stat-value {
   color: var(--gray-900);
   font-size: 1.5rem;
   font-weight: 700;
   line-height: 1;
 }
 
-.summary-line {
-  height: 5px;
-  margin-top: 12px;
-  overflow: hidden;
-  background: var(--gray-100);
-  border-radius: var(--radius-pill);
-}
+.stat-value.red { color: var(--state-alerta-text); }
 
-.summary-line span {
-  display: block;
-  width: 0;
-  height: 100%;
-  background: var(--color-primary);
-  border-radius: inherit;
-  transition: width 0.25s ease;
+@media (max-width: 860px) {
+  .stats-row { grid-template-columns: 1fr 1fr; }
+  .stat-card:nth-child(2) { border-right: 0; }
+  .stat-card:nth-child(1), .stat-card:nth-child(2) { border-bottom: 1px solid var(--color-border); }
 }
-
-.summary-item:nth-child(2) .summary-line span { background: var(--state-libre-dot); }
-.summary-item:nth-child(3) .summary-line span { background: var(--state-esperando-dot); }
-.summary-item:nth-child(4) .summary-line span { background: var(--gray-400); }
 
 .usuarios-panel {
   overflow: hidden;
