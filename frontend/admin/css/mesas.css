@@ -317,6 +317,26 @@
   color: var(--gray-500);
 }
 
+/* Mozo responsable de la mesa (asignación simple, migración 016). */
+.mesa-mozo-tag {
+  margin-left: auto;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--gray-100);
+  color: var(--gray-600);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.mesa-mozo-tag.mio {
+  background: var(--brand-50);
+  color: var(--brand-700);
+}
+
 .mesa-plano strong {
   font-size: 1.1rem;
   font-weight: 700;
@@ -392,6 +412,32 @@
 
 .mesa-llamado-banner .btn-ghost {
   flex-shrink: 0;
+}
+
+/* Banner de asignación de mozo en el modal de mesa. */
+.mesa-asignacion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--gray-50);
+  color: var(--gray-600);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.mesa-asignacion.mia {
+  background: var(--brand-50);
+  color: var(--brand-700);
+}
+
+.mesa-asignacion .btn-ghost {
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 0.8rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -998,25 +1044,6 @@
 .cobro-chip:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
-}
-
-.cobro-con-propina-row {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 8px;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--gray-700);
-}
-
-/* [hidden] no gana contra `display: flex` de la clase. */
-.cobro-con-propina-row[hidden] {
-  display: none;
-}
-
-.cobro-con-propina-row strong {
-  font-family: var(--font-mono);
-  color: var(--gray-900);
 }
 
 .cobro-footer {

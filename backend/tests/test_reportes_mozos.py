@@ -240,8 +240,9 @@ class TestMiCaja:
         assert r["mesas_cobradas"] == 2
         assert r["total_cobrado"] == 3000.0
         assert r["propinas"] == 300.0
-        # ambos cierres de Lucia son efectivo → ventas + propinas se rinden en mano
-        assert r["efectivo_a_rendir"] == 3300.0
+        # la propina es aparte y del mozo: "a rendir" a la casa es solo la venta
+        # cobrada en efectivo.
+        assert r["efectivo_a_rendir"] == 3000.0
         assert r["por_metodo"] == {"efectivo": 3000.0}
         assert len(d["cobros"]) == 2
         assert d["cobros"][0]["numero_mesa"] == 1  # JOIN a mesas, no el numero_mesa muerto

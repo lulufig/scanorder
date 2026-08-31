@@ -1150,8 +1150,10 @@ def mi_caja(
             total_cobrado += tc
             propinas += pr
             por_metodo[metodo] = round(por_metodo.get(metodo, 0.0) + tc, 2)
+            # La propina es aparte y es del mozo, no se rinde a la casa: acá
+            # va solo la venta cobrada en efectivo.
             if metodo == "efectivo":
-                efectivo_a_rendir += tc + pr
+                efectivo_a_rendir += tc
             cobros.append({
                 "id_cierre": r["id_cierre"],
                 "numero_mesa": int(r["numero_mesa"]) if r["numero_mesa"] else None,

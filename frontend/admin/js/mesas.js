@@ -7,12 +7,15 @@
     if (usuario) {
       document.getElementById("sidebar-username").textContent = usuario.nombre;
     }
+    const MI_ID = (usuario || {}).id_usuario;
+    const SOY_MOZO = getUserRole() === ROLES.MOZO;
 
     // ── ESTADO LOCAL ────────────────────────────────────────────
     let todasLasMesas   = [];
     let mapaMesas       = [];
     let mesaQRActual    = null;  // mesa abierta en el modal
     let mesaOperacionActual = null;
+    let mesaOperacionData = null;  // último payload de /mesas/{id}/operacion
     let mapaTimer       = null;
     let mapaSignature   = "";
     let mapaCardSignatures = new Map();
@@ -405,6 +408,7 @@
         mesa.mozo_solicitado,
         mesa.minutos_llamado,
         mesa.llamado_tomado_por,
+        mesa.mozo_asignado_id,
         mesa.minutos_espera,
         mesa.minutos_desde_scan,
         mesa.pedidos_hoy,
@@ -451,6 +455,10 @@
       const listoBadge = (listos > 0 && estado !== "abandonada")
         ? `<div class="mesa-listo-badge">${listos} listo${listos === 1 ? "" : "s"} para entregar</div>`
         : "";
+      const esMia = SOY_MOZO && mesa.mozo_asignado_id === MI_ID;
+      const mozoTag = mesa.mozo_asignado_id
+        ? `<span class="mesa-mozo-tag${esMia ? " mio" : ""}">${esMia ? "Tu mesa" : escapeHtml(mesa.mozo_asignado_nombre || "Asignada")}</span>`
+        : "";
 
       return `
         <button
@@ -465,6 +473,7 @@
           <span class="mesa-top">
             <span class="mesa-status-dot"></span>
             <span class="mesa-status">${estadoLabel}</span>
+            ${mozoTag}
           </span>
           <strong>Mesa ${escapeHtml(String(mesa.numero))}</strong>
           <span class="mesa-plano-meta">
@@ -522,6 +531,7 @@
     }
 
     function renderMesaOperacion(data) {
+      mesaOperacionData = data;
       const body = document.getElementById("mesa-operacion-body");
       const title = document.getElementById("mesa-operacion-title");
       const mesa = data.mesa || {};
@@ -544,6 +554,27 @@
           }
         </div>` : "";
 
+      const asig = data.mozo_asignado;
+      const esMia = SOY_MOZO && asig && asig.id === MI_ID;
+      let asignacionAccion = "";
+      if (SOY_MOZO) {
+        asignacionAccion = esMia
+          ? `<button class="btn-ghost" type="button" onclick="soltarMesa(${mesa.id_mesa})">Soltar</button>`
+          : `<button class="btn-ghost" type="button" onclick="asignarmeMesa(${mesa.id_mesa})">${asig ? "Pasármela" : "Tomar mesa"}</button>`;
+      } else if (asig) {
+        // El admin no atiende mesas; solo puede quitar una asignación (gestión).
+        asignacionAccion = `<button class="btn-ghost" type="button" onclick="soltarMesa(${mesa.id_mesa})">Quitar</button>`;
+      }
+      // El mozo siempre ve el banner; el admin solo cuando hay una asignación.
+      const asignacionBanner = (SOY_MOZO || asig)
+        ? `<div class="mesa-asignacion${esMia ? " mia" : ""}">
+             <span>${asig
+               ? (esMia ? "Es tu mesa" : `Atiende: ${escapeHtml(asig.nombre || "otro mozo")}`)
+               : "Sin mozo asignado"}</span>
+             ${asignacionAccion}
+           </div>`
+        : "";
+
       body.innerHTML = `
         <div class="mesa-operacion-summary">
           <div>
@@ -555,6 +586,7 @@
             <strong>${pedidos.length}</strong>
           </div>
         </div>
+        ${asignacionBanner}
         ${llamadoBanner}
         <div class="mesa-operacion-actions">
           ${data.mozo_solicitado
@@ -750,9 +782,35 @@
       }
     }
 
+    async function asignarmeMesa(idMesa) {
+      try {
+        await fetchAPI(`/mesas/${idMesa}/asignarme`, "POST");
+        mostrarToast("La mesa quedó a tu cargo.", "success");
+        await cargarMapaMesas();
+        if (mesaOperacionActual) await abrirMesaOperacion(mesaOperacionActual);
+      } catch (error) {
+        mostrarToast("No se pudo tomar la mesa: " + error.message, "error");
+      }
+    }
+
+    async function soltarMesa(idMesa) {
+      try {
+        await fetchAPI(`/mesas/${idMesa}/desasignar`, "POST");
+        mostrarToast("La mesa quedó sin mozo asignado.", "success");
+        await cargarMapaMesas();
+        if (mesaOperacionActual) await abrirMesaOperacion(mesaOperacionActual);
+      } catch (error) {
+        mostrarToast("No se pudo soltar la mesa: " + error.message, "error");
+      }
+    }
+
     // ── COBRO DE MESA ───────────────────────────────────────
 
     async function cobrarMesa(idMesa) {
+      const asig = mesaOperacionData && mesaOperacionData.mozo_asignado;
+      if (SOY_MOZO && asig && asig.id !== MI_ID) {
+        if (!confirm(`Esta mesa la atiende ${asig.nombre || "otro mozo"}. ¿Cobrarla igual?`)) return;
+      }
       const overlay = document.getElementById("cobro-overlay");
       const body = document.getElementById("cobro-body");
       const title = document.getElementById("cobro-title");
@@ -826,7 +884,7 @@
         </div>
 
         <div class="cobro-propina-section">
-          <label class="cobro-section-label" for="cobro-propina-input">Propina (opcional)</label>
+          <label class="cobro-section-label" for="cobro-propina-input">Propina (aparte, no se suma a la cuenta)</label>
           <div class="cobro-propina-row">
             <input
               class="cobro-monto-input cobro-propina-input"
@@ -842,10 +900,6 @@
               <button type="button" class="cobro-chip" onclick="setPropina(${Math.round(total * 0.10)})">10%</button>
               <button type="button" class="cobro-chip" onclick="setPropina(${Math.round(total * 0.15)})">15%</button>
             </div>
-          </div>
-          <div class="cobro-con-propina-row" id="cobro-con-propina-row" hidden>
-            <span>Total con propina</span>
-            <strong id="cobro-con-propina-monto">—</strong>
           </div>
         </div>
 
@@ -912,20 +966,10 @@
       recalcularCobro();
     }
 
-    // Recalcula "total con propina" y el vuelto cada vez que cambia la propina,
-    // el monto recibido o el método de pago.
+    // Recalcula el vuelto. La propina NO entra: el cliente paga la cuenta y
+    // deja la propina aparte (efectivo sobre la mesa).
     function recalcularCobro() {
       const total = (cuentaDataActual && cuentaDataActual.total_consumido) || 0;
-      const propina = _cobroPropina();
-      const totalConPropina = total + propina;
-
-      const conPropRow = document.getElementById("cobro-con-propina-row");
-      const conPropMonto = document.getElementById("cobro-con-propina-monto");
-      if (conPropRow && conPropMonto) {
-        conPropRow.hidden = propina <= 0;
-        conPropMonto.textContent = formatPrecio(totalConPropina);
-      }
-
       const vueltoRow = document.getElementById("cobro-vuelto-row");
       const vueltoMonto = document.getElementById("cobro-vuelto-monto");
       const montoInput = document.getElementById("cobro-monto-input");
@@ -937,8 +981,8 @@
       }
       const recibido = parseFloat(montoInput ? montoInput.value : 0) || 0;
       if (recibido > 0) {
-        vueltoMonto.textContent = formatPrecio(Math.max(0, recibido - totalConPropina));
-        vueltoMonto.classList.toggle("insuficiente", recibido < totalConPropina - 0.01);
+        vueltoMonto.textContent = formatPrecio(Math.max(0, recibido - total));
+        vueltoMonto.classList.toggle("insuficiente", recibido < total - 0.01);
         vueltoRow.style.display = "";
       } else {
         vueltoRow.style.display = "none";
@@ -948,12 +992,12 @@
     async function confirmarCobro(idMesa, totalConsumir) {
       const btn = document.getElementById("cobro-confirmar-btn");
       const propina = _cobroPropina();
-      let montoCobrado = totalConsumir + propina;
+      let montoCobrado = totalConsumir;   // la propina va aparte, no suma al monto
 
       if (metodoPagoSeleccionado === "efectivo") {
         const input = document.getElementById("cobro-monto-input");
         const valorInput = parseFloat(input ? input.value : 0);
-        montoCobrado = valorInput > 0 ? valorInput : totalConsumir + propina;
+        montoCobrado = valorInput > 0 ? valorInput : totalConsumir;
       }
 
       const observaciones = (document.getElementById("cobro-obs")?.value || "").trim() || null;

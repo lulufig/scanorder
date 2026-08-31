@@ -100,7 +100,7 @@
             </tbody>
           </table>
         </div>
-        <p class="caja-nota">"Efectivo a rendir" = ventas en efectivo + propinas en efectivo. Las propinas cobradas con tarjeta/QR se suman al total de propinas pero no las tenés en mano.</p>`;
+        <p class="caja-nota">"Efectivo a rendir" = solo las ventas cobradas en efectivo (lo que entregás a la casa). Las propinas van aparte y son tuyas.</p>`;
     }
 
     function setTxt(id, valor) {

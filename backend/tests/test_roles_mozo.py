@@ -200,6 +200,24 @@ class TestTomarLlamadoRoles:
         assert resp.status_code in {401, 403}
 
 
+# ── POST /mesas/{id}/asignarme  y  /desasignar ──────────────────────────────
+
+class TestAsignarmeRoles:
+    @pytest.mark.parametrize("ruta", ["asignarme", "desasignar"])
+    def test_mozo_y_admin_pasan_cocina_no(self, client, ruta):
+        for rol in ("mozo", "admin"):
+            resp = client.post(
+                f"/mesas/999999/{ruta}",
+                headers={"Authorization": f"Bearer {_token(rol)}"},
+            )
+            assert resp.status_code != 403, f"{rol} en {ruta} fue rechazado"
+        resp = client.post(
+            f"/mesas/999999/{ruta}",
+            headers={"Authorization": f"Bearer {_token('cocina')}"},
+        )
+        assert resp.status_code == 403
+
+
 # ── WS /pedidos/ws/cocina ─────────────────────────────────────────────────────
 
 DEVICE_SECRET = "device-secret-test-abc123"
