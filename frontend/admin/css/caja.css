@@ -1,0 +1,165 @@
+/* ============================================================
+   ScanOrder Admin — Mi caja
+   Vista del mozo: cobros del turno, efectivo a rendir, propinas.
+   El shell (sidebar, layout, card, form-input, toast) vive en
+   admin-shell.css.
+   ============================================================ */
+
+.caja-fecha {
+  max-width: 170px;
+}
+
+/* ===== Stats ===== */
+.caja-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.caja-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.caja-stat-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gray-500);
+}
+
+.caja-stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--gray-900);
+  line-height: 1;
+}
+
+.caja-stat-destacado {
+  background: var(--brand-50);
+  border-color: var(--color-primary);
+}
+
+.caja-stat-destacado .caja-stat-value {
+  color: var(--color-primary);
+}
+
+/* ===== Cards ===== */
+.caja-card {
+  margin-bottom: 16px;
+}
+
+.caja-metodos {
+  padding: 12px 20px 16px;
+}
+
+.caja-metodo-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.9rem;
+  color: var(--gray-700);
+}
+
+.caja-metodo-row:last-child {
+  border-bottom: none;
+}
+
+.caja-metodo-row strong {
+  font-family: var(--font-mono);
+  color: var(--gray-900);
+}
+
+/* ===== Tabla de cobros ===== */
+.caja-cobros-wrap {
+  padding: 12px 20px 18px;
+}
+
+.caja-cobros-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.caja-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.caja-tabla th,
+.caja-tabla td {
+  padding: 9px 12px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.caja-tabla th {
+  background: var(--gray-50);
+  color: var(--gray-500);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.caja-tabla tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.caja-tabla td.num,
+.caja-tabla th.num {
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+.caja-tabla tbody tr:hover {
+  background: var(--gray-50);
+}
+
+.caja-metodo-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--gray-100);
+  color: var(--gray-600);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.caja-metodo-tag.metodo-efectivo { background: var(--state-libre-bg); color: var(--state-libre-text); }
+.caja-metodo-tag.metodo-tarjeta,
+.caja-metodo-tag.metodo-qr        { background: var(--brand-50); color: var(--brand-700); }
+
+.caja-nota {
+  margin-top: 12px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.caja-vacio {
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--gray-500);
+  font-size: 0.88rem;
+}
+
+@media (max-width: 900px) {
+  .caja-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 520px) {
+  .caja-stats { grid-template-columns: 1fr; }
+}

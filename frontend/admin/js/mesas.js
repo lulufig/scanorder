@@ -825,6 +825,30 @@
           <strong class="cobro-total-monto">${formatPrecio(total)}</strong>
         </div>
 
+        <div class="cobro-propina-section">
+          <label class="cobro-section-label" for="cobro-propina-input">Propina (opcional)</label>
+          <div class="cobro-propina-row">
+            <input
+              class="cobro-monto-input cobro-propina-input"
+              id="cobro-propina-input"
+              type="number"
+              min="0"
+              step="1"
+              placeholder="0"
+              oninput="recalcularCobro()"
+            />
+            <div class="cobro-propina-chips">
+              <button type="button" class="cobro-chip" onclick="setPropina(0)">Sin</button>
+              <button type="button" class="cobro-chip" onclick="setPropina(${Math.round(total * 0.10)})">10%</button>
+              <button type="button" class="cobro-chip" onclick="setPropina(${Math.round(total * 0.15)})">15%</button>
+            </div>
+          </div>
+          <div class="cobro-con-propina-row" id="cobro-con-propina-row" hidden>
+            <span>Total con propina</span>
+            <strong id="cobro-con-propina-monto">—</strong>
+          </div>
+        </div>
+
         <div class="cobro-metodo-section">
           <div class="cobro-section-label">Método de pago</div>
           <div class="cobro-metodos">
@@ -844,7 +868,7 @@
             min="0"
             step="1"
             placeholder="${Math.ceil(total)}"
-            oninput="calcularVuelto(${total})"
+            oninput="recalcularCobro()"
           />
           <div class="cobro-vuelto-row" id="cobro-vuelto-row" style="display:none">
             <span>Vuelto</span>
@@ -875,22 +899,46 @@
       if (efectivoSection) {
         efectivoSection.style.display = metodo === "efectivo" ? "" : "none";
       }
-      if (metodo !== "efectivo") {
-        const vueltoRow = document.getElementById("cobro-vuelto-row");
-        if (vueltoRow) vueltoRow.style.display = "none";
-      }
+      recalcularCobro();
     }
 
-    function calcularVuelto(totalConsumir) {
-      const input = document.getElementById("cobro-monto-input");
+    function _cobroPropina() {
+      return Math.max(0, parseFloat(document.getElementById("cobro-propina-input")?.value) || 0);
+    }
+
+    function setPropina(valor) {
+      const input = document.getElementById("cobro-propina-input");
+      if (input) input.value = valor > 0 ? valor : "";
+      recalcularCobro();
+    }
+
+    // Recalcula "total con propina" y el vuelto cada vez que cambia la propina,
+    // el monto recibido o el método de pago.
+    function recalcularCobro() {
+      const total = (cuentaDataActual && cuentaDataActual.total_consumido) || 0;
+      const propina = _cobroPropina();
+      const totalConPropina = total + propina;
+
+      const conPropRow = document.getElementById("cobro-con-propina-row");
+      const conPropMonto = document.getElementById("cobro-con-propina-monto");
+      if (conPropRow && conPropMonto) {
+        conPropRow.hidden = propina <= 0;
+        conPropMonto.textContent = formatPrecio(totalConPropina);
+      }
+
       const vueltoRow = document.getElementById("cobro-vuelto-row");
       const vueltoMonto = document.getElementById("cobro-vuelto-monto");
-      if (!input || !vueltoRow || !vueltoMonto) return;
+      const montoInput = document.getElementById("cobro-monto-input");
+      if (!vueltoRow || !vueltoMonto) return;
 
-      const monto = parseFloat(input.value) || 0;
-      if (monto > 0) {
-        const vuelto = Math.max(0, monto - totalConsumir);
-        vueltoMonto.textContent = formatPrecio(vuelto);
+      if (metodoPagoSeleccionado !== "efectivo") {
+        vueltoRow.style.display = "none";
+        return;
+      }
+      const recibido = parseFloat(montoInput ? montoInput.value : 0) || 0;
+      if (recibido > 0) {
+        vueltoMonto.textContent = formatPrecio(Math.max(0, recibido - totalConPropina));
+        vueltoMonto.classList.toggle("insuficiente", recibido < totalConPropina - 0.01);
         vueltoRow.style.display = "";
       } else {
         vueltoRow.style.display = "none";
@@ -899,12 +947,13 @@
 
     async function confirmarCobro(idMesa, totalConsumir) {
       const btn = document.getElementById("cobro-confirmar-btn");
-      let montoCobrado = totalConsumir;
+      const propina = _cobroPropina();
+      let montoCobrado = totalConsumir + propina;
 
       if (metodoPagoSeleccionado === "efectivo") {
         const input = document.getElementById("cobro-monto-input");
         const valorInput = parseFloat(input ? input.value : 0);
-        montoCobrado = valorInput > 0 ? valorInput : totalConsumir;
+        montoCobrado = valorInput > 0 ? valorInput : totalConsumir + propina;
       }
 
       const observaciones = (document.getElementById("cobro-obs")?.value || "").trim() || null;
@@ -918,15 +967,19 @@
         const resultado = await fetchAPI(`/mesas/${idMesa}/cerrar`, "POST", {
           metodo_pago: metodoPagoSeleccionado,
           monto_cobrado: montoCobrado,
+          propina,
           observaciones,
         });
 
         cerrarCobro();
         cerrarMesaOperacion();
+        const conPropina = resultado && resultado.propina > 0
+          ? ` (propina ${formatPrecio(resultado.propina)})`
+          : "";
         if (resultado && resultado.entrega_pendiente) {
-          mostrarToast("Cobro registrado y mesa liberada. Quedan pedidos por entregar en cocina.", "success");
+          mostrarToast(`Cobro registrado y mesa liberada${conPropina}. Quedan pedidos por entregar en cocina.`, "success");
         } else {
-          mostrarToast("Mesa cobrada y liberada correctamente.", "success");
+          mostrarToast(`Mesa cobrada y liberada correctamente${conPropina}.`, "success");
         }
         await cargarMapaMesas();
       } catch (error) {

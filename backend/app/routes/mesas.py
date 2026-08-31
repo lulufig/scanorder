@@ -35,7 +35,7 @@ def mesa_tiene_columna(cursor, columna: str) -> bool:
 
 
 def tabla_tiene_columna(cursor, tabla: str, columna: str) -> bool:
-    tablas_permitidas = {"mesas", "pedidos", "productos", "categorias", "detalle_pedidos"}
+    tablas_permitidas = {"mesas", "pedidos", "productos", "categorias", "detalle_pedidos", "cierres_mesa"}
     if tabla not in tablas_permitidas:
         raise ValueError("Tabla no permitida")
     key = f"{tabla}.{columna}"
@@ -719,8 +719,9 @@ def cerrar_mesa(
             p["estado"] not in ("listo", "entregado") for p in pedidos
         )
 
-        total_consumido = sum(float(p["total"] or 0) for p in pedidos)
-        monto_cobrado = float(body.monto_cobrado)
+        total_consumido = round(sum(float(p["total"] or 0) for p in pedidos), 2)
+        monto_cobrado = round(float(body.monto_cobrado), 2)
+        propina = round(float(getattr(body, "propina", 0) or 0), 2)
         if monto_cobrado < total_consumido:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -729,26 +730,52 @@ def cerrar_mesa(
                     f"(${total_consumido:.2f})"
                 )
             )
-        vuelto = max(0.0, round(monto_cobrado - total_consumido, 2))
-        id_usuario = current_user.get("user_id")
-
-        cursor.execute(
-            """
-            INSERT INTO cierres_mesa
-                (id_mesa, metodo_pago, total_consumido,
-                 monto_cobrado, vuelto, id_usuario_cierre, observaciones)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                id_mesa,
-                body.metodo_pago,
-                total_consumido,
-                monto_cobrado,
-                vuelto,
-                id_usuario,
-                body.observaciones or None,
+        if propina < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La propina no puede ser negativa",
             )
-        )
+        sobrante = round(monto_cobrado - total_consumido, 2)
+        if propina > sobrante:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"La propina (${propina:.2f}) no puede superar lo recibido "
+                    f"por encima del total (${sobrante:.2f})"
+                )
+            )
+        vuelto = round(sobrante - propina, 2)
+        id_usuario = current_user.get("user_id")
+        tiene_propina = tabla_tiene_columna(cursor, "cierres_mesa", "propina")
+
+        if tiene_propina:
+            cursor.execute(
+                """
+                INSERT INTO cierres_mesa
+                    (id_mesa, metodo_pago, total_consumido,
+                     monto_cobrado, vuelto, propina, id_usuario_cierre, observaciones)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    id_mesa, body.metodo_pago, total_consumido,
+                    monto_cobrado, vuelto, propina, id_usuario,
+                    body.observaciones or None,
+                )
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO cierres_mesa
+                    (id_mesa, metodo_pago, total_consumido,
+                     monto_cobrado, vuelto, id_usuario_cierre, observaciones)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    id_mesa, body.metodo_pago, total_consumido,
+                    monto_cobrado, vuelto, id_usuario,
+                    body.observaciones or None,
+                )
+            )
         id_cierre = cursor.lastrowid
 
         for pedido in pedidos:
@@ -789,6 +816,7 @@ def cerrar_mesa(
             "total_consumido": total_consumido,
             "monto_cobrado": monto_cobrado,
             "vuelto": vuelto,
+            "propina": propina,
             "pedidos_incluidos": len(pedidos),
             "created_at": str(cierre_row["created_at"]) if cierre_row and cierre_row["created_at"] else "",
             "entrega_pendiente": entrega_pendiente,

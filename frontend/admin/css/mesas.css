@@ -963,6 +963,62 @@
   color: var(--gray-700);
 }
 
+.cobro-vuelto-row strong.insuficiente {
+  color: var(--state-alerta-text);
+}
+
+/* ===== Propina ===== */
+.cobro-propina-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.cobro-propina-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.cobro-propina-chips {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.cobro-chip {
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--gray-0);
+  color: var(--gray-600);
+}
+
+.cobro-chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.cobro-con-propina-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+/* [hidden] no gana contra `display: flex` de la clase. */
+.cobro-con-propina-row[hidden] {
+  display: none;
+}
+
+.cobro-con-propina-row strong {
+  font-family: var(--font-mono);
+  color: var(--gray-900);
+}
+
 .cobro-footer {
   display: flex;
   justify-content: flex-end;

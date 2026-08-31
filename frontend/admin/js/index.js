@@ -927,7 +927,7 @@
             <thead>
               <tr>
                 <th>Mozo</th><th class="num">Mesas</th><th class="num">Ventas</th>
-                <th class="num">Ticket</th><th class="num">Entregados</th>
+                <th class="num">Ticket</th><th class="num">Propinas</th><th class="num">Entregados</th>
                 <th class="num">Llamados</th><th class="num">Resp.</th>
               </tr>
             </thead>
@@ -938,6 +938,7 @@
                   <td class="num">${m.mesas_cerradas}</td>
                   <td class="num">${formatPrecio(m.ventas_cobradas)}</td>
                   <td class="num">${m.mesas_cerradas ? formatPrecio(m.ticket_promedio) : "—"}</td>
+                  <td class="num">${m.propinas ? formatPrecio(m.propinas) : "—"}</td>
                   <td class="num">${m.pedidos_entregados}</td>
                   <td class="num">${m.llamados_atendidos}</td>
                   <td class="num">${resp(m)}</td>
@@ -949,6 +950,7 @@
                 <td class="num">${t.mesas_cerradas ?? 0}</td>
                 <td class="num">${formatPrecio(t.ventas_cobradas ?? 0)}</td>
                 <td class="num">—</td>
+                <td class="num">${formatPrecio(t.propinas ?? 0)}</td>
                 <td class="num">${t.pedidos_entregados ?? 0}</td>
                 <td class="num">${t.llamados_atendidos ?? 0}</td>
                 <td class="num">—</td>

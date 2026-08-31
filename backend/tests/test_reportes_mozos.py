@@ -23,6 +23,7 @@ BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATABASE_SQL_PATH = os.path.join(BACKEND_DIR, "..", "docs", "database.sql")
 MIG_010 = os.path.join(BACKEND_DIR, "migrations", "010_inventory.sql")
 MIG_014 = os.path.join(BACKEND_DIR, "migrations", "014_mozo_llamados.sql")
+MIG_015 = os.path.join(BACKEND_DIR, "migrations", "015_propina.sql")
 
 
 def _mysql_disponible() -> bool:
@@ -84,7 +85,7 @@ def schema(module_env):
         host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASSWORD, database=TEST_DB_NAME
     )
     cur = conn.cursor()
-    for path in (DATABASE_SQL_PATH, MIG_010, MIG_014):
+    for path in (DATABASE_SQL_PATH, MIG_010, MIG_014, MIG_015):
         for stmt in _parse_statements(path):
             cur.execute(stmt)
     conn.commit()
@@ -116,10 +117,10 @@ def schema(module_env):
             "VALUES (1, 1, 'salida', %s, 10)", (pid,)
         )
 
-    # 2 cierres por Lucia (total 3000) + 1 cierre por el admin (total 5000)
-    cur.execute("INSERT INTO cierres_mesa (id_mesa, numero_mesa, metodo_pago, total_consumido, monto_cobrado, vuelto, id_usuario_cierre) VALUES (1, 1, 'efectivo', 2000, 2000, 0, 10)")
-    cur.execute("INSERT INTO cierres_mesa (id_mesa, numero_mesa, metodo_pago, total_consumido, monto_cobrado, vuelto, id_usuario_cierre) VALUES (1, 1, 'efectivo', 1000, 1000, 0, 10)")
-    cur.execute("INSERT INTO cierres_mesa (id_mesa, numero_mesa, metodo_pago, total_consumido, monto_cobrado, vuelto, id_usuario_cierre) VALUES (2, 2, 'tarjeta', 5000, 5000, 0, 13)")
+    # 2 cierres por Lucia (total 3000, propina 200+100=300) + 1 del admin (total 5000, sin propina)
+    cur.execute("INSERT INTO cierres_mesa (id_mesa, numero_mesa, metodo_pago, total_consumido, monto_cobrado, vuelto, propina, id_usuario_cierre) VALUES (1, 1, 'efectivo', 2000, 2200, 0, 200, 10)")
+    cur.execute("INSERT INTO cierres_mesa (id_mesa, numero_mesa, metodo_pago, total_consumido, monto_cobrado, vuelto, propina, id_usuario_cierre) VALUES (1, 1, 'efectivo', 1000, 1100, 0, 100, 10)")
+    cur.execute("INSERT INTO cierres_mesa (id_mesa, numero_mesa, metodo_pago, total_consumido, monto_cobrado, vuelto, propina, id_usuario_cierre) VALUES (2, 2, 'tarjeta', 5000, 5000, 0, 0, 13)")
 
     # 2 llamados atendidos por Lucia: 60s y 180s → promedio 120s = 2.0 min
     cur.execute("INSERT INTO mozo_llamados (id_mesa, tipo, solicitado_at, atendido_at, atendido_por) VALUES (1, 'mozo', NOW() - INTERVAL 60 SECOND, NOW(), 10)")
@@ -156,6 +157,12 @@ def admin_token():
     return create_access_token({"user_id": 13, "email": "adm@t.com", "rol": "admin"})
 
 
+@pytest.fixture
+def lucia_token():
+    from app.utils.security import create_access_token
+    return create_access_token({"user_id": 10, "email": "lucia@t.com", "rol": "mozo"})
+
+
 def _get(client, token, extra=""):
     return client.get(
         f"/reportes/mozos?fecha_inicio=2000-01-01&fecha_fin=2999-12-31{extra}",
@@ -173,6 +180,7 @@ class TestReportePorMozo:
         assert lucia["mesas_cerradas"] == 2
         assert lucia["ventas_cobradas"] == 3000.0
         assert lucia["ticket_promedio"] == 1500.0
+        assert lucia["propinas"] == 300.0
         assert lucia["pedidos_entregados"] == 3
         assert lucia["llamados_atendidos"] == 2
         assert lucia["respuesta_promedio_min"] == 2.0
@@ -196,6 +204,7 @@ class TestReportePorMozo:
         totales = _get(client, admin_token).json()["totales"]
         assert totales["mesas_cerradas"] == 3          # 2 Lucia + 1 admin
         assert totales["ventas_cobradas"] == 8000.0
+        assert totales["propinas"] == 300.0
         assert totales["pedidos_entregados"] == 3
 
     def test_rango_invertido_da_400(self, client, admin_token):
@@ -215,3 +224,45 @@ class TestReportePorMozo:
         tok = create_access_token({"user_id": 10, "email": "lucia@t.com", "rol": "mozo"})
         resp = _get(client, tok)
         assert resp.status_code == 403
+
+
+class TestMiCaja:
+    """GET /reportes/mi-caja: los cobros del usuario actual en un día."""
+
+    def test_mozo_ve_sus_cobros_de_hoy(self, client, lucia_token):
+        resp = client.get(
+            "/reportes/mi-caja",
+            headers={"Authorization": f"Bearer {lucia_token}"},
+        )
+        assert resp.status_code == 200
+        d = resp.json()
+        r = d["resumen"]
+        assert r["mesas_cobradas"] == 2
+        assert r["total_cobrado"] == 3000.0
+        assert r["propinas"] == 300.0
+        # ambos cierres de Lucia son efectivo → ventas + propinas se rinden en mano
+        assert r["efectivo_a_rendir"] == 3300.0
+        assert r["por_metodo"] == {"efectivo": 3000.0}
+        assert len(d["cobros"]) == 2
+        assert d["cobros"][0]["numero_mesa"] == 1  # JOIN a mesas, no el numero_mesa muerto
+
+    def test_admin_ve_su_propia_caja(self, client, admin_token):
+        r = client.get(
+            "/reportes/mi-caja",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        ).json()["resumen"]
+        assert r["mesas_cobradas"] == 1
+        assert r["total_cobrado"] == 5000.0
+        assert r["efectivo_a_rendir"] == 0.0        # cobró con tarjeta
+        assert r["por_metodo"] == {"tarjeta": 5000.0}
+
+    def test_dia_sin_cobros_devuelve_vacio(self, client, lucia_token):
+        r = client.get(
+            "/reportes/mi-caja?fecha=2020-01-01",
+            headers={"Authorization": f"Bearer {lucia_token}"},
+        ).json()
+        assert r["resumen"]["mesas_cobradas"] == 0
+        assert r["cobros"] == []
+
+    def test_sin_auth_401(self, client):
+        assert client.get("/reportes/mi-caja").status_code in {401, 403}
