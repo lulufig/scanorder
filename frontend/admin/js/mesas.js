@@ -17,6 +17,13 @@
     let mapaSignature   = "";
     let mapaCardSignatures = new Map();
     let socketMesas     = null;
+    let mapaLlamadosPrevios = new Set();
+    let mapaPrimeraCarga = true;
+    let mapaListosPrevios = new Map();   // id_mesa -> cantidad de pedidos "listo"
+    let primeraCargaListos = true;
+    let listoDesde = new Map();          // id_mesa -> timestamp en que la mesa pasó a tener pedidos listos
+    let vistaActiva = "inbox";           // "inbox" | "mapa"
+    let inboxSignature = "";
     let cuentaDataActual = null;
     let metodoPagoSeleccionado = "efectivo";
     let qrPreviewUrls = new Map();
@@ -37,6 +44,11 @@
       }
 
       if (tieneMapaSalon) {
+        try {
+          const guardada = localStorage.getItem("scanorder_mesas_vista");
+          if (guardada === "inbox" || guardada === "mapa") vistaActiva = guardada;
+        } catch { /* localStorage puede fallar en modo privado */ }
+        aplicarVista();
         conectarTiempoRealMesas();
         mapaTimer = setInterval(cargarMapaMesas, 2500);
       }
@@ -76,7 +88,11 @@
       try {
         const data = await fetchAPI("/mesas/mapa");
         mapaMesas = Array.isArray(data) ? data : [];
+        detectarLlamadosNuevos(mapaMesas);
+        detectarPedidosListos(mapaMesas);
+        actualizarListoDesde(mapaMesas);
         renderMapaSalon(mapaMesas);
+        renderInbox(mapaMesas);
       } catch (error) {
         const floor = document.getElementById("salon-floor");
         if (floor) {
@@ -87,6 +103,209 @@
             </div>`;
         }
       }
+    }
+
+    // El admin ya recibe el beep de aviso por el WS de cocina. El mozo no se
+    // conecta a ese WS (solo hace polling), así que le damos el aviso sonoro
+    // acá, comparando el mapa nuevo contra el anterior.
+    function detectarLlamadosNuevos(mesas) {
+      if (getUserRole() === ROLES.ADMIN) {
+        mapaPrimeraCarga = false;
+        return;
+      }
+      const actuales = new Set();
+      let hayNuevo = false;
+      mesas.forEach(m => {
+        if (m.mozo_solicitado || m.cuenta_solicitada) {
+          actuales.add(m.id_mesa);
+          if (!mapaLlamadosPrevios.has(m.id_mesa)) hayNuevo = true;
+        }
+      });
+      mapaLlamadosPrevios = actuales;
+      if (hayNuevo && !mapaPrimeraCarga) reproducirAviso();
+      mapaPrimeraCarga = false;
+    }
+
+    // Avisa cuando un pedido de una mesa pasa a "listo" (la cantidad de pedidos
+    // en ese estado subió respecto del poll anterior). Toast para todos; el beep
+    // solo para el mozo — el admin ya lo recibe por el WS de cocina.
+    function detectarPedidosListos(mesas) {
+      const mesasConNuevoListo = [];
+      const idsActuales = new Set();
+      mesas.forEach(m => {
+        idsActuales.add(m.id_mesa);
+        const antes = mapaListosPrevios.get(m.id_mesa) || 0;
+        const ahora = Number(m.listos) || 0;
+        if (ahora > antes) mesasConNuevoListo.push(m.numero);
+        mapaListosPrevios.set(m.id_mesa, ahora);
+      });
+      [...mapaListosPrevios.keys()].forEach(id => {
+        if (!idsActuales.has(id)) mapaListosPrevios.delete(id);
+      });
+
+      if (primeraCargaListos) {
+        primeraCargaListos = false;
+        return;
+      }
+      if (!mesasConNuevoListo.length) return;
+
+      const mensaje = mesasConNuevoListo.length === 1
+        ? `Mesa ${mesasConNuevoListo[0]}: pedido listo para entregar.`
+        : `${mesasConNuevoListo.length} mesas con pedidos listos para entregar.`;
+      mostrarToast(mensaje, "success");
+      if (getUserRole() !== ROLES.ADMIN) reproducirAviso();
+    }
+
+    // El mapa no informa hace cuánto un pedido está "listo" (solo el conteo),
+    // así que lo cronometramos del lado del cliente: marcamos el momento en que
+    // la mesa pasó a tener pedidos listos. Se reinicia si se recarga la página
+    // (aceptable en una tablet siempre encendida).
+    function actualizarListoDesde(mesas) {
+      const idsActuales = new Set();
+      mesas.forEach(m => {
+        idsActuales.add(m.id_mesa);
+        if ((Number(m.listos) || 0) > 0) {
+          if (!listoDesde.has(m.id_mesa)) listoDesde.set(m.id_mesa, Date.now());
+        } else {
+          listoDesde.delete(m.id_mesa);
+        }
+      });
+      [...listoDesde.keys()].forEach(id => {
+        if (!idsActuales.has(id)) listoDesde.delete(id);
+      });
+    }
+
+    function minutosListo(idMesa) {
+      const ts = listoDesde.get(idMesa);
+      return ts ? Math.floor((Date.now() - ts) / 60000) : null;
+    }
+
+    // ── BANDEJA DE PENDIENTES (INBOX) ───────────────────────────
+
+    function cambiarVista(vista) {
+      vistaActiva = (vista === "mapa") ? "mapa" : "inbox";
+      try { localStorage.setItem("scanorder_mesas_vista", vistaActiva); } catch { /* modo privado */ }
+      aplicarVista();
+    }
+
+    function aplicarVista() {
+      const esInbox = vistaActiva === "inbox";
+      const inbox = document.getElementById("salon-inbox");
+      const floor = document.getElementById("salon-floor");
+      const toolbar = document.getElementById("salon-toolbar");
+      if (inbox) inbox.hidden = !esInbox;
+      if (floor) floor.hidden = esInbox;
+      if (toolbar) toolbar.hidden = esInbox;   // la leyenda solo aplica al mapa
+      document.querySelectorAll(".salon-tab").forEach(tab => {
+        tab.classList.toggle("active", tab.dataset.vista === vistaActiva);
+      });
+    }
+
+    // Deriva 0..N tareas accionables de una mesa. Prioridad más alta = más urgente.
+    function tareasDeMesa(mesa) {
+      const tareas = [];
+      const min = (v) => (v != null && v > 0) ? v : 0;
+
+      if ((mesa.listos || 0) > 0 && mesa.estado_salon !== "abandonada") {
+        const m = minutosListo(mesa.id_mesa);
+        tareas.push({
+          tipo: "listo", id_mesa: mesa.id_mesa, numero: mesa.numero,
+          texto: `${mesa.listos} pedido${mesa.listos === 1 ? "" : "s"} listo${mesa.listos === 1 ? "" : "s"} para entregar`,
+          minutos: m, prioridad: 500 + min(m),
+        });
+      }
+      if (mesa.cuenta_solicitada) {
+        const tomado = Boolean(mesa.llamado_tomado_por);
+        tareas.push({
+          tipo: "cuenta", id_mesa: mesa.id_mesa, numero: mesa.numero,
+          texto: tomado ? `Pidió la cuenta · ${mesa.llamado_tomado_por} va` : "Pidió la cuenta",
+          minutos: mesa.minutos_llamado,
+          prioridad: (tomado ? 150 : 400) + min(mesa.minutos_llamado),
+        });
+      }
+      if (mesa.mozo_solicitado) {
+        const tomado = Boolean(mesa.llamado_tomado_por);
+        tareas.push({
+          tipo: "mozo", id_mesa: mesa.id_mesa, numero: mesa.numero,
+          texto: tomado ? `Llamó al mozo · ${mesa.llamado_tomado_por} va` : "Llamó al mozo",
+          minutos: mesa.minutos_llamado,
+          prioridad: (tomado ? 140 : 380) + min(mesa.minutos_llamado),
+        });
+      }
+      if ((mesa.pendientes || 0) > 0) {
+        tareas.push({
+          tipo: "pendiente", id_mesa: mesa.id_mesa, numero: mesa.numero,
+          texto: `${mesa.pendientes} pedido${mesa.pendientes === 1 ? "" : "s"} sin confirmar`,
+          minutos: mesa.minutos_espera,
+          prioridad: 300 + min(mesa.minutos_espera),
+        });
+      } else if (mesa.estado_salon === "esperando") {
+        tareas.push({
+          tipo: "espera", id_mesa: mesa.id_mesa, numero: mesa.numero,
+          texto: `Espera alta · ${min(mesa.minutos_espera)} min sin entregar`,
+          minutos: mesa.minutos_espera,
+          prioridad: 200 + min(mesa.minutos_espera),
+        });
+      }
+      if (mesa.abandonada) {
+        tareas.push({
+          tipo: "abandonada", id_mesa: mesa.id_mesa, numero: mesa.numero,
+          texto: `Sin actividad hace ${mesa.minutos_desde_scan || 10} min`,
+          minutos: mesa.minutos_desde_scan,
+          prioridad: 50,
+        });
+      }
+      return tareas;
+    }
+
+    function renderInbox(mesas) {
+      const cont = document.getElementById("salon-inbox");
+      const badge = document.getElementById("inbox-count");
+      if (!cont) return;
+
+      const tareas = mesas
+        .flatMap(tareasDeMesa)
+        .sort((a, b) => b.prioridad - a.prioridad);
+
+      if (badge) {
+        badge.textContent = tareas.length;
+        badge.hidden = tareas.length === 0;
+      }
+
+      // Evita repintar (y perder el estado :active de un tap) cuando nada cambió.
+      const firma = JSON.stringify(tareas.map(t => [t.tipo, t.numero, t.texto, t.minutos]));
+      if (firma === inboxSignature) return;
+      inboxSignature = firma;
+
+      if (!tareas.length) {
+        cont.innerHTML = `
+          <div class="inbox-vacio">
+            <strong>Todo al día</strong>
+            <span>No hay nada pendiente en el salón.</span>
+          </div>`;
+        return;
+      }
+
+      cont.innerHTML = tareas.map(t => `
+        <button class="inbox-row inbox-row-${t.tipo}" type="button" onclick="abrirMesaOperacion(${t.id_mesa})">
+          <span class="inbox-dot"></span>
+          <span class="inbox-mesa">Mesa ${escapeHtml(String(t.numero))}</span>
+          <span class="inbox-texto">${escapeHtml(t.texto)}</span>
+          <span class="inbox-tiempo">${(t.minutos != null && t.minutos > 0) ? t.minutos + "'" : ""}</span>
+        </button>`).join("");
+    }
+
+    function construirAlertaLlamado(mesa) {
+      const tipo = mesa.cuenta_solicitada ? "cuenta" : mesa.mozo_solicitado ? "mozo" : null;
+      if (!tipo) return "";
+      if (mesa.llamado_tomado_por) {
+        return `<div class="mesa-alerta mesa-alerta-tomado">${escapeHtml(mesa.llamado_tomado_por)} va en camino</div>`;
+      }
+      const base = tipo === "cuenta" ? "Solicitó la cuenta" : "Solicitó mozo";
+      const min = mesa.minutos_llamado;
+      const tiempo = (min != null && min > 0) ? ` · hace ${min} min` : "";
+      const urgente = (min != null && min >= 5) ? " mesa-alerta-urgente" : "";
+      return `<div class="mesa-alerta${urgente}">${base}${tiempo}</div>`;
     }
 
     // ── STATS ───────────────────────────────────────────────────
@@ -184,6 +403,8 @@
         mesa.participantes,
         mesa.cuenta_solicitada,
         mesa.mozo_solicitado,
+        mesa.minutos_llamado,
+        mesa.llamado_tomado_por,
         mesa.minutos_espera,
         mesa.minutos_desde_scan,
         mesa.pedidos_hoy,
@@ -225,11 +446,11 @@
         ? `<div class="mesa-alerta">Sin pedido hace ${mesa.minutos_desde_scan || 10} min</div>`
         : estado === "esperando"
           ? `<div class="mesa-alerta">Espera alta</div>`
-          : mesa.cuenta_solicitada
-            ? `<div class="mesa-alerta">Solicitó la cuenta</div>`
-            : mesa.mozo_solicitado
-              ? `<div class="mesa-alerta">Solicitó mozo</div>`
-          : "";
+          : construirAlertaLlamado(mesa);
+      const listos = Number(mesa.listos) || 0;
+      const listoBadge = (listos > 0 && estado !== "abandonada")
+        ? `<div class="mesa-listo-badge">${listos} listo${listos === 1 ? "" : "s"} para entregar</div>`
+        : "";
 
       return `
         <button
@@ -255,6 +476,7 @@
             <span>${espera}</span>
             <span>${actividad} hoy</span>
           </span>
+          ${listoBadge}
           ${alerta}
         </button>`;
     }
@@ -312,6 +534,16 @@
       // sin entregar (mesa.tiene_pedidos_sin_entregar) y aun así liberarse.
       const puedeLiberar = data.cobrada && data.ocupada;
 
+      const llamado = data.llamado;
+      const llamadoBanner = llamado ? `
+        <div class="mesa-llamado-banner${(llamado.minutos >= 5 && !llamado.tomado_por) ? " urgente" : ""}">
+          <span>${llamado.tipo === "cuenta" ? "Pidió la cuenta" : "Llamó al mozo"}${llamado.minutos > 0 ? ` · hace ${llamado.minutos} min` : ""}</span>
+          ${llamado.tomado_por_nombre
+            ? `<strong>${escapeHtml(llamado.tomado_por_nombre)} va en camino</strong>`
+            : `<button class="btn-ghost" type="button" onclick="tomarLlamado(${mesa.id_mesa})">Voy yo</button>`
+          }
+        </div>` : "";
+
       body.innerHTML = `
         <div class="mesa-operacion-summary">
           <div>
@@ -323,6 +555,7 @@
             <strong>${pedidos.length}</strong>
           </div>
         </div>
+        ${llamadoBanner}
         <div class="mesa-operacion-actions">
           ${data.mozo_solicitado
             ? `<button class="btn-ghost btn-service-done" type="button" onclick="atenderMozo(${mesa.id_mesa})">Mozo atendido</button>`
@@ -345,14 +578,41 @@
         </div>`;
     }
 
+    // Semáforo de antigüedad: cuánto lleva el pedido EN SU ESTADO ACTUAL.
+    // verde <10 min · amarillo 10-19 · rojo ≥20. Pedidos entregados/cancelados
+    // no llevan semáforo (ya salieron del circuito de cocina).
+    function semaforoPedido(pedido) {
+      if (pedido.estado === "entregado" || pedido.estado === "cancelado") return null;
+      const min = pedido.minutos_en_estado != null
+        ? pedido.minutos_en_estado
+        : (pedido.minutos_espera ?? 0);
+      let nivel = "ok";
+      if (min >= 20) nivel = "alto";
+      else if (min >= 10) nivel = "medio";
+      return { nivel, min };
+    }
+
+    // Texto para el tooltip del semáforo (el estado ya se ve al lado, no lo repetimos).
+    function describirTiempoEstado(estado, min) {
+      const plantillas = {
+        pendiente:      `Hace ${min} min sin confirmar`,
+        confirmado:     `Hace ${min} min esperando a cocina`,
+        en_preparacion: `${min} min en preparación`,
+        listo:          `${min} min listo, sin entregar`,
+      };
+      return plantillas[estado] || `Hace ${min} min`;
+    }
+
     function renderPedidoMesa(pedido) {
       const detalle = Array.isArray(pedido.detalle) ? pedido.detalle : [];
       const observaciones = (pedido.observaciones || "").trim();
       const grupos = agruparDetallePedido(detalle);
       let accion = "";
       if (getUserRole() === ROLES.MOZO) {
-        if (pedido.estado !== "entregado" && pedido.estado !== "cancelado") {
+        if (pedido.estado === "listo") {
           accion = `<button class="btn-primary mesa-action-primary" type="button" onclick="avanzarPedidoMesa(${pedido.id_pedido}, 'entregado')">Marcar entregado</button>`;
+        } else if (pedido.estado !== "entregado" && pedido.estado !== "cancelado") {
+          accion = `<div class="mesa-pedido-espera-cocina">Esperando que cocina lo marque listo</div>`;
         }
       } else {
         accion = pedido.estado === "pendiente"
@@ -362,15 +622,19 @@
             : "";
       }
       const estadoClase = String(pedido.estado || "").replace(/_/g, "-");
+      const sem = semaforoPedido(pedido);
+      const semDot = sem
+        ? `<span class="pedido-semaforo pedido-semaforo-${sem.nivel}" title="${escapeHtml(describirTiempoEstado(pedido.estado, sem.min))}"></span>`
+        : "";
 
       return `
-        <article class="mesa-pedido-card estado-${estadoClase}">
+        <article class="mesa-pedido-card estado-${estadoClase}${sem && sem.nivel === "alto" ? " pedido-demorado" : ""}">
           <button class="mesa-pedido-head" type="button" onclick="togglePedidoMesa(${pedido.id_pedido})">
             <div>
-              <strong class="mesa-pedido-number">Pedido #${pedido.id_pedido}</strong>
+              <strong class="mesa-pedido-number">${semDot}Pedido #${pedido.id_pedido}</strong>
               <span>
                 <b>${escapeHtml(labelEstadoPedido(pedido.estado))}</b>
-                · ${pedido.minutos_espera ?? 0} min
+                · ${sem ? sem.min : (pedido.minutos_espera ?? 0)} min
                 ${observaciones ? " · Con observaciones" : ""}
               </span>
             </div>
@@ -472,6 +736,17 @@
         if (mesaOperacionActual) await abrirMesaOperacion(mesaOperacionActual);
       } catch (error) {
         mostrarToast("No se pudo marcar la solicitud: " + error.message, "error");
+      }
+    }
+
+    async function tomarLlamado(idMesa) {
+      try {
+        await fetchAPI(`/mesas/${idMesa}/tomar-llamado`, "POST");
+        mostrarToast("Tomaste el llamado. El resto del salón ya lo ve.", "success");
+        await cargarMapaMesas();
+        if (mesaOperacionActual) await abrirMesaOperacion(mesaOperacionActual);
+      } catch (error) {
+        mostrarToast("No se pudo tomar el llamado: " + error.message, "error");
       }
     }
 
@@ -922,7 +1197,8 @@
           mostrarToast(data.message || "Nueva mesa envió un pedido.", "success");
         } else if (data.type === "servicio_mesa") {
           mostrarToast(data.message || "Nueva solicitud de mesa", "success");
-        } else if (data.type === "pedido_actualizado") {
+        } else if (data.type === "pedido_actualizado" && data.estado !== "listo") {
+          // El caso "listo" lo anuncia detectarPedidosListos() con el número de mesa.
           mostrarToast("Pedido actualizado en cocina.", "success");
         }
 

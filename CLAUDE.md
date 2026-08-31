@@ -30,7 +30,7 @@ No hay paso de build para el frontend: son archivos estáticos en `frontend/` qu
 
 ### Migraciones (`backend/migrations/`)
 
-13 migraciones (`001` a `013`), secuenciales, sin runner (se corren a mano contra MySQL en desarrollo local; en Docker las aplica `backend/scripts/init_app.sh` automáticamente — ver sección Docker más abajo).
+14 migraciones (`001` a `014`), secuenciales, sin runner (se corren a mano contra MySQL en desarrollo local; en Docker las aplica `backend/scripts/init_app.sh` automáticamente — ver sección Docker más abajo).
 
 **001-006, verificado ejecutándolas de verdad** contra una base descartable (`scanorder_migration_test`, dropeada al terminar; `scanorder_db` no se tocó):
 
@@ -44,7 +44,7 @@ No hay paso de build para el frontend: son archivos estáticos en `frontend/` qu
 - `002_menu_categorias_nuevas.sql` asume categorías ya existentes con IDs hardcodeados 1-4 (`UPDATE categorias ... WHERE id_categoria = 1`, etc.). Ni `docs/database.sql` ni ningún script del repo siembran esas filas — si esos IDs no existen, la migración no falla pero tampoco logra nada (0 filas afectadas, silencioso).
 - `001` y `004` no son redundantes entre sí pese al nombre similar de "trazabilidad": `001` corrige el tipo de la columna `estado` (bug ENUM→VARCHAR que dejaba pedidos con `estado=''`); `004` agrega las columnas de fecha por estado (`confirmado_at`, `preparacion_at`, `listo_at`, `entregado_at`) que usan `pedidos.py` y `reportes.py`. Cambios independientes sobre la misma tabla, ninguno reemplaza al otro.
 
-**007-013** — no reflejadas en `docs/database.sql` (salvo `008`, ver arriba); todas idempotentes, aplicadas automáticamente en orden por `init_app.sh` en Docker:
+**007-014** — no reflejadas en `docs/database.sql` (salvo `008`, ver arriba); todas idempotentes, aplicadas automáticamente en orden por `init_app.sh` en Docker:
 
 | # | Archivo | Qué hace |
 |---|---|---|
@@ -55,6 +55,7 @@ No hay paso de build para el frontend: son archivos estáticos en `frontend/` qu
 | 011 | `011_auth_complete.sql` | Crea tabla `password_reset_tokens` (recuperación de contraseña, un solo uso, TTL 30 min). |
 | 012 | `012_drop_cierres_mesa_numero_mesa.sql` | Elimina `cierres_mesa.numero_mesa` — duplicaba `mesas.numero` (accesible vía `id_mesa`, que sí tiene FK) sin ningún uso real en el código: se escribía en el `INSERT` y nunca se volvía a leer en ningún lado (endpoints, reportes, tests, frontend). A diferencia de `precio_unitario` en `detalle_pedidos`, no protegía contra ninguna mutación real (no existe forma de renumerar una mesa) — violación de 3FN sin beneficio. Sin cambios de contrato de API. |
 | 013 | `013_stock_opcional.sql` | Agrega `productos.controla_stock BOOLEAN DEFAULT TRUE`. Control de stock **opt-out por producto**: por defecto TODOS los productos se controlan (igual que antes de la 013); el admin puede *excluir* uno puntual desmarcando el checkbox. Solo los `controla_stock = TRUE` aparecen en Inventario, bloquean pedidos por falta de stock y se descuentan al entregar. Sin `UPDATE` de datos en la migración (así el flag nunca se pisa al reaplicar). Ver "Control de inventario" más abajo. |
+| 014 | `014_mozo_llamados.sql` | Crea tabla `mozo_llamados` (trazabilidad de llamados de mozo / pedidos de cuenta). **Complementa, no reemplaza**, los flags `mozo_solicitado`/`cuenta_solicitada` de `mesa_estado_operativo` (006), que siguen siendo la fuente de verdad de "hay un llamado abierto". Solo agrega timing (`solicitado_at` → cronómetro y escalada visual en el panel del mozo) y atribución (`tomado_por`/`tomado_at` = "voy yo"; `atendido_por`/`atendido_at` = quién lo cerró). Ver "Llamados de mozo con cronómetro y acuse" más abajo. |
 
 ## Modelo de roles y autenticación (desde `refactor/roles-mozo`)
 
@@ -75,7 +76,8 @@ El panel de cocina (`frontend/cocina/pedidos.html`) ya **no requiere login de us
 - **Variable frontend**: `window.COCINA_DEVICE_TOKEN` en el HTML de la página cocina (configurar por instalación, una vez, en `pedidos.html`).
 - **WS `/pedidos/ws/cocina`**: valida `?device_token=<valor>` contra `COCINA_DEVICE_TOKEN`. Cierra con código `1008` si no coincide.
 - **`GET /pedidos/activos-completos`**: acepta `?device_token=<valor>` como alternativa al JWT mozo/admin. Mismo token que el WS.
-- El panel de cocina es **solo lectura** (muestra pedidos via WS/polling). Los mozos marcan estados desde su panel autenticado.
+- **`PATCH /pedidos/{id}/estado`**: acepta `?device_token=<valor>` como alternativa al JWT. Con device token **solo puede avanzar hasta `listo`** (marcar `entregado` → 403). El **mozo** solo puede marcar `entregado` desde `listo` (→ 409 si no); el **admin** conserva el atajo directo. Ver "Cocina marca listo + el mozo no entrega sin ese listo" más abajo.
+- El panel de cocina muestra pedidos (WS/polling) y suma **un único botón "Marcar listo"** por pedido; el resto de las acciones (confirmar, entregar) siguen siendo del mozo/admin.
 
 ### `require_role` — uso variadic
 
@@ -91,7 +93,7 @@ Depends(require_role("mozo", "admin"))
 
 | Endpoint | Antes | Ahora |
 |---|---|---|
-| `PATCH /pedidos/{id}/estado` | admin o cocina | admin o mozo |
+| `PATCH /pedidos/{id}/estado` | admin o cocina | admin (sin límite), mozo (`entregado` solo desde `listo`), o device_token (solo hasta `listo`) |
 | `GET /pedidos/activos-completos` | admin o cocina | admin, mozo, o device_token |
 | `POST /mesas/{id}/cerrar` | admin | admin o mozo |
 | `POST /mesas/{id}/atender-mozo` | admin | admin o mozo |
@@ -232,6 +234,50 @@ Cada mesa tiene un `qr_token` (`secrets.token_urlsafe(24)`) embebido en la URL d
 
 Es un cálculo derivado en cada `GET /mesas/mapa` (no hay timers/cron en background): una mesa se marca `abandonada` si tiene sesión activa, sin pedidos activos, carrito vacío y ≥10 min desde el escaneo del QR. Depende 100% del `MesaSessionManager` (feature anterior) para `session`, `items_carrito` y `minutos_desde_scan` — si se toca el carrito colaborativo, revisar este cálculo.
 
+### Llamados de mozo con cronómetro y acuse (migración 014)
+
+Cuando una mesa toca "llamar mozo" / "pedir la cuenta" (`POST /pedidos/servicio`), además de prender el flag en `mesa_estado_operativo` se registra una fila en `mozo_llamados` (`registrar_llamado`, `app/repositories/mozo_llamados_repo.py`). Esa tabla **solo agrega metadatos** — el flag booleano de `mesa_estado_operativo` sigue siendo lo que pinta el color/alerta de la mesa; `mozo_llamados` alimenta el "· hace X min" y el "Lucía va en camino".
+
+- **`registrar_llamado(id_mesa, tipo)`** cierra cualquier llamado previo abierto de esa mesa antes de insertar el nuevo (una mesa = un llamado abierto, igual que el modelo de flag único).
+- **`GET /mesas/mapa`** y **`GET /mesas/{id}/operacion`** exponen `minutos_llamado` / `llamado_tomado_por` (mapa) y el objeto `llamado` (operación) **solo si el flag operativo correspondiente sigue activo** — una fila de trazabilidad colgada nunca pinta un cronómetro fantasma.
+- **`POST /mesas/{id}/tomar-llamado`** (`require_role("mozo", "admin")`): un mozo se hace cargo del llamado ("Voy yo"); el resto de los paneles lo ve y no manda a otro. 409 si no hay llamado abierto.
+- **`POST /mesas/{id}/atender-mozo`**, **cerrar** y **liberar** mesa cierran el/los llamado(s) abierto(s) (`cerrar_llamado`), registrando `atendido_por`. `create_pedido` cierra un llamado de tipo `cuenta` pendiente (consistente con el `cuenta_solicitada=False` que ya hacía).
+- Frontend (`admin/js/mesas.js`): el cartel de la tarjeta muestra "Solicitó mozo · hace N min" y pasa a rojo con pulso (`.mesa-alerta-urgente`) a los ≥5 min; el modal de mesa suma el botón "Voy yo" y la línea "X va en camino". Como el panel del mozo no se conecta al WS de cocina (solo el admin), `detectarLlamadosNuevos()` compara el mapa nuevo vs. el anterior en cada poll y dispara `reproducirAviso()` cuando aparece un llamado nuevo (para el admin sigue viniendo por WS, así que ahí se omite para no duplicar el beep).
+- **Degradación:** todo el repo es best-effort con su propia conexión y chequea `SHOW TABLES LIKE 'mozo_llamados'`. Si la 014 no está aplicada, no-op total y el panel funciona como antes (cartel sin cronómetro). Cubierto por `test_mozo_llamados.py` (integración, DB descartable) + `TestTomarLlamadoRoles` en `test_roles_mozo.py`.
+
+### Semáforo de antigüedad por pedido (`GET /mesas/{id}/operacion`)
+
+Cada pedido de la respuesta trae **`minutos_en_estado`**: cuánto lleva el pedido *dentro de su estado actual* (no desde `created_at`). Se calcula en SQL con un `CASE p.estado` que mide desde `confirmado_at` / `preparacion_at` / `listo_at` (con `COALESCE` en cascada hacia `created_at` para transiciones salteadas — `pendiente → entregado` es válido, ver `TRANSICION_ESTADO`). Si la migración 004 (columnas `*_at`) no está, degrada a minutos desde `created_at`. `minutos_espera` (desde `created_at`) se sigue devolviendo sin cambios.
+
+Frontend (`admin/js/mesas.js`, modal de operación de mesa): `semaforoPedido()` mapea `minutos_en_estado` a **verde <10 · amarillo 10-19 · rojo ≥20**; `describirTiempoEstado()` da el texto contextual del tooltip ("22 min en preparación", "8 min sin confirmar", "listo, sin entregar"). Punto de color `.pedido-semaforo` en el header + borde izquierdo rojo (`.pedido-demorado`) para los ≥20 min. Pedidos `entregado`/`cancelado` no llevan semáforo. El modal no tiene ticker propio: el semáforo se recalcula cuando el modal se recarga (acción del mozo o evento WS del admin), no en el poll de 2,5 s del mapa. Cubierto por `TestOperacionMinutosEnEstado` en `test_mesas_cierre.py`.
+
+### Aviso de pedido "listo" en el panel de mesas (solo frontend)
+
+`detectarPedidosListos()` (`admin/js/mesas.js`) compara la cantidad de pedidos en estado `listo` por mesa contra el poll anterior (`mapaListosPrevios: Map<id_mesa, n>`). Si sube en alguna mesa: toast ("Mesa 5: pedido listo para entregar.") **para todos**, y `reproducirAviso()` (beep) **solo para el mozo** — el admin ya lo recibe por el WS de cocina, así que se evita el doble beep (misma lógica que `detectarLlamadosNuevos`). Guarda de primera carga (`primeraCargaListos`) para no avisar por pedidos que ya estaban listos al abrir el panel. En el WS handler del admin, el `pedido_actualizado` con `estado === "listo"` ya no dispara el toast genérico (lo cubre `detectarPedidosListos` con el número de mesa). Además, cada tarjeta del mapa muestra un pill verde persistente `.mesa-listo-badge` ("N listos para entregar") mientras haya pedidos en ese estado — el toast se va a los 3,5 s pero el pill queda hasta que el mozo entregue.
+
+### Cocina marca listo + el mozo no entrega sin ese "listo"
+
+El ciclo cierra en los dos extremos: **cocina** toca "Marcar listo" y **solo entonces** el mozo puede tocar "Marcar entregado".
+
+- **Panel de cocina — botón "Marcar listo"** (antes 100% solo lectura). `TRANSICION_ESTADO` (en `routes/pedidos.py`) permite `listo` desde `pendiente`/`confirmado`/`en_preparacion` (antes solo desde `en_preparacion`). Un solo click, salto directo — nadie clickea paso a paso. `en_preparacion` sigue **sin botón dedicado** en ninguna UI. Revisa parcialmente "cocina solo lectura" de `REVISION_PREVIA_DOCS §2.5`; el principio "sin clicks intermedios" se mantiene.
+- **Restricciones por rol en `PATCH /pedidos/{id}/estado`** (la tabla `TRANSICION_ESTADO` es permisiva; el rol se chequea en `actualizar_estado_pedido`):
+  - **device_token (cocina):** acepta `?device_token=` (mismo `COCINA_DEVICE_TOKEN` del WS), pero **no** puede marcar `entregado` → 403.
+  - **mozo:** solo puede marcar `entregado` si `estado_actual == "listo"` → si no, **409** (`"El pedido tiene que estar 'listo' (cocina) antes de entregarlo"`).
+  - **admin:** sin restricción — conserva el atajo directo a `entregado` desde cualquier estado activo (escape hatch si el panel de cocina no responde en pleno servicio).
+  - Firma: `device_token: str = ""`, `current_user: Optional[dict] = Depends(get_current_user_optional)`, `rol_actual` calculado arriba.
+- **Frontend cocina** (`cocina/js/pedidos.js`): `marcarListo(id)` → `PATCH ...?device_token=` con `{estado:"listo"}` (`fetchAPI(..., false)`). Pedidos ya `listo` quedan visibles con etiqueta "Listo — esperando al mozo" (card verde). Estilos `.pedido-actions`/`.btn-listo` ya existían en `pedidos.css`. El WS handler de cocina ya **no** hace beep para `pedido_actualizado` (evita el beep sobre la propia acción); sigue sonando para `pedido_creado` y `servicio_mesa`.
+- **Frontend mozo** (`admin/js/mesas.js`, `renderPedidoMesa`): el botón "Marcar entregado" aparece **solo** si `pedido.estado === "listo"`; en cualquier otro estado activo muestra el texto `.mesa-pedido-espera-cocina` ("Esperando que cocina lo marque listo").
+- Cubierto por `TestPatchEstadoDeviceToken` + (integración) `TestMozoNoEntregaSinListo` en `test_mesas_cierre.py`; `test_transiciones_de_estado_*` en `test_pedidos.py` / `test_caract_pedidos.py`.
+
+### Panel del salón — vista "Pendientes" (bandeja) + "Mapa" (`admin/mesas.html`, solo frontend)
+
+`admin/mesas.html` tiene dos vistas del salón, con tabs (`.salon-tab`) y persistencia en `localStorage` (`scanorder_mesas_vista`, default `"inbox"`):
+
+- **Pendientes (inbox):** lista de tareas accionables derivadas de `/mesas/mapa`, ordenadas por urgencia (no por número de mesa). `tareasDeMesa(mesa)` (`mesas.js`) deriva 0..N tareas con un score `prioridad` = base por tipo + minutos de espera: `listo` (500) > `cuenta`/`mozo` sin tomar (400/380) > `pendiente` sin confirmar (300) > `esperando` (200) > `cuenta`/`mozo` ya tomados por otro mozo (150/140) > `abandonada` (50). `renderInbox()` aplana, ordena y pinta filas `.inbox-row-<tipo>`; cada fila abre el modal de la mesa (`abrirMesaOperacion`). Firma (`inboxSignature`) para no repintar cuando nada cambió (evita perder el `:active` de un tap). Contador en el tab (`#inbox-count`). Vacío → "Todo al día".
+- **Mapa:** la grilla de siempre (`renderMapaSalon`), sin cambios.
+- `cargarMapaMesas()` renderiza **ambas** vistas en cada poll y `aplicarVista()` togglea `hidden` en `#salon-inbox` / `#salon-floor` / `#salon-toolbar`.
+- El tiempo "listo hace N min" se cronometra del lado del cliente (`listoDesde: Map<id_mesa, ts>`, helper `minutosListo()`) porque `/mesas/mapa` solo trae el *conteo* de pedidos listos, no cuándo lo fueron. Se reinicia si se recarga la página (aceptable en tablet siempre encendida). El resto de los tiempos (`minutos_llamado`, `minutos_espera`) vienen del backend.
+
 ### Reportes descargables (Excel / PDF)
 
 Los reportes de descarga ya **no son CSV**: se generan como `.xlsx` (openpyxl) o `.pdf` (reportlab) con `?formato=excel` (default) o `?formato=pdf`. Helpers comunes en `reportes.py`: `_build_excel_report(title, subtitle, sections)` + `_excel_response(workbook, filename)` (media type `EXCEL_MEDIA_TYPE`), y `_pdf_response(title, subtitle, sections, filename)` (`PDF_MEDIA_TYPE`). Ambos arman las mismas `sections` (`{title, headers, rows, money_cols?}`) y devuelven un `Response` con `Content-Disposition: attachment`.
@@ -314,7 +360,7 @@ Diseño actual: **"cobrado" y "entregado" son estados independientes.**
   - `cobrada`: no queda ningún pedido del ciclo actual sin vincular a un cierre.
   - `tiene_pedidos_sin_entregar`: hay pedidos (cobrados o no) que todavía no llegaron a `entregado`.
 - Frontend (`mesas.js`): el modal de mesa muestra **"Liberar mesa"** solo si `cobrada && ocupada`; en cualquier otro caso muestra **"Cobrar mesa"** — siempre hay una acción disponible, nunca un estado trabado.
-- Pedidos cobrados pero no entregados siguen apareciendo con su estado real en el panel de cocina (`GET /pedidos/activos-completos`, WS `/pedidos/ws/cocina`) y en el modal de mesa, donde el mozo los entrega normalmente; ahí (y solo ahí) se descuenta stock.
+- Pedidos cobrados pero no entregados siguen apareciendo con su estado real en el panel de cocina (`GET /pedidos/activos-completos`, WS `/pedidos/ws/cocina`) y en el modal de mesa. El mozo los marca `entregado` desde ahí una vez que cocina los puso `listo` (ver "Cocina marca listo…"); en ese `PATCH` (y solo ahí) se descuenta stock.
 
 Cubierto por `test_cobrar_mesa_con_pedido_en_preparacion_no_fuerza_entrega_y_libera_mesa`, `test_mesa_cobrada_se_puede_liberar_aunque_tenga_pedidos_sin_entregar` y `test_stock_no_se_descuenta_al_cobrar_solo_al_entregar_pedido_ya_cobrado` en `test_mesas_cierre.py`.
 
@@ -548,4 +594,4 @@ Después de guardar el token: si `data.user.must_change_password` es `true`, red
 
 ### Próxima migración
 
-La última migración aplicada es `013_stock_opcional.sql` (ver tabla completa de migraciones más arriba). La siguiente incremental será `014_*.sql`. `init_app.sh` la va a recoger automáticamente (recorre `migrations/*.sql` y aplica todo lo que no empiece con `001`-`006`) — **no hace falta tocar el script**, pero la migración nueva tiene que ser idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `ADD CONSTRAINT IF NOT EXISTS`, `DROP COLUMN IF EXISTS`), porque se reaplica en cada arranque del contenedor.
+La última migración aplicada es `014_mozo_llamados.sql` (ver tabla completa de migraciones más arriba). La siguiente incremental será `015_*.sql`. `init_app.sh` la va a recoger automáticamente (recorre `migrations/*.sql` y aplica todo lo que no empiece con `001`-`006`) — **no hace falta tocar el script**, pero la migración nueva tiene que ser idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `ADD CONSTRAINT IF NOT EXISTS`, `DROP COLUMN IF EXISTS`), porque se reaplica en cada arranque del contenedor.

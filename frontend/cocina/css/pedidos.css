@@ -624,6 +624,21 @@ button:disabled {
 .btn-listo { background: #047857; }
 .btn-entregar { background: #b91c1c; }
 
+.pedido-estado-listo {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 12px;
+  color: #86efac;
+  background: rgba(4, 120, 87, 0.16);
+  border: 1px dashed rgba(34, 197, 94, 0.34);
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
 /* ===== Estados vacios y carga ===== */
 .columna-empty,
 .loading-screen {

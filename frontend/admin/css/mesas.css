@@ -101,6 +101,143 @@
   color: var(--state-alerta-text);
 }
 
+/* ===== Tabs Pendientes / Mapa ===== */
+.salon-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 12px 20px 0;
+}
+
+.salon-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  color: var(--gray-600);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.salon-tab.active {
+  background: var(--gray-900);
+  border-color: var(--gray-900);
+  color: var(--gray-0);
+}
+
+.salon-tab-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--state-alerta-dot);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+/* ===== Bandeja de pendientes (inbox) ===== */
+.salon-inbox {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* [hidden] no gana contra `display: flex` de la clase — hay que reforzarlo. */
+.salon-inbox[hidden],
+.salon-floor[hidden],
+.salon-toolbar[hidden] {
+  display: none;
+}
+
+.inbox-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--gray-300);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.inbox-row:hover {
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.inbox-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--gray-300);
+}
+
+.inbox-mesa {
+  flex-shrink: 0;
+  min-width: 66px;
+  font-weight: 700;
+  color: var(--gray-900);
+}
+
+.inbox-texto {
+  flex: 1;
+  color: var(--gray-600);
+  font-size: 0.9rem;
+}
+
+.inbox-tiempo {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--gray-500);
+}
+
+.inbox-row-listo      { border-left-color: var(--state-libre-dot); }
+.inbox-row-listo      .inbox-dot { background: var(--state-libre-dot); }
+.inbox-row-cuenta,
+.inbox-row-mozo       { border-left-color: var(--state-esperando-dot); }
+.inbox-row-cuenta     .inbox-dot,
+.inbox-row-mozo       .inbox-dot { background: var(--state-esperando-dot); }
+.inbox-row-pendiente  { border-left-color: var(--state-pidiendo-dot); }
+.inbox-row-pendiente  .inbox-dot { background: var(--state-pidiendo-dot); }
+.inbox-row-espera     { border-left-color: var(--state-alerta-dot); }
+.inbox-row-espera     .inbox-dot { background: var(--state-alerta-dot); }
+.inbox-row-abandonada { border-left-color: var(--gray-400); }
+.inbox-row-abandonada .inbox-dot { background: var(--gray-400); }
+
+.inbox-vacio {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+  padding: 40px 16px;
+  text-align: center;
+}
+
+.inbox-vacio strong {
+  font-size: 1rem;
+  color: var(--gray-800);
+}
+
+.inbox-vacio span {
+  font-size: 0.85rem;
+  color: var(--gray-500);
+}
+
+@media (max-width: 600px) {
+  .inbox-row { flex-wrap: wrap; gap: 6px 10px; }
+  .inbox-texto { flex-basis: 100%; order: 3; }
+}
+
 /* ===== Mapa del salón ===== */
 .salon-stage {
   padding: 18px 20px 22px;
@@ -206,6 +343,60 @@
   color: var(--state-alerta-text);
   font-size: 0.72rem;
   font-weight: 600;
+}
+
+/* Pedido(s) en estado "listo": pendientes de que el mozo los lleve a la mesa. */
+.mesa-listo-badge {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--state-libre-bg);
+  color: var(--state-libre-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* Llamado sin atender pasados ~5 min: rojo con pulso para que salte a la vista. */
+.mesa-alerta-urgente {
+  animation: mesa-alerta-pulso 1.4s ease-in-out infinite;
+}
+
+@keyframes mesa-alerta-pulso {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+/* Un mozo ya dijo "voy yo": el resto del salón lo ve y no manda a otro. */
+.mesa-alerta-tomado {
+  background: var(--brand-50);
+  color: var(--brand-700);
+}
+
+/* Banner de llamado dentro del modal de operación de mesa. */
+.mesa-llamado-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--state-alerta-bg);
+  color: var(--state-alerta-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.mesa-llamado-banner.urgente {
+  animation: mesa-alerta-pulso 1.4s ease-in-out infinite;
+}
+
+.mesa-llamado-banner .btn-ghost {
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mesa-alerta-urgente,
+  .mesa-llamado-banner.urgente { animation: none; }
 }
 
 /* ===== QR admin ===== */
@@ -540,6 +731,25 @@
   color: var(--gray-900);
 }
 
+/* Semáforo de antigüedad del pedido en su estado actual. */
+.pedido-semaforo {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.pedido-semaforo-ok    { background: var(--state-libre-dot); }
+.pedido-semaforo-medio { background: var(--state-esperando-dot); }
+.pedido-semaforo-alto  { background: var(--state-alerta-dot); }
+
+.mesa-pedido-card.pedido-demorado {
+  border-left-color: var(--state-alerta-dot);
+}
+
 .mesa-pedido-head span {
   display: block;
   margin-top: 2px;
@@ -613,6 +823,17 @@
 
 .mesa-action-primary {
   width: 100%;
+}
+
+.mesa-pedido-espera-cocina {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--gray-50);
+  color: var(--gray-500);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
 }
 
 .mesa-pedido-card.mesa-pedido-cobrada {

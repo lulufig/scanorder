@@ -73,7 +73,7 @@
              <div class="icon">—</div>
              <p>Sin pedidos activos</p>
            </div>`
-        : pedidos.map(p => renderPedidoCard(p, "amarillo")).join("");
+        : pedidos.map(p => renderPedidoCard(p, p.estado === "listo" ? "verde" : "amarillo")).join("");
     }
 
     // ── RENDER DE CADA CARD DE PEDIDO ────────────────────────────
@@ -129,7 +129,34 @@
               <span class="pedido-total-val">${formatPrecio(total)}</span>
             </div>` : ""}
 
+          <div class="pedido-actions">
+            ${pedido.estado === "listo"
+              ? `<div class="pedido-estado-listo">Listo — esperando al mozo</div>`
+              : `<button class="btn-accion btn-listo" type="button" onclick="marcarListo(${pedido.id_pedido})">Marcar listo</button>`
+            }
+          </div>
+
         </div>`;
+    }
+
+    // ── MARCAR LISTO ─────────────────────────────────────────────
+    async function marcarListo(idPedido) {
+      const card = document.getElementById(`card-${idPedido}`);
+      const btn  = card ? card.querySelector(".btn-listo") : null;
+      if (btn) { btn.disabled = true; btn.textContent = "Marcando..."; }
+      try {
+        await fetchAPI(
+          `/pedidos/${idPedido}/estado?device_token=${encodeURIComponent(DEVICE_TOKEN)}`,
+          "PATCH",
+          { estado: "listo" },
+          false
+        );
+        mostrarToast(`Pedido #${idPedido} marcado como listo.`, "success");
+        await cargarPedidos();
+      } catch (error) {
+        mostrarToast("No se pudo marcar el pedido: " + error.message, "error");
+        if (btn) { btn.disabled = false; btn.textContent = "Marcar listo"; }
+      }
     }
 
     function renderGrupoPedido(titulo, items, color, tipo) {
@@ -179,16 +206,22 @@
       const socket = new WebSocket(`${wsProtocol}://${wsBase}/pedidos/ws/cocina?device_token=${encodeURIComponent(DEVICE_TOKEN)}`);
 
       socket.addEventListener("message", (event) => {
-        reproducirAviso();
+        let data = {};
         try {
-          const data = JSON.parse(event.data);
-          if (data.type === "servicio_mesa") {
-            mostrarToast(data.message || "Nueva solicitud de mesa", "success");
-            return;
-          }
+          data = JSON.parse(event.data);
         } catch {
-          // Si no llega JSON valido, se conserva el comportamiento anterior.
+          data = {};  // JSON inválido: se conserva el comportamiento anterior.
         }
+
+        if (data.type === "servicio_mesa") {
+          reproducirAviso();
+          mostrarToast(data.message || "Nueva solicitud de mesa", "success");
+          return;
+        }
+        // Beep solo para pedidos nuevos; no para cambios de estado (un
+        // "pedido_actualizado" puede haberlo disparado esta misma cocina al
+        // tocar "Marcar listo" — sería un beep molesto sobre la propia acción).
+        if (data.type !== "pedido_actualizado") reproducirAviso();
         cargarPedidos();
       });
 

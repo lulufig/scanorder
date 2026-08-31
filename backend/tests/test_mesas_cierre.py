@@ -130,6 +130,13 @@ def admin_token():
 
 
 @pytest.fixture
+def mozo_token():
+    from app.utils.security import create_access_token
+
+    return create_access_token({"user_id": 2, "email": "mozo@test.com", "rol": "mozo"})
+
+
+@pytest.fixture
 def client(schema):
     from app.main import app
 
@@ -490,8 +497,9 @@ def test_stock_no_se_descuenta_al_cobrar_solo_al_entregar_pedido_ya_cobrado(
     assert _estado_pedido(db_conn, id_pedido) == "en_preparacion"
     assert _stock_actual(db_conn, id_producto) == 10
 
-    # El mozo entrega el pedido normalmente (transición en_preparacion → entregado
-    # es válida): recién ahí se descuenta stock, una sola vez.
+    # El admin entrega el pedido directo desde 'en_preparacion' (conserva el atajo;
+    # un mozo tendría que esperar a que cocina lo marque 'listo' — ver
+    # TestMozoNoEntregaSinListo). Recién al entregar se descuenta stock, una vez.
     resp_entrega = client.patch(
         f"/pedidos/{id_pedido}/estado",
         json={"estado": "entregado"},
@@ -512,3 +520,121 @@ def test_stock_no_se_descuenta_al_cobrar_solo_al_entregar_pedido_ya_cobrado(
         (id_pedido,),
     )
     assert cur.fetchone()[0] == 1
+
+
+# ── GET /mesas/{id}/operacion — semáforo de antigüedad (minutos_en_estado) ────
+
+class TestOperacionMinutosEnEstado:
+    """minutos_en_estado mide la antigüedad del pedido DENTRO de su estado
+    actual (no desde created_at). Alimenta el semáforo verde/amarillo/rojo
+    del panel del mozo."""
+
+    def test_en_preparacion_cuenta_desde_preparacion_at(self, db_conn, client, admin_token):
+        id_mesa, _, ids_pedido = _seed_mesa_con_pedidos(db_conn, [1000.00], estado="en_preparacion")
+        cur = db_conn.cursor()
+        # Creado hace 40 min, pero en preparación solo hace 25.
+        cur.execute(
+            "UPDATE pedidos SET created_at = NOW() - INTERVAL 40 MINUTE, "
+            "confirmado_at = NOW() - INTERVAL 30 MINUTE, "
+            "preparacion_at = NOW() - INTERVAL 25 MINUTE WHERE id_pedido = %s",
+            (ids_pedido[0],),
+        )
+        db_conn.commit()
+
+        resp = client.get(
+            f"/mesas/{id_mesa}/operacion",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        pedido = next(p for p in resp.json()["pedidos"] if p["id_pedido"] == ids_pedido[0])
+        assert pedido["minutos_espera"] >= 39          # desde created_at
+        assert 24 <= pedido["minutos_en_estado"] <= 26  # desde preparacion_at
+
+    def test_pendiente_cuenta_desde_created_at(self, db_conn, client, admin_token):
+        id_mesa, _, ids_pedido = _seed_mesa_con_pedidos(db_conn, [500.00], estado="pendiente")
+        cur = db_conn.cursor()
+        cur.execute(
+            "UPDATE pedidos SET created_at = NOW() - INTERVAL 8 MINUTE WHERE id_pedido = %s",
+            (ids_pedido[0],),
+        )
+        db_conn.commit()
+
+        resp = client.get(
+            f"/mesas/{id_mesa}/operacion",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        pedido = next(p for p in resp.json()["pedidos"] if p["id_pedido"] == ids_pedido[0])
+        assert 7 <= pedido["minutos_en_estado"] <= 9
+
+    def test_en_preparacion_sin_preparacion_at_cae_a_confirmado_o_created(self, db_conn, client, admin_token):
+        id_mesa, _, ids_pedido = _seed_mesa_con_pedidos(db_conn, [700.00], estado="en_preparacion")
+        cur = db_conn.cursor()
+        cur.execute(
+            "UPDATE pedidos SET created_at = NOW() - INTERVAL 15 MINUTE, "
+            "confirmado_at = NULL, preparacion_at = NULL WHERE id_pedido = %s",
+            (ids_pedido[0],),
+        )
+        db_conn.commit()
+
+        resp = client.get(
+            f"/mesas/{id_mesa}/operacion",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        pedido = next(p for p in resp.json()["pedidos"] if p["id_pedido"] == ids_pedido[0])
+        assert 14 <= pedido["minutos_en_estado"] <= 16  # COALESCE cae a created_at
+
+
+# ── PATCH /pedidos/{id}/estado — el mozo no entrega sin que cocina marque listo ─
+
+def _seed_mozo_usuario(db_conn):
+    cur = db_conn.cursor()
+    cur.execute(
+        "INSERT IGNORE INTO usuarios (id_usuario, nombre, email, password_hash, rol) "
+        "VALUES (2, 'Mozo Test', 'mozo@test.com', 'x', 'mozo')"
+    )
+    db_conn.commit()
+
+
+class TestMozoNoEntregaSinListo:
+    """El mozo solo puede marcar 'entregado' desde 'listo' (cocina tiene que
+    confirmar). El admin conserva el atajo directo como escape hatch."""
+
+    def _patch(self, client, token, id_pedido, estado):
+        return client.patch(
+            f"/pedidos/{id_pedido}/estado",
+            json={"estado": estado},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    def test_mozo_no_entrega_desde_en_preparacion(self, db_conn, client, mozo_token):
+        # El 409 corta antes de cualquier escritura, así que no hace falta stock.
+        _, _, ids = _seed_mesa_con_pedidos(db_conn, [500.00], estado="en_preparacion")
+        resp = self._patch(client, mozo_token, ids[0], "entregado")
+        assert resp.status_code == 409
+        assert _estado_pedido(db_conn, ids[0]) == "en_preparacion"
+
+    def test_mozo_no_entrega_desde_confirmado(self, db_conn, client, mozo_token):
+        _, _, ids = _seed_mesa_con_pedidos(db_conn, [500.00], estado="confirmado")
+        resp = self._patch(client, mozo_token, ids[0], "entregado")
+        assert resp.status_code == 409
+
+    def test_mozo_si_entrega_desde_listo(self, db_conn, client, mozo_token):
+        _seed_mozo_usuario(db_conn)
+        id_producto = _seed_producto_con_stock(db_conn, stock_inicial=10)
+        _, _, id_pedido = _seed_mesa_con_pedido_de_producto(
+            db_conn, id_producto, cantidad=2, precio_unitario=100.0, estado="listo"
+        )
+        resp = self._patch(client, mozo_token, id_pedido, "entregado")
+        assert resp.status_code == 200
+        db_conn.commit()
+        assert _estado_pedido(db_conn, id_pedido) == "entregado"
+        assert _stock_actual(db_conn, id_producto) == 8  # recién ahora se descuenta
+
+    def test_admin_conserva_el_atajo_directo_desde_en_preparacion(self, db_conn, client, admin_token):
+        _seed_admin_usuario(db_conn)
+        id_producto = _seed_producto_con_stock(db_conn, stock_inicial=10)
+        _, _, id_pedido = _seed_mesa_con_pedido_de_producto(
+            db_conn, id_producto, cantidad=1, precio_unitario=100.0, estado="en_preparacion"
+        )
+        resp = self._patch(client, admin_token, id_pedido, "entregado")
+        assert resp.status_code == 200

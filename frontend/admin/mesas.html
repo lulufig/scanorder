@@ -59,17 +59,24 @@
 
     <div class="layout salon-layout">
 
-      <!-- Mapa del salón -->
+      <!-- Salón: bandeja de pendientes + mapa -->
       <div class="card salon-card">
         <div class="card-header salon-header">
           <div>
-            <div class="card-title">Mapa del salón</div>
+            <div class="card-title">Salón</div>
             <div class="card-subtitle">Estado operativo de mesas en tiempo real</div>
           </div>
           <div class="salon-updated" id="salon-updated">Actualizando...</div>
         </div>
 
-        <div class="salon-toolbar">
+        <div class="salon-tabs" id="salon-tabs">
+          <button class="salon-tab" data-vista="inbox" type="button" onclick="cambiarVista('inbox')">
+            Pendientes <span class="salon-tab-count" id="inbox-count" hidden>0</span>
+          </button>
+          <button class="salon-tab" data-vista="mapa" type="button" onclick="cambiarVista('mapa')">Mapa</button>
+        </div>
+
+        <div class="salon-toolbar" id="salon-toolbar">
           <div class="salon-legend">
             <span><i class="legend-dot libre"></i>Libre</span>
             <span><i class="legend-dot ocupada"></i>Ocupada</span>
@@ -96,7 +103,13 @@
         </div>
 
         <div class="salon-stage">
-          <div class="salon-floor" id="salon-floor">
+          <div class="salon-inbox" id="salon-inbox">
+            <div class="empty-state">
+              <div class="icon">...</div>
+              <p>Cargando pendientes...</p>
+            </div>
+          </div>
+          <div class="salon-floor" id="salon-floor" hidden>
             <div class="empty-state">
               <div class="icon">...</div>
               <p>Cargando mapa del salón...</p>

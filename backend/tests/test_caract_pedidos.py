@@ -202,13 +202,20 @@ def test_abandonada_con_menos_de_10_minutos_no_es_abandonada():
 
 def test_transicion_estado_cubre_flujo_completo():
     from app.routes.pedidos import TRANSICION_ESTADO
-    # Cada estado activo permite avanzar al siguiente Y saltar directo a entregado
+    # Solo se avanza (nunca se retrocede). "listo" y "entregado" son alcanzables
+    # desde cualquier estado activo anterior para marcar directo sin pasos
+    # intermedios: la cocina toca un solo botón "Marcar listo", el mozo "Entregar".
     assert TRANSICION_ESTADO == {
-        "pendiente":      {"confirmado", "entregado"},
-        "confirmado":     {"en_preparacion", "entregado"},
+        "pendiente":      {"confirmado", "en_preparacion", "listo", "entregado"},
+        "confirmado":     {"en_preparacion", "listo", "entregado"},
         "en_preparacion": {"listo", "entregado"},
         "listo":          {"entregado"},
     }
+
+    # Nunca se puede retroceder.
+    assert "pendiente" not in TRANSICION_ESTADO["confirmado"]
+    assert "confirmado" not in TRANSICION_ESTADO["en_preparacion"]
+    assert "en_preparacion" not in TRANSICION_ESTADO["listo"]
 
 
 def test_transicion_estado_entregado_no_tiene_siguiente():

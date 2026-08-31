@@ -17,6 +17,7 @@ from app.utils.dependencies import get_current_user, get_current_user_optional
 from app.services.cocina_manager import manager
 from app.services.mesa_state import mesa_operational_state
 from app.services.mesa_sessions import mesa_sessions
+from app.repositories.mozo_llamados_repo import registrar_llamado, cerrar_llamado
 from app.services.notifications import notification_service
 from app.services.inventory_service import (
     validar_stock_batch,
@@ -34,12 +35,15 @@ router = APIRouter(
 # Cache de columnas opcionales — se verifica una sola vez por proceso
 _col_cache: dict[str, bool] = {}
 
-# Transiciones de estado permitidas. "entregado" es siempre alcanzable desde
-# cualquier estado activo para que el mozo pueda marcar directo sin pasar por
-# los estados intermedios (en_preparacion, listo).
+# Transiciones de estado permitidas a nivel del modelo. Solo avanzan (nunca
+# retroceden). "listo" y "entregado" son alcanzables desde cualquier estado
+# activo anterior. Restricciones por rol se aplican en actualizar_estado_pedido:
+#  - device_token (cocina): no puede marcar "entregado".
+#  - mozo: solo puede marcar "entregado" desde "listo" (cocina tiene que confirmar).
+#  - admin: sin restricción (atajo directo, escape hatch si cocina no responde).
 TRANSICION_ESTADO = {
-    "pendiente":      {"confirmado", "entregado"},
-    "confirmado":     {"en_preparacion", "entregado"},
+    "pendiente":      {"confirmado", "en_preparacion", "listo", "entregado"},
+    "confirmado":     {"en_preparacion", "listo", "entregado"},
     "en_preparacion": {"listo", "entregado"},
     "listo":          {"entregado"},
 }
@@ -323,6 +327,9 @@ def create_pedido(pedido: PedidoCreate):
         )
         creado = cursor.fetchone()
         mesa_operational_state.touch(mesa["id_mesa"], ocupada=True, cuenta_solicitada=False)
+        # Un pedido nuevo cancela un "pedí la cuenta" pendiente (igual que el flag
+        # cuenta_solicitada=False de arriba); cerramos también su fila de trazabilidad.
+        cerrar_llamado(mesa["id_mesa"], "cuenta")
         notificar_cocina(
             {
                 "type": "pedido_creado",
@@ -387,6 +394,9 @@ def solicitar_servicio(servicio: ServicioMesaCreate):
             cuenta_solicitada=servicio.tipo == "cuenta",
             mozo_solicitado=servicio.tipo == "mozo",
         )
+        # Trazabilidad del llamado (timing + atribución). Best-effort: si la
+        # migración 014 no está, es no-op y el flag operativo de arriba alcanza.
+        registrar_llamado(mesa["id_mesa"], servicio.tipo)
         notificar_cocina(
             {
                 "type": "servicio_mesa",
@@ -648,14 +658,28 @@ def get_pedido(
 def actualizar_estado_pedido(
     id_pedido: int,
     body: EstadoUpdate,
-    current_user: dict = Depends(get_current_user),
+    device_token: str = "",
+    current_user: Optional[dict] = Depends(get_current_user_optional),
 ):
     """
-    Avanza el estado de un pedido: pendiente → en_preparacion → listo.
-    No se permiten saltos ni retrocesos.
-    Requiere usuario admin o cocina.
+    Avanza el estado de un pedido (solo hacia adelante, sin retrocesos).
+    Auth: JWT admin/mozo, o COCINA_DEVICE_TOKEN (panel de cocina).
+    - El panel de cocina puede avanzar hasta 'listo' pero NO marcar 'entregado'
+      (entregar descuenta stock y es el hand-off físico que hace el mozo).
+    - El mozo solo puede marcar 'entregado' si cocina ya lo marcó 'listo'.
+      El admin conserva el atajo directo (escape hatch si cocina no responde).
     """
-    if current_user.get("rol") not in {"admin", "mozo"}:
+    cocina_tok = os.getenv("COCINA_DEVICE_TOKEN", "")
+    es_dispositivo = bool(cocina_tok) and device_token == cocina_tok
+    rol_actual = (current_user or {}).get("rol") if not es_dispositivo else None
+
+    if es_dispositivo:
+        if body.estado == "entregado":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="El panel de cocina no marca 'entregado'; eso lo hace el mozo",
+            )
+    elif current_user is None or rol_actual not in {"admin", "mozo"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Solo administración o mozos pueden actualizar pedidos",
@@ -702,6 +726,13 @@ def actualizar_estado_pedido(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Transición inválida desde '{estado_actual}'",
+            )
+
+        # El mozo no puede entregar un pedido que cocina todavía no marcó 'listo'.
+        if rol_actual == "mozo" and body.estado == "entregado" and estado_actual != "listo":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="El pedido tiene que estar 'listo' (cocina) antes de entregarlo",
             )
 
         campos_update = ["estado = %s"]

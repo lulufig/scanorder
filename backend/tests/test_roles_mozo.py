@@ -69,6 +69,46 @@ class TestPatchEstadoRoles:
         assert resp.status_code in {401, 403}
 
 
+class TestPatchEstadoDeviceToken:
+    """El panel de cocina (COCINA_DEVICE_TOKEN) puede avanzar el pedido hasta
+    'listo', pero nunca marcar 'entregado' (eso descuenta stock, lo hace el mozo)."""
+
+    DEVICE = "device-secret-test-abc123"
+
+    def test_device_token_puede_marcar_listo(self, client, monkeypatch):
+        monkeypatch.setenv("COCINA_DEVICE_TOKEN", self.DEVICE)
+        resp = client.patch(
+            f"/pedidos/999999/estado?device_token={self.DEVICE}",
+            json={"estado": "listo"},
+        )
+        # Pasa el check de auth; corta en 404 porque el pedido no existe.
+        assert resp.status_code != 403
+
+    def test_device_token_no_puede_marcar_entregado(self, client, monkeypatch):
+        monkeypatch.setenv("COCINA_DEVICE_TOKEN", self.DEVICE)
+        resp = client.patch(
+            f"/pedidos/999999/estado?device_token={self.DEVICE}",
+            json={"estado": "entregado"},
+        )
+        assert resp.status_code == 403
+
+    def test_device_token_invalido_rechazado(self, client, monkeypatch):
+        monkeypatch.setenv("COCINA_DEVICE_TOKEN", self.DEVICE)
+        resp = client.patch(
+            "/pedidos/999999/estado?device_token=token-incorrecto",
+            json={"estado": "listo"},
+        )
+        assert resp.status_code in {401, 403}
+
+    def test_sin_env_var_el_device_token_no_sirve(self, client, monkeypatch):
+        monkeypatch.delenv("COCINA_DEVICE_TOKEN", raising=False)
+        resp = client.patch(
+            f"/pedidos/999999/estado?device_token={self.DEVICE}",
+            json={"estado": "listo"},
+        )
+        assert resp.status_code in {401, 403}
+
+
 # ── POST /mesas/{id}/cerrar ───────────────────────────────────────────────────
 
 class TestCerrarMesaRoles:
@@ -129,6 +169,35 @@ class TestAtenderMozoRoles:
             headers={"Authorization": f"Bearer {_token('cocina')}"},
         )
         assert resp.status_code == 403
+
+
+# ── POST /mesas/{id}/tomar-llamado ───────────────────────────────────────────
+
+class TestTomarLlamadoRoles:
+    def test_mozo_pasa_check_de_rol(self, client):
+        resp = client.post(
+            "/mesas/999999/tomar-llamado",
+            headers={"Authorization": f"Bearer {_token('mozo')}"},
+        )
+        assert resp.status_code != 403
+
+    def test_admin_pasa_check_de_rol(self, client):
+        resp = client.post(
+            "/mesas/999999/tomar-llamado",
+            headers={"Authorization": f"Bearer {_token('admin')}"},
+        )
+        assert resp.status_code != 403
+
+    def test_cocina_rechazado_403(self, client):
+        resp = client.post(
+            "/mesas/999999/tomar-llamado",
+            headers={"Authorization": f"Bearer {_token('cocina')}"},
+        )
+        assert resp.status_code == 403
+
+    def test_sin_auth_rechazado(self, client):
+        resp = client.post("/mesas/999999/tomar-llamado")
+        assert resp.status_code in {401, 403}
 
 
 # ── WS /pedidos/ws/cocina ─────────────────────────────────────────────────────

@@ -12,6 +12,11 @@ from app.utils.dependencies import require_role
 from app.utils.qr import generate_qr, QR_DIR
 from app.services.mesa_sessions import mesa_sessions
 from app.services.mesa_state import mesa_operational_state
+from app.repositories.mozo_llamados_repo import (
+    snapshot_llamados_abiertos,
+    tomar_llamado,
+    cerrar_llamado,
+)
 
 router = APIRouter(
     prefix="/mesas",
@@ -310,6 +315,7 @@ def mapa_mesas(current_user: dict = Depends(require_role("mozo", "admin"))):
             for session in mesa_sessions.activity_snapshot()
         }
         estados_operativos = mesa_operational_state.snapshot()
+        llamados_abiertos = snapshot_llamados_abiertos()
 
         resultado = []
         for mesa in mesas:
@@ -337,6 +343,15 @@ def mapa_mesas(current_user: dict = Depends(require_role("mozo", "admin"))):
                 estado_operativo=estado_operativo,
             )
 
+            # Timing/atribución del llamado (migración 014). Se muestra solo si
+            # el flag operativo correspondiente sigue activo, así una fila de
+            # trazabilidad que quedó colgada nunca pinta un cronómetro fantasma.
+            hay_llamado = bool(
+                estado_operativo.get("mozo_solicitado")
+                or estado_operativo.get("cuenta_solicitada")
+            )
+            llamado = llamados_abiertos.get(int(mesa["id_mesa"])) if hay_llamado else None
+
             resultado.append({
                 "id_mesa": mesa["id_mesa"],
                 "numero": numero,
@@ -359,6 +374,8 @@ def mapa_mesas(current_user: dict = Depends(require_role("mozo", "admin"))):
                 "abandonada": abandonada,
                 "cuenta_solicitada": bool(estado_operativo.get("cuenta_solicitada")),
                 "mozo_solicitado": bool(estado_operativo.get("mozo_solicitado")),
+                "minutos_llamado": llamado["minutos"] if llamado else None,
+                "llamado_tomado_por": llamado["tomado_por_nombre"] if llamado else None,
             })
 
         return resultado
@@ -403,11 +420,27 @@ def detalle_operacion_mesa(
         campo_cobrado = "(cp.id_pedido IS NOT NULL) AS cobrado" if tiene_cierres else "FALSE AS cobrado"
         join_cierre = "LEFT JOIN cierre_pedidos cp ON cp.id_pedido = p.id_pedido" if tiene_cierres else ""
 
+        # minutos_en_estado: antigüedad del pedido DENTRO de su estado actual
+        # (no desde created_at). Alimenta el semáforo del panel — un pedido puede
+        # llevar 25 min "en preparación" aunque se haya creado hace 30. Si la
+        # migración 004 (columnas *_at) no está, degrada a minutos desde created_at.
+        if tabla_tiene_columna(cursor, "pedidos", "preparacion_at"):
+            campo_minutos_estado = """,
+                CASE p.estado
+                  WHEN 'pendiente'      THEN TIMESTAMPDIFF(MINUTE, p.created_at, NOW())
+                  WHEN 'confirmado'     THEN TIMESTAMPDIFF(MINUTE, COALESCE(p.confirmado_at, p.created_at), NOW())
+                  WHEN 'en_preparacion' THEN TIMESTAMPDIFF(MINUTE, COALESCE(p.preparacion_at, p.confirmado_at, p.created_at), NOW())
+                  WHEN 'listo'          THEN TIMESTAMPDIFF(MINUTE, COALESCE(p.listo_at, p.preparacion_at, p.confirmado_at, p.created_at), NOW())
+                  ELSE NULL
+                END AS minutos_en_estado"""
+        else:
+            campo_minutos_estado = ", TIMESTAMPDIFF(MINUTE, p.created_at, NOW()) AS minutos_en_estado"
+
         cursor.execute(
             """
             SELECT p.id_pedido, p.id_mesa, p.estado, p.total, p.created_at AS fecha,
                    TIMESTAMPDIFF(MINUTE, p.created_at, NOW()) AS minutos_espera,
-                   """ + campo_cobrado + campos_observaciones + """
+                   """ + campo_cobrado + campos_observaciones + campo_minutos_estado + """
             FROM pedidos p
             """ + join_cierre + """
             WHERE p.id_mesa = %s
@@ -449,11 +482,17 @@ def detalle_operacion_mesa(
         estado_operativo = mesa_operational_state.snapshot().get(id_mesa) or {}
         pedidos_sin_cobrar = contar_pedidos_sin_cobrar(cursor, id_mesa, inicio_ciclo)
         pedidos_sin_entregar = contar_pedidos_sin_entregar(cursor, id_mesa, inicio_ciclo)
+        hay_llamado = bool(
+            estado_operativo.get("mozo_solicitado")
+            or estado_operativo.get("cuenta_solicitada")
+        )
+        llamado = snapshot_llamados_abiertos().get(id_mesa) if hay_llamado else None
         return {
             "mesa": mesa,
             "pedidos": pedidos,
             "cuenta_solicitada": bool(estado_operativo.get("cuenta_solicitada")),
             "mozo_solicitado": bool(estado_operativo.get("mozo_solicitado")),
+            "llamado": llamado,
             "ocupada": bool(estado_operativo.get("ocupada")),
             # "Cobrada" = no queda ningún pedido del ciclo actual sin vincular a
             # un cierre. Independiente de si esos pedidos ya se entregaron.
@@ -740,6 +779,7 @@ def cerrar_mesa(
         # ocupación del salón depende de si se cobró, no de si cocina terminó.
         mesa_sessions.force_release(int(mesa["numero"]))
         mesa_operational_state.release(id_mesa)
+        cerrar_llamado(id_mesa, id_usuario=id_usuario)
 
         return {
             "id_cierre": id_cierre,
@@ -798,6 +838,7 @@ def liberar_mesa(
         close_db_connection(connection)
     mesa_operational_state.release(id_mesa)
     mesa_sessions.force_release(numero)
+    cerrar_llamado(id_mesa, id_usuario=current_user.get("user_id"))
     return {"message": "Mesa liberada", "id_mesa": id_mesa}
 
 
@@ -822,7 +863,39 @@ def atender_solicitud_mozo(
         cursor.close()
         close_db_connection(connection)
     mesa_operational_state.clear_service(id_mesa, "mozo")
+    cerrar_llamado(id_mesa, "mozo", current_user.get("user_id"))
     return {"message": "Solicitud de mozo atendida", "id_mesa": id_mesa}
+
+
+@router.post("/{id_mesa}/tomar-llamado")
+def tomar_llamado_mesa(
+    id_mesa: int,
+    current_user: dict = Depends(require_role("mozo", "admin"))
+):
+    """Un mozo se hace cargo del llamado abierto de una mesa ("voy yo").
+    El resto de los paneles lo ve reflejado y no manda a otro mozo a la misma mesa.
+    """
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos"
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT id_mesa FROM mesas WHERE id_mesa = %s", (id_mesa,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+    tomado = tomar_llamado(id_mesa, current_user.get("user_id"))
+    if not tomado:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta mesa no tiene un llamado abierto (o la migración 014 no está aplicada)"
+        )
+    return {"message": "Llamado tomado", "id_mesa": id_mesa}
 
 
 @router.get("/{id_mesa}/qr")
