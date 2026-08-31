@@ -20,6 +20,12 @@
       document.getElementById("fecha-fin").value = hoy;
       const fechaResumen = document.getElementById("fecha-resumen");
       if (fechaResumen) fechaResumen.value = hoy;
+      const mozoInicio = document.getElementById("mozo-fecha-inicio");
+      if (mozoInicio) {
+        const d = new Date();
+        mozoInicio.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+        document.getElementById("mozo-fecha-fin").value = hoy;
+      }
     }
 
     if (tieneDashboard) {
@@ -865,6 +871,115 @@
         botones.forEach(boton => boton.disabled = false);
         document.getElementById("btn-resumen-excel").innerHTML = '<i data-lucide="file-spreadsheet"></i> Excel';
         document.getElementById("btn-resumen-pdf").innerHTML = '<i data-lucide="file-text"></i> PDF';
+        if (window.lucide) lucide.createIcons();
+      }
+    }
+
+    // ── REPORTE POR MOZO ───────────────────────────────────────
+    function _rangoMozos() {
+      const inicio = document.getElementById("mozo-fecha-inicio")?.value;
+      const fin    = document.getElementById("mozo-fecha-fin")?.value;
+      if (!inicio || !fin) {
+        mostrarToast("Elegí ambas fechas.", "error");
+        return null;
+      }
+      if (inicio > fin) {
+        mostrarToast("La fecha 'Desde' no puede ser mayor a 'Hasta'.", "error");
+        return null;
+      }
+      return { inicio, fin };
+    }
+
+    async function verReporteMozos() {
+      const r = _rangoMozos();
+      if (!r) return;
+      const btn = document.getElementById("btn-mozos-ver");
+      const wrap = document.getElementById("mozos-tabla-wrap");
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Cargando...';
+      try {
+        const data = await fetchAPI(`/reportes/mozos?fecha_inicio=${r.inicio}&fecha_fin=${r.fin}`);
+        renderTablaMozos(data);
+        wrap.hidden = false;
+      } catch (error) {
+        mostrarToast("No se pudo cargar el reporte: " + error.message, "error");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="eye"></i> Ver';
+        if (window.lucide) lucide.createIcons();
+      }
+    }
+
+    function renderTablaMozos(data) {
+      const wrap = document.getElementById("mozos-tabla-wrap");
+      const filas = Array.isArray(data.mozos) ? data.mozos : [];
+      const t = data.totales || {};
+
+      if (!filas.length) {
+        wrap.innerHTML = `<p class="reporte-note">Sin actividad en el período seleccionado.</p>`;
+        return;
+      }
+
+      const resp = m => (m.respuesta_promedio_min != null ? `${m.respuesta_promedio_min}′` : "—");
+      wrap.innerHTML = `
+        <div class="mozos-tabla-scroll">
+          <table class="mozos-tabla">
+            <thead>
+              <tr>
+                <th>Mozo</th><th class="num">Mesas</th><th class="num">Ventas</th>
+                <th class="num">Ticket</th><th class="num">Entregados</th>
+                <th class="num">Llamados</th><th class="num">Resp.</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filas.map(m => `
+                <tr>
+                  <td>${escapeHtml(m.nombre)}${m.rol === "admin" ? ' <span class="mozo-tag">admin</span>' : ""}${m.activo ? "" : ' <span class="mozo-tag inactivo">inactivo</span>'}</td>
+                  <td class="num">${m.mesas_cerradas}</td>
+                  <td class="num">${formatPrecio(m.ventas_cobradas)}</td>
+                  <td class="num">${m.mesas_cerradas ? formatPrecio(m.ticket_promedio) : "—"}</td>
+                  <td class="num">${m.pedidos_entregados}</td>
+                  <td class="num">${m.llamados_atendidos}</td>
+                  <td class="num">${resp(m)}</td>
+                </tr>`).join("")}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td>Total</td>
+                <td class="num">${t.mesas_cerradas ?? 0}</td>
+                <td class="num">${formatPrecio(t.ventas_cobradas ?? 0)}</td>
+                <td class="num">—</td>
+                <td class="num">${t.pedidos_entregados ?? 0}</td>
+                <td class="num">${t.llamados_atendidos ?? 0}</td>
+                <td class="num">—</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <p class="reporte-note">"Entregados" cuenta pedidos con descuento de stock. "Resp." = tiempo promedio entre el llamado y su atención (datos desde que se activó el registro de llamados).</p>`;
+    }
+
+    async function descargarReporteMozos(formato = "excel") {
+      const r = _rangoMozos();
+      if (!r) return;
+      const ext = formato === "pdf" ? "pdf" : "xlsx";
+      const label = formato === "pdf" ? "PDF" : "Excel";
+      const btn = document.getElementById(`btn-mozos-${formato}`);
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner"></span> ${label}...`;
+      try {
+        await downloadFile(
+          `/reportes/mozos?fecha_inicio=${r.inicio}&fecha_fin=${r.fin}&formato=${formato}`,
+          `reporte_mozos_${r.inicio}_${r.fin}.${ext}`
+        );
+        mostrarToast(`Reporte ${label} descargado.`, "success");
+      } catch (error) {
+        mostrarToast("Error al descargar: " + error.message, "error");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = formato === "pdf"
+          ? '<i data-lucide="file-text"></i> PDF'
+          : '<i data-lucide="file-spreadsheet"></i> Excel';
         if (window.lucide) lucide.createIcons();
       }
     }

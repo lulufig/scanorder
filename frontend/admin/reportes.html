@@ -155,6 +155,43 @@
               </div>
             </div>
           </div>
+
+          <div class="reporte-card">
+            <div class="reporte-card-header">
+              <div class="reporte-icon"><i data-lucide="user-check"></i></div>
+              <div>
+                <div class="reporte-titulo">Reporte por mozo</div>
+                <div class="reporte-desc">Mesas cerradas, ventas cobradas, pedidos entregados y respuesta a llamados</div>
+              </div>
+            </div>
+            <div class="reporte-card-body">
+              <div class="fechas-row">
+                <div class="form-group">
+                  <label class="form-label" for="mozo-fecha-inicio">Desde</label>
+                  <input class="form-input" type="date" id="mozo-fecha-inicio" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="mozo-fecha-fin">Hasta</label>
+                  <input class="form-input" type="date" id="mozo-fecha-fin" />
+                </div>
+              </div>
+              <div class="reporte-actions reporte-actions-3">
+                <button class="btn-generar" id="btn-mozos-ver" onclick="verReporteMozos()">
+                  <i data-lucide="eye"></i>
+                  Ver
+                </button>
+                <button class="btn-generar btn-generar-outline" id="btn-mozos-excel" onclick="descargarReporteMozos('excel')">
+                  <i data-lucide="file-spreadsheet"></i>
+                  Excel
+                </button>
+                <button class="btn-generar btn-generar-outline" id="btn-mozos-pdf" onclick="descargarReporteMozos('pdf')">
+                  <i data-lucide="file-text"></i>
+                  PDF
+                </button>
+              </div>
+              <div class="mozos-tabla-wrap" id="mozos-tabla-wrap" hidden></div>
+            </div>
+          </div>
         </div>
       </div>
     </section>

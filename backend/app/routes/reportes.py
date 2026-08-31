@@ -234,9 +234,14 @@ def pedidos_tiene_columna(cursor, columna: str) -> bool:
 
 def cierres_mesa_existe(cursor) -> bool:
     """Indica si la tabla cierres_mesa ya fue migrada. Resultado cacheado por proceso."""
-    key = "table.cierres_mesa"
+    return _tabla_existe(cursor, "cierres_mesa")
+
+
+def _tabla_existe(cursor, tabla: str) -> bool:
+    """¿Existe la tabla? Cacheado por proceso. Solo nombres literales del código."""
+    key = f"table.{tabla}"
     if key not in _col_cache:
-        cursor.execute("SHOW TABLES LIKE 'cierres_mesa'")
+        cursor.execute("SHOW TABLES LIKE %s", (tabla,))
         _col_cache[key] = cursor.fetchone() is not None
     return _col_cache[key]
 
@@ -896,6 +901,172 @@ def ventas_ultima_semana(current_user: dict = Depends(require_role("admin"))):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener ventas de la semana: {str(e)}"
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
+@router.get("/mozos")
+def reporte_por_mozo(
+    fecha_inicio: date = Query(..., description="Fecha de inicio (YYYY-MM-DD)"),
+    fecha_fin: date = Query(..., description="Fecha de fin (YYYY-MM-DD)"),
+    formato: str = Query("json", pattern="^(json|excel|pdf)$"),
+    current_user: dict = Depends(require_role("admin")),
+):
+    """
+    Rendimiento por mozo/usuario en un rango de fechas. Agrega datos que ya se
+    guardan, sin auditoría nueva:
+      - mesas cerradas + ventas cobradas + ticket promedio  → cierres_mesa.id_usuario_cierre
+      - pedidos entregados                                  → movimientos_stock (tipo 'salida').created_by
+      - llamados atendidos + tiempo promedio de respuesta   → mozo_llamados.atendido_por
+    `formato=json` (default) devuelve la tabla; `excel`/`pdf` la descargan.
+    """
+    if fecha_inicio > fecha_fin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La fecha de inicio no puede ser mayor a la fecha fin",
+        )
+
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos",
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("SELECT id_usuario, nombre, rol, activo FROM usuarios")
+        usuarios = {int(u["id_usuario"]): u for u in cursor.fetchall()}
+
+        cierres = {}
+        if _tabla_existe(cursor, "cierres_mesa"):
+            cursor.execute(
+                """
+                SELECT id_usuario_cierre AS id_usuario,
+                       COUNT(*) AS mesas_cerradas,
+                       COALESCE(SUM(total_consumido), 0) AS ventas_cobradas
+                FROM cierres_mesa
+                WHERE id_usuario_cierre IS NOT NULL
+                  AND DATE(created_at) BETWEEN %s AND %s
+                GROUP BY id_usuario_cierre
+                """,
+                (fecha_inicio, fecha_fin),
+            )
+            cierres = {int(r["id_usuario"]): r for r in cursor.fetchall()}
+
+        entregas = {}
+        if _tabla_existe(cursor, "movimientos_stock"):
+            cursor.execute(
+                """
+                SELECT created_by AS id_usuario,
+                       COUNT(DISTINCT id_pedido) AS pedidos_entregados
+                FROM movimientos_stock
+                WHERE tipo = 'salida'
+                  AND id_pedido IS NOT NULL
+                  AND DATE(created_at) BETWEEN %s AND %s
+                GROUP BY created_by
+                """,
+                (fecha_inicio, fecha_fin),
+            )
+            entregas = {int(r["id_usuario"]): r for r in cursor.fetchall()}
+
+        llamados = {}
+        if _tabla_existe(cursor, "mozo_llamados"):
+            cursor.execute(
+                """
+                SELECT atendido_por AS id_usuario,
+                       COUNT(*) AS llamados_atendidos,
+                       AVG(TIMESTAMPDIFF(SECOND, solicitado_at, atendido_at)) AS resp_seg
+                FROM mozo_llamados
+                WHERE atendido_por IS NOT NULL
+                  AND atendido_at IS NOT NULL
+                  AND DATE(solicitado_at) BETWEEN %s AND %s
+                GROUP BY atendido_por
+                """,
+                (fecha_inicio, fecha_fin),
+            )
+            llamados = {int(r["id_usuario"]): r for r in cursor.fetchall()}
+
+        # Si en todo el período no hubo ninguna actividad, no listamos el roster
+        # entero en cero (se leería como "no hay datos"). Devolvemos lista vacía.
+        hay_actividad = bool(cierres or entregas or llamados)
+        roster = usuarios if hay_actividad else {}
+
+        filas = []
+        for id_usuario, u in roster.items():
+            c = cierres.get(id_usuario)
+            e = entregas.get(id_usuario)
+            ll = llamados.get(id_usuario)
+            tiene_actividad = bool(c or e or ll)
+            if not u["activo"] and not tiene_actividad:
+                continue
+
+            mesas_cerradas = int(c["mesas_cerradas"]) if c else 0
+            ventas = float(c["ventas_cobradas"]) if c else 0.0
+            resp_seg = ll["resp_seg"] if ll and ll["resp_seg"] is not None else None
+            filas.append({
+                "id_usuario": id_usuario,
+                "nombre": u["nombre"],
+                "rol": u["rol"],
+                "activo": bool(u["activo"]),
+                "mesas_cerradas": mesas_cerradas,
+                "ventas_cobradas": round(ventas, 2),
+                "ticket_promedio": round(ventas / mesas_cerradas, 2) if mesas_cerradas else 0.0,
+                "pedidos_entregados": int(e["pedidos_entregados"]) if e else 0,
+                "llamados_atendidos": int(ll["llamados_atendidos"]) if ll else 0,
+                "respuesta_promedio_min": round(resp_seg / 60, 1) if resp_seg is not None else None,
+            })
+
+        filas.sort(key=lambda f: (-f["ventas_cobradas"], f["nombre"].lower()))
+
+        totales = {
+            "mesas_cerradas": sum(f["mesas_cerradas"] for f in filas),
+            "ventas_cobradas": round(sum(f["ventas_cobradas"] for f in filas), 2),
+            "pedidos_entregados": sum(f["pedidos_entregados"] for f in filas),
+            "llamados_atendidos": sum(f["llamados_atendidos"] for f in filas),
+        }
+
+        if formato == "json":
+            return {
+                "fecha_inicio": fecha_inicio.isoformat(),
+                "fecha_fin": fecha_fin.isoformat(),
+                "mozos": filas,
+                "totales": totales,
+            }
+
+        title = "Maven Burger - Reporte por mozo"
+        subtitle = f"Periodo: {fecha_inicio} al {fecha_fin}"
+        sections = [{
+            "title": "RENDIMIENTO POR MOZO",
+            "headers": [
+                "Mozo", "Rol", "Mesas cerradas", "Ventas cobradas",
+                "Ticket prom.", "Pedidos entregados", "Llamados atendidos",
+                "Resp. prom. (min)",
+            ],
+            "rows": [
+                [
+                    f["nombre"], f["rol"], f["mesas_cerradas"], f["ventas_cobradas"],
+                    f["ticket_promedio"], f["pedidos_entregados"], f["llamados_atendidos"],
+                    f["respuesta_promedio_min"] if f["respuesta_promedio_min"] is not None else "-",
+                ]
+                for f in filas
+            ] or [["Sin actividad en el periodo", "", "", "", "", "", "", ""]],
+            "money_cols": (4, 5),
+        }]
+
+        filename = f"reporte_mozos_{fecha_inicio}_{fecha_fin}.{'pdf' if formato == 'pdf' else 'xlsx'}"
+        if formato == "pdf":
+            return _pdf_response(title, subtitle, sections, filename)
+        return _excel_response(_build_excel_report(title, subtitle, sections), filename)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al generar reporte por mozo: {str(e)}",
         )
     finally:
         cursor.close()

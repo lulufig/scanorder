@@ -286,6 +286,13 @@ Los reportes de descarga ya **no son CSV**: se generan como `.xlsx` (openpyxl) o
 
 **`GET /reportes/resumen-hoy?fecha=YYYY-MM-DD&formato=`** — resumen operativo de un día (por defecto hoy). Secciones: Resumen (ventas, pedidos, ticket, mesa top, producto top), Cobros por método de pago (solo si `cierres_mesa` existe), Pedidos por estado, Productos más vendidos, Ventas por hora (serie 0-23h). La función es `resumen_hoy_excel` (nombre histórico; también hace PDF). Cubierto por `TestResumenHoyExport` en `test_reportes_dashboard.py`.
 
+**`GET /reportes/mozos?fecha_inicio=&fecha_fin=&formato=json|excel|pdf`** (default `json`) — rendimiento por mozo/usuario en un rango. **Aditivo**: agrega tres fuentes que ya se guardan, sin auditoría nueva (`pedidos.id_usuario` siempre es NULL, no hay registro de quién marca cada estado):
+- **mesas cerradas + ventas cobradas + ticket promedio** ← `cierres_mesa` GROUP BY `id_usuario_cierre`.
+- **pedidos entregados** ← `movimientos_stock` (`tipo='salida'`).`created_by`, `COUNT(DISTINCT id_pedido)` (proxy — exacto salvo pedidos 100% sin control de stock).
+- **llamados atendidos + tiempo promedio de respuesta** ← `mozo_llamados` GROUP BY `atendido_por`, `AVG(TIMESTAMPDIFF(SECOND, solicitado_at, atendido_at))`. Datos desde que se aplicó la migración 014.
+
+Cada fuente está guardada tras `_tabla_existe()` (degrada a 0 si falta la tabla). Incluye al **admin** con su rol si tiene cierres/entregas. El roster son los usuarios `activo=TRUE` + cualquier usuario (aunque esté de baja) con actividad en el período; si **nadie** tuvo actividad, `mozos: []`. `formato=json` → `{fecha_inicio, fecha_fin, mozos:[...], totales:{...}}`; `excel`/`pdf` → archivo. Frontend: card "Reporte por mozo" en `reportes.html` (`verReporteMozos()` tabla inline + `descargarReporteMozos()`), rango default = mes en curso. Cubierto por `test_reportes_mozos.py` (integración, DB descartable).
+
 ### Dashboard (`GET /reportes/dashboard`)
 
 Devuelve JSON con métricas del día en curso. Campos:
