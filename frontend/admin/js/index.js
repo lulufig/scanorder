@@ -35,6 +35,7 @@
       currency: "ARS",
       maximumFractionDigits: 0,
     });
+    const META_VENTAS_DIARIA = 120000;
     let ventasChartData = [];
 
     async function cargarDashboard() {
@@ -88,6 +89,7 @@
 
         renderDonutCobros(data.cobros_hoy);
         renderDonutEstados(data.estado_pedidos_hoy);
+        actualizarMetaVentasDiaria(data.ventas_hoy);
       } catch (error) {
         mostrarToast("No se pudieron cargar las métricas: " + error.message, "error");
       }
@@ -149,6 +151,66 @@
 
     function formatPrecio(valor) {
       return formatterPrecio.format(Number(valor) || 0);
+    }
+
+    function formatFechaLocalISO(date) {
+      const anio = date.getFullYear();
+      const mes = String(date.getMonth() + 1).padStart(2, "0");
+      const dia = String(date.getDate()).padStart(2, "0");
+      return `${anio}-${mes}-${dia}`;
+    }
+
+    function sumarDiasISO(fechaIso, dias) {
+      const date = parseFechaLocal(fechaIso);
+      date.setDate(date.getDate() + dias);
+      return formatFechaLocalISO(date);
+    }
+
+    function obtenerVentasPorFecha(fechaIso) {
+      const item = ventasSemanaData.find(dia => dia.fecha === fechaIso);
+      return Number(item?.ventas) || 0;
+    }
+
+    function actualizarMetaVentasDiaria(ventasHoyFallback = 0) {
+      const ventasHoyEl = document.getElementById("daily-sales-current");
+      const deltaEl = document.getElementById("daily-sales-delta");
+      const goalLabelEl = document.getElementById("daily-goal-label");
+      const goalBarEl = document.getElementById("daily-goal-bar");
+      const goalPercentEl = document.getElementById("daily-goal-percent");
+      const goalRemainingEl = document.getElementById("daily-goal-remaining");
+      if (!ventasHoyEl || !deltaEl || !goalLabelEl || !goalBarEl || !goalPercentEl || !goalRemainingEl) return;
+
+      const hoyIso = formatFechaLocalISO(new Date());
+      const ayerIso = sumarDiasISO(hoyIso, -1);
+      const ventasHoySemana = obtenerVentasPorFecha(hoyIso);
+      const ventasAyer = obtenerVentasPorFecha(ayerIso);
+      const ventasHoy = ventasHoySemana || Number(ventasHoyFallback) || 0;
+      const progreso = META_VENTAS_DIARIA > 0 ? Math.min((ventasHoy / META_VENTAS_DIARIA) * 100, 100) : 0;
+      const restante = Math.max(META_VENTAS_DIARIA - ventasHoy, 0);
+
+      ventasHoyEl.textContent = formatPrecio(ventasHoy);
+      goalLabelEl.textContent = formatPrecio(META_VENTAS_DIARIA);
+      goalBarEl.style.width = `${progreso.toFixed(0)}%`;
+      goalPercentEl.textContent = `${progreso.toFixed(0)}% alcanzado`;
+      goalRemainingEl.textContent = restante > 0 ? `${formatPrecio(restante)} restante` : "Meta alcanzada";
+
+      deltaEl.classList.remove("is-up", "is-down", "is-neutral");
+      if (ventasAyer > 0) {
+        const variacion = ((ventasHoy - ventasAyer) / ventasAyer) * 100;
+        const signo = variacion >= 0 ? "+" : "";
+        deltaEl.textContent = `${signo}${variacion.toFixed(0)}% vs ayer`;
+        deltaEl.classList.add(variacion >= 0 ? "is-up" : "is-down");
+        renderComparativa("compare-ventas-hoy", ventasHoy, ventasAyer);
+        return;
+      }
+
+      deltaEl.textContent = ventasHoy > 0 ? "Sin ventas ayer" : "Sin ventas registradas";
+      deltaEl.classList.add("is-neutral");
+      const compareVentas = document.getElementById("compare-ventas-hoy");
+      if (compareVentas) {
+        compareVentas.style.display = "none";
+        compareVentas.textContent = "";
+      }
     }
 
     async function cargarAlertaStock() {
@@ -511,6 +573,7 @@
         document.getElementById("semana-total").textContent = formatPrecio(data.total_ventas || 0);
         document.getElementById("semana-orders").textContent =
           `${Number(data.total_pedidos || 0)} pedidos confirmados`;
+        actualizarMetaVentasDiaria();
         renderGraficoSemana();
       } catch (error) {
         document.getElementById("semana-empty").textContent = "No se pudo cargar la tendencia semanal.";
