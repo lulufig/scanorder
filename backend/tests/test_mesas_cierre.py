@@ -25,6 +25,8 @@ TEST_DB_NAME = "scanorder_test_cierre"
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATABASE_SQL_PATH = os.path.join(BACKEND_DIR, "..", "docs", "database.sql")
 INVENTORY_MIGRATION_PATH = os.path.join(BACKEND_DIR, "migrations", "010_inventory.sql")
+PROPINA_MIGRATION_PATH = os.path.join(BACKEND_DIR, "migrations", "015_propina.sql")
+ASIGNADO_MIGRATION_PATH = os.path.join(BACKEND_DIR, "migrations", "016_mesa_mozo_asignado.sql")
 
 
 def _mysql_disponible() -> bool:
@@ -85,6 +87,12 @@ def schema(monkeypatch_module_env):
     # (migración 010) y no está incluido ahí. Se aplica acá para poder probar
     # que cobrar una mesa no descuenta stock (eso solo pasa al entregar).
     for stmt in _parse_statements(INVENTORY_MIGRATION_PATH):
+        cur.execute(stmt)
+    # migración 015: columna propina en cierres_mesa (posterior a database.sql).
+    for stmt in _parse_statements(PROPINA_MIGRATION_PATH):
+        cur.execute(stmt)
+    # migración 016: columna mesas.id_mozo_asignado.
+    for stmt in _parse_statements(ASIGNADO_MIGRATION_PATH):
         cur.execute(stmt)
     conn.commit()
     conn.close()
@@ -638,3 +646,130 @@ class TestMozoNoEntregaSinListo:
         )
         resp = self._patch(client, admin_token, id_pedido, "entregado")
         assert resp.status_code == 200
+
+
+# ── POST /mesas/{id}/cerrar — propina (migración 015) ────────────────────────
+# La propina es un eje INDEPENDIENTE: el cliente paga la cuenta y deja la
+# propina aparte. No entra en monto_cobrado ni afecta el vuelto.
+
+def _cierre_de_mesa(db_conn, id_mesa):
+    cur = db_conn.cursor(dictionary=True)
+    cur.execute(
+        "SELECT total_consumido, monto_cobrado, vuelto, propina "
+        "FROM cierres_mesa WHERE id_mesa = %s ORDER BY id_cierre DESC LIMIT 1",
+        (id_mesa,),
+    )
+    return cur.fetchone()
+
+
+class TestCierrePropina:
+    def test_propina_no_afecta_el_vuelto(self, db_conn, client, admin_token):
+        _seed_admin_usuario(db_conn)
+        id_mesa, _, _ = _seed_mesa_con_pedidos(db_conn, [450.00])
+        resp = client.post(
+            f"/mesas/{id_mesa}/cerrar",
+            json={"metodo_pago": "efectivo", "monto_cobrado": 500.0, "propina": 80.0},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["propina"] == 80.0
+        assert body["vuelto"] == 50.0  # 500 - 450, la propina no descuenta
+        db_conn.commit()
+        fila = _cierre_de_mesa(db_conn, id_mesa)
+        assert float(fila["propina"]) == 80.0
+        assert float(fila["vuelto"]) == 50.0
+
+    def test_tarjeta_paga_el_total_y_propina_aparte(self, db_conn, client, admin_token):
+        _seed_admin_usuario(db_conn)
+        id_mesa, _, _ = _seed_mesa_con_pedidos(db_conn, [1000.00])
+        resp = client.post(
+            f"/mesas/{id_mesa}/cerrar",
+            json={"metodo_pago": "tarjeta", "monto_cobrado": 1000.0, "propina": 150.0},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["propina"] == 150.0
+        assert resp.json()["vuelto"] == 0.0
+
+    def test_propina_puede_ser_cualquier_monto_positivo(self, db_conn, client, admin_token):
+        _seed_admin_usuario(db_conn)
+        id_mesa, _, _ = _seed_mesa_con_pedidos(db_conn, [500.00])
+        # propina mayor que "lo recibido por encima del total" → ya no es error
+        resp = client.post(
+            f"/mesas/{id_mesa}/cerrar",
+            json={"metodo_pago": "efectivo", "monto_cobrado": 500.0, "propina": 300.0},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["propina"] == 300.0
+        assert resp.json()["vuelto"] == 0.0
+
+    def test_sin_propina_default_cero(self, db_conn, client, admin_token):
+        _seed_admin_usuario(db_conn)
+        id_mesa, _, _ = _seed_mesa_con_pedidos(db_conn, [300.00])
+        resp = client.post(
+            f"/mesas/{id_mesa}/cerrar",
+            json={"metodo_pago": "efectivo", "monto_cobrado": 300.0},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["propina"] == 0.0
+        db_conn.commit()
+        assert float(_cierre_de_mesa(db_conn, id_mesa)["propina"]) == 0.0
+
+    def test_propina_negativa_da_400(self, db_conn, client, admin_token):
+        _seed_admin_usuario(db_conn)
+        id_mesa, _, _ = _seed_mesa_con_pedidos(db_conn, [500.00])
+        resp = client.post(
+            f"/mesas/{id_mesa}/cerrar",
+            json={"metodo_pago": "efectivo", "monto_cobrado": 600.0, "propina": -10.0},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 400
+
+
+class TestAsignacionSeLimpiaAlCerrar:
+    """mesas.id_mozo_asignado (migración 016) es por ciclo: cobrar o liberar
+    la mesa lo deja en NULL."""
+
+    def _asignado(self, db_conn, id_mesa):
+        cur = db_conn.cursor()
+        cur.execute("SELECT id_mozo_asignado FROM mesas WHERE id_mesa = %s", (id_mesa,))
+        return cur.fetchone()[0]
+
+    def test_cobrar_limpia_la_asignacion(self, db_conn, client, admin_token):
+        _seed_admin_usuario(db_conn)
+        id_mesa, _, _ = _seed_mesa_con_pedidos(db_conn, [500.00])
+        db_conn.cursor().execute(
+            "UPDATE mesas SET id_mozo_asignado = 1 WHERE id_mesa = %s", (id_mesa,)
+        )
+        db_conn.commit()
+
+        resp = client.post(
+            f"/mesas/{id_mesa}/cerrar",
+            json={"metodo_pago": "efectivo", "monto_cobrado": 500.0},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        db_conn.commit()
+        assert self._asignado(db_conn, id_mesa) is None
+
+    def test_liberar_limpia_la_asignacion(self, db_conn, client, admin_token):
+        _seed_admin_usuario(db_conn)
+        # Mesa sin pedidos sin cobrar → liberar directo.
+        id_mesa, _, ids = _seed_mesa_con_pedidos(db_conn, [100.00])
+        cur = db_conn.cursor()
+        cur.execute("INSERT INTO cierres_mesa (id_mesa, numero_mesa, metodo_pago, total_consumido, monto_cobrado, vuelto, id_usuario_cierre) VALUES (%s, 0, 'efectivo', 100, 100, 0, 1)", (id_mesa,))
+        id_cierre = cur.lastrowid
+        cur.execute("INSERT INTO cierre_pedidos (id_cierre, id_pedido, total_pedido) VALUES (%s, %s, 100)", (id_cierre, ids[0]))
+        cur.execute("UPDATE mesas SET id_mozo_asignado = 1 WHERE id_mesa = %s", (id_mesa,))
+        db_conn.commit()
+
+        resp = client.post(
+            f"/mesas/{id_mesa}/liberar",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 200
+        db_conn.commit()
+        assert self._asignado(db_conn, id_mesa) is None

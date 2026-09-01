@@ -35,7 +35,7 @@ def mesa_tiene_columna(cursor, columna: str) -> bool:
 
 
 def tabla_tiene_columna(cursor, tabla: str, columna: str) -> bool:
-    tablas_permitidas = {"mesas", "pedidos", "productos", "categorias", "detalle_pedidos"}
+    tablas_permitidas = {"mesas", "pedidos", "productos", "categorias", "detalle_pedidos", "cierres_mesa"}
     if tabla not in tablas_permitidas:
         raise ValueError("Tabla no permitida")
     key = f"{tabla}.{columna}"
@@ -266,6 +266,16 @@ def mapa_mesas(current_user: dict = Depends(require_role("mozo", "admin"))):
     try:
         cursor = connection.cursor(dictionary=True)
         filtro_activa = "WHERE m.activa = TRUE" if mesa_tiene_columna(cursor, "activa") else ""
+        tiene_asignacion = mesa_tiene_columna(cursor, "id_mozo_asignado")
+        campo_asignado = (
+            ", m.id_mozo_asignado, ua.nombre AS mozo_asignado_nombre"
+            if tiene_asignacion
+            else ", NULL AS id_mozo_asignado, NULL AS mozo_asignado_nombre"
+        )
+        join_asignado = (
+            "LEFT JOIN usuarios ua ON ua.id_usuario = m.id_mozo_asignado"
+            if tiene_asignacion else ""
+        )
         cursor.execute(
             f"""
             SELECT
@@ -281,7 +291,9 @@ def mapa_mesas(current_user: dict = Depends(require_role("mozo", "admin"))):
               COALESCE(activos.listos, 0) AS listos,
               COALESCE(hoy.pedidos_hoy, 0) AS pedidos_hoy,
               COALESCE(hoy.total_hoy, 0) AS total_hoy
+              {campo_asignado}
             FROM mesas m
+            {join_asignado}
             LEFT JOIN (
               SELECT
                 id_mesa,
@@ -376,6 +388,8 @@ def mapa_mesas(current_user: dict = Depends(require_role("mozo", "admin"))):
                 "mozo_solicitado": bool(estado_operativo.get("mozo_solicitado")),
                 "minutos_llamado": llamado["minutos"] if llamado else None,
                 "llamado_tomado_por": llamado["tomado_por_nombre"] if llamado else None,
+                "mozo_asignado_id": mesa.get("id_mozo_asignado"),
+                "mozo_asignado_nombre": mesa.get("mozo_asignado_nombre"),
             })
 
         return resultado
@@ -405,10 +419,20 @@ def detalle_operacion_mesa(
 
     try:
         cursor = connection.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT id_mesa, numero, qr_url FROM mesas WHERE id_mesa = %s",
-            (id_mesa,)
-        )
+        if mesa_tiene_columna(cursor, "id_mozo_asignado"):
+            cursor.execute(
+                "SELECT m.id_mesa, m.numero, m.qr_url, m.id_mozo_asignado, "
+                "u.nombre AS mozo_asignado_nombre "
+                "FROM mesas m LEFT JOIN usuarios u ON u.id_usuario = m.id_mozo_asignado "
+                "WHERE m.id_mesa = %s",
+                (id_mesa,)
+            )
+        else:
+            cursor.execute(
+                "SELECT id_mesa, numero, qr_url, NULL AS id_mozo_asignado, "
+                "NULL AS mozo_asignado_nombre FROM mesas WHERE id_mesa = %s",
+                (id_mesa,)
+            )
         mesa = cursor.fetchone()
         if not mesa:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
@@ -487,12 +511,17 @@ def detalle_operacion_mesa(
             or estado_operativo.get("cuenta_solicitada")
         )
         llamado = snapshot_llamados_abiertos().get(id_mesa) if hay_llamado else None
+        mozo_asignado = (
+            {"id": mesa["id_mozo_asignado"], "nombre": mesa.get("mozo_asignado_nombre")}
+            if mesa.get("id_mozo_asignado") else None
+        )
         return {
             "mesa": mesa,
             "pedidos": pedidos,
             "cuenta_solicitada": bool(estado_operativo.get("cuenta_solicitada")),
             "mozo_solicitado": bool(estado_operativo.get("mozo_solicitado")),
             "llamado": llamado,
+            "mozo_asignado": mozo_asignado,
             "ocupada": bool(estado_operativo.get("ocupada")),
             # "Cobrada" = no queda ningún pedido del ciclo actual sin vincular a
             # un cierre. Independiente de si esos pedidos ya se entregaron.
@@ -719,8 +748,13 @@ def cerrar_mesa(
             p["estado"] not in ("listo", "entregado") for p in pedidos
         )
 
-        total_consumido = sum(float(p["total"] or 0) for p in pedidos)
-        monto_cobrado = float(body.monto_cobrado)
+        total_consumido = round(sum(float(p["total"] or 0) for p in pedidos), 2)
+        monto_cobrado = round(float(body.monto_cobrado), 2)
+        # La propina es un eje INDEPENDIENTE de la cuenta: el cliente paga el
+        # total y deja la propina aparte (efectivo sobre la mesa). No entra en
+        # monto_cobrado ni afecta el vuelto — solo se registra para "Mi caja"
+        # y el reporte por mozo.
+        propina = round(float(getattr(body, "propina", 0) or 0), 2)
         if monto_cobrado < total_consumido:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -729,26 +763,43 @@ def cerrar_mesa(
                     f"(${total_consumido:.2f})"
                 )
             )
-        vuelto = max(0.0, round(monto_cobrado - total_consumido, 2))
-        id_usuario = current_user.get("user_id")
-
-        cursor.execute(
-            """
-            INSERT INTO cierres_mesa
-                (id_mesa, metodo_pago, total_consumido,
-                 monto_cobrado, vuelto, id_usuario_cierre, observaciones)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                id_mesa,
-                body.metodo_pago,
-                total_consumido,
-                monto_cobrado,
-                vuelto,
-                id_usuario,
-                body.observaciones or None,
+        if propina < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La propina no puede ser negativa",
             )
-        )
+        vuelto = round(max(0.0, monto_cobrado - total_consumido), 2)
+        id_usuario = current_user.get("user_id")
+        tiene_propina = tabla_tiene_columna(cursor, "cierres_mesa", "propina")
+
+        if tiene_propina:
+            cursor.execute(
+                """
+                INSERT INTO cierres_mesa
+                    (id_mesa, metodo_pago, total_consumido,
+                     monto_cobrado, vuelto, propina, id_usuario_cierre, observaciones)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    id_mesa, body.metodo_pago, total_consumido,
+                    monto_cobrado, vuelto, propina, id_usuario,
+                    body.observaciones or None,
+                )
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO cierres_mesa
+                    (id_mesa, metodo_pago, total_consumido,
+                     monto_cobrado, vuelto, id_usuario_cierre, observaciones)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    id_mesa, body.metodo_pago, total_consumido,
+                    monto_cobrado, vuelto, id_usuario,
+                    body.observaciones or None,
+                )
+            )
         id_cierre = cursor.lastrowid
 
         for pedido in pedidos:
@@ -764,6 +815,11 @@ def cerrar_mesa(
         # Los pedidos conservan su estado real (pendiente/en_preparacion/listo)
         # hasta que el mozo los entregue de verdad vía
         # PATCH /pedidos/{id}/estado, que es el único lugar que descuenta stock.
+
+        # La asignación de mozo es por ciclo: se limpia al cobrar (dentro de la
+        # misma transacción — si el cierre rollbackea, la mesa sigue asignada).
+        if mesa_tiene_columna(cursor, "id_mozo_asignado"):
+            cursor.execute("UPDATE mesas SET id_mozo_asignado = NULL WHERE id_mesa = %s", (id_mesa,))
 
         connection.commit()
 
@@ -789,6 +845,7 @@ def cerrar_mesa(
             "total_consumido": total_consumido,
             "monto_cobrado": monto_cobrado,
             "vuelto": vuelto,
+            "propina": propina,
             "pedidos_incluidos": len(pedidos),
             "created_at": str(cierre_row["created_at"]) if cierre_row and cierre_row["created_at"] else "",
             "entrega_pendiente": entrega_pendiente,
@@ -833,6 +890,9 @@ def liberar_mesa(
                 detail="La mesa tiene pedidos sin cobrar. Usá Cobrar mesa para liberarla."
             )
         numero = int(row["numero"])
+        if mesa_tiene_columna(cursor, "id_mozo_asignado"):
+            cursor.execute("UPDATE mesas SET id_mozo_asignado = NULL WHERE id_mesa = %s", (id_mesa,))
+            connection.commit()
     finally:
         cursor.close()
         close_db_connection(connection)
@@ -840,6 +900,86 @@ def liberar_mesa(
     mesa_sessions.force_release(numero)
     cerrar_llamado(id_mesa, id_usuario=current_user.get("user_id"))
     return {"message": "Mesa liberada", "id_mesa": id_mesa}
+
+
+@router.post("/{id_mesa}/asignarme")
+def asignarme_mesa(
+    id_mesa: int,
+    current_user: dict = Depends(require_role("mozo", "admin"))
+):
+    """El usuario actual se hace responsable de la mesa (aviso, no bloqueo).
+    Sobreescribe una asignación previa. Se limpia sola al cerrar/liberar la mesa."""
+    id_usuario = current_user.get("user_id")
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos"
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+        if not mesa_tiene_columna(cursor, "id_mozo_asignado"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Ejecutá la migración 016_mesa_mozo_asignado.sql"
+            )
+        cursor.execute("SELECT id_mesa FROM mesas WHERE id_mesa = %s", (id_mesa,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
+        cursor.execute(
+            "UPDATE mesas SET id_mozo_asignado = %s WHERE id_mesa = %s",
+            (id_usuario, id_mesa)
+        )
+        connection.commit()
+        return {"message": "Mesa asignada", "id_mesa": id_mesa, "id_mozo_asignado": id_usuario}
+    except HTTPException:
+        connection.rollback()
+        raise
+    except Exception as e:
+        connection.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al asignar mesa: {str(e)}"
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
+@router.post("/{id_mesa}/desasignar")
+def desasignar_mesa(
+    id_mesa: int,
+    current_user: dict = Depends(require_role("mozo", "admin"))
+):
+    """Quita la asignación de la mesa (queda sin mozo responsable)."""
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos"
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+        if not mesa_tiene_columna(cursor, "id_mozo_asignado"):
+            return {"message": "Sin asignación", "id_mesa": id_mesa}
+        cursor.execute("SELECT id_mesa FROM mesas WHERE id_mesa = %s", (id_mesa,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mesa no encontrada")
+        cursor.execute("UPDATE mesas SET id_mozo_asignado = NULL WHERE id_mesa = %s", (id_mesa,))
+        connection.commit()
+        return {"message": "Asignación quitada", "id_mesa": id_mesa}
+    except HTTPException:
+        connection.rollback()
+        raise
+    except Exception as e:
+        connection.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al desasignar mesa: {str(e)}"
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)
 
 
 @router.post("/{id_mesa}/atender-mozo")

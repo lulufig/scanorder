@@ -24,6 +24,7 @@ TEST_DB_NAME = "scanorder_test_llamados"
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATABASE_SQL_PATH = os.path.join(BACKEND_DIR, "..", "docs", "database.sql")
 MIGRATION_014_PATH = os.path.join(BACKEND_DIR, "migrations", "014_mozo_llamados.sql")
+MIGRATION_016_PATH = os.path.join(BACKEND_DIR, "migrations", "016_mesa_mozo_asignado.sql")
 
 
 def _mysql_disponible() -> bool:
@@ -95,6 +96,8 @@ def schema(module_env):
     for stmt in _parse_statements(DATABASE_SQL_PATH):
         cur.execute(stmt)
     for stmt in _parse_statements(MIGRATION_014_PATH):
+        cur.execute(stmt)
+    for stmt in _parse_statements(MIGRATION_016_PATH):
         cur.execute(stmt)
     conn.commit()
     conn.close()
@@ -301,3 +304,60 @@ class TestMapaExponeLlamado:
         )
         fila = next(m for m in resp.json() if m["id_mesa"] == id_mesa)
         assert fila["minutos_llamado"] is None
+
+
+# ── Asignación de mozo a mesa (migración 016) ────────────────────────────────
+
+class TestAsignacionMesa:
+    def _auth(self, token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_asignarme_y_mapa_muestra_el_nombre(self, db_conn, client, mozo_token):
+        _seed_usuario(db_conn, 7, "Lucía Mozo")
+        id_mesa = _seed_mesa(db_conn)
+
+        r = client.post(f"/mesas/{id_mesa}/asignarme", headers=self._auth(mozo_token))
+        assert r.status_code == 200
+        assert r.json()["id_mozo_asignado"] == 7
+
+        fila = next(
+            m for m in client.get("/mesas/mapa", headers=self._auth(mozo_token)).json()
+            if m["id_mesa"] == id_mesa
+        )
+        assert fila["mozo_asignado_id"] == 7
+        assert fila["mozo_asignado_nombre"] == "Lucía Mozo"
+
+    def test_operacion_expone_mozo_asignado(self, db_conn, client, mozo_token):
+        _seed_usuario(db_conn, 7, "Lucía Mozo")
+        id_mesa = _seed_mesa(db_conn)
+        client.post(f"/mesas/{id_mesa}/asignarme", headers=self._auth(mozo_token))
+
+        data = client.get(f"/mesas/{id_mesa}/operacion", headers=self._auth(mozo_token)).json()
+        assert data["mozo_asignado"] == {"id": 7, "nombre": "Lucía Mozo"}
+
+    def test_desasignar_limpia(self, db_conn, client, mozo_token):
+        _seed_usuario(db_conn, 7)
+        id_mesa = _seed_mesa(db_conn)
+        client.post(f"/mesas/{id_mesa}/asignarme", headers=self._auth(mozo_token))
+        client.post(f"/mesas/{id_mesa}/desasignar", headers=self._auth(mozo_token))
+
+        data = client.get(f"/mesas/{id_mesa}/operacion", headers=self._auth(mozo_token)).json()
+        assert data["mozo_asignado"] is None
+
+    def test_asignarme_sobreescribe(self, db_conn, client, mozo_token):
+        _seed_usuario(db_conn, 7, "Lucía")
+        _seed_usuario(db_conn, 8, "Juan")
+        id_mesa = _seed_mesa(db_conn)
+        from app.utils.security import create_access_token
+        juan = create_access_token({"user_id": 8, "email": "j@t.com", "rol": "mozo"})
+
+        client.post(f"/mesas/{id_mesa}/asignarme", headers=self._auth(mozo_token))  # user 7
+        client.post(f"/mesas/{id_mesa}/asignarme", headers=self._auth(juan))        # user 8
+
+        cur = db_conn.cursor()
+        cur.execute("SELECT id_mozo_asignado FROM mesas WHERE id_mesa = %s", (id_mesa,))
+        assert cur.fetchone()[0] == 8
+
+    def test_asignarme_mesa_inexistente_404(self, client, mozo_token):
+        r = client.post("/mesas/999999/asignarme", headers=self._auth(mozo_token))
+        assert r.status_code == 404

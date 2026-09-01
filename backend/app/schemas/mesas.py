@@ -42,6 +42,7 @@ class CuentaMesaResponse(BaseModel):
 class CierreMesaCreate(BaseModel):
     metodo_pago: str = "efectivo"
     monto_cobrado: float
+    propina: float = 0.0
     observaciones: Optional[str] = None
 
 
@@ -53,6 +54,7 @@ class CierreMesaResponse(BaseModel):
     total_consumido: float
     monto_cobrado: float
     vuelto: float
+    propina: float = 0.0
     pedidos_incluidos: int
     created_at: str
     entrega_pendiente: bool = False

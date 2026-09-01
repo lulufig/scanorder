@@ -246,6 +246,15 @@ def _tabla_existe(cursor, tabla: str) -> bool:
     return _col_cache[key]
 
 
+def _columna_existe(cursor, tabla: str, columna: str) -> bool:
+    """¿Existe la columna en la tabla? Cacheado. `tabla` es literal del código."""
+    key = f"{tabla}.{columna}"
+    if key not in _col_cache:
+        cursor.execute(f"SHOW COLUMNS FROM {tabla} LIKE %s", (columna,))
+        _col_cache[key] = cursor.fetchone() is not None
+    return _col_cache[key]
+
+
 def fecha_venta_sql(cursor) -> str:
     """
     Usa la fecha de confirmacion de la venta cuando existe.
@@ -942,11 +951,17 @@ def reporte_por_mozo(
 
         cierres = {}
         if _tabla_existe(cursor, "cierres_mesa"):
+            col_propina = (
+                "COALESCE(SUM(propina), 0)"
+                if _columna_existe(cursor, "cierres_mesa", "propina")
+                else "0"
+            )
             cursor.execute(
-                """
+                f"""
                 SELECT id_usuario_cierre AS id_usuario,
                        COUNT(*) AS mesas_cerradas,
-                       COALESCE(SUM(total_consumido), 0) AS ventas_cobradas
+                       COALESCE(SUM(total_consumido), 0) AS ventas_cobradas,
+                       {col_propina} AS propinas
                 FROM cierres_mesa
                 WHERE id_usuario_cierre IS NOT NULL
                   AND DATE(created_at) BETWEEN %s AND %s
@@ -1075,6 +1090,7 @@ def reporte_por_mozo(
 
             mesas_cerradas = int(c["mesas_cerradas"]) if c else 0
             ventas = float(c["ventas_cobradas"]) if c else 0.0
+            propinas = float(c["propinas"]) if c and c.get("propinas") is not None else 0.0
             resp_seg = ll["resp_seg"] if ll and ll["resp_seg"] is not None else None
             filas.append({
                 "id_usuario": id_usuario,
@@ -1084,6 +1100,7 @@ def reporte_por_mozo(
                 "mesas_cerradas": mesas_cerradas,
                 "ventas_cobradas": round(ventas, 2),
                 "ticket_promedio": round(ventas / mesas_cerradas, 2) if mesas_cerradas else 0.0,
+                "propinas": round(propinas, 2),
                 "pedidos_entregados": int(e["pedidos_entregados"]) if e else 0,
                 "llamados_atendidos": int(ll["llamados_atendidos"]) if ll else 0,
                 "respuesta_promedio_min": round(resp_seg / 60, 1) if resp_seg is not None else None,
@@ -1094,6 +1111,7 @@ def reporte_por_mozo(
         totales = {
             "mesas_cerradas": sum(f["mesas_cerradas"] for f in filas),
             "ventas_cobradas": round(sum(f["ventas_cobradas"] for f in filas), 2),
+            "propinas": round(sum(f["propinas"] for f in filas), 2),
             "pedidos_entregados": sum(f["pedidos_entregados"] for f in filas),
             "llamados_atendidos": sum(f["llamados_atendidos"] for f in filas),
         }
@@ -1186,6 +1204,101 @@ def reporte_por_mozo(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al generar reporte por mozo: {str(e)}",
+        )
+    finally:
+        cursor.close()
+        close_db_connection(connection)
+
+
+@router.get("/mi-caja")
+def mi_caja(
+    fecha: date = Query(None, description="Día a consultar (YYYY-MM-DD). Por defecto hoy."),
+    current_user: dict = Depends(require_role("mozo", "admin")),
+):
+    """
+    "Mi caja": los cobros que hizo EL usuario actual en un día (por defecto hoy).
+    Para que el mozo sepa cuánto efectivo tiene que rendir al cerrar su turno.
+    Todo sale de cierres_mesa filtrado por id_usuario_cierre = current_user.
+    """
+    dia = fecha or date.today()
+    id_usuario = current_user.get("user_id")
+
+    vacio = {
+        "fecha": dia.isoformat(),
+        "resumen": {
+            "mesas_cobradas": 0, "total_cobrado": 0.0, "propinas": 0.0,
+            "efectivo_a_rendir": 0.0, "por_metodo": {},
+        },
+        "cobros": [],
+    }
+
+    connection = get_db_connection()
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al conectar con la base de datos",
+        )
+    try:
+        cursor = connection.cursor(dictionary=True)
+        if not _tabla_existe(cursor, "cierres_mesa"):
+            return vacio
+
+        col_prop = "c.propina" if _columna_existe(cursor, "cierres_mesa", "propina") else "0 AS propina"
+        cursor.execute(
+            f"""
+            SELECT c.id_cierre, c.id_mesa, m.numero AS numero_mesa, c.metodo_pago,
+                   c.total_consumido, c.vuelto, {col_prop},
+                   DATE_FORMAT(c.created_at, '%H:%i') AS hora
+            FROM cierres_mesa c
+            LEFT JOIN mesas m ON m.id_mesa = c.id_mesa
+            WHERE c.id_usuario_cierre = %s
+              AND DATE(c.created_at) = %s
+            ORDER BY c.created_at ASC
+            """,
+            (id_usuario, dia),
+        )
+        rows = cursor.fetchall()
+
+        por_metodo, cobros = {}, []
+        total_cobrado = propinas = efectivo_a_rendir = 0.0
+        for r in rows:
+            tc = float(r["total_consumido"] or 0)
+            pr = float(r["propina"] or 0)
+            metodo = r["metodo_pago"]
+            total_cobrado += tc
+            propinas += pr
+            por_metodo[metodo] = round(por_metodo.get(metodo, 0.0) + tc, 2)
+            # La propina es aparte y es del mozo, no se rinde a la casa: acá
+            # va solo la venta cobrada en efectivo.
+            if metodo == "efectivo":
+                efectivo_a_rendir += tc
+            cobros.append({
+                "id_cierre": r["id_cierre"],
+                "numero_mesa": int(r["numero_mesa"]) if r["numero_mesa"] else None,
+                "metodo_pago": metodo,
+                "total": round(tc, 2),
+                "propina": round(pr, 2),
+                "vuelto": round(float(r["vuelto"] or 0), 2),
+                "hora": r["hora"],
+            })
+
+        return {
+            "fecha": dia.isoformat(),
+            "resumen": {
+                "mesas_cobradas": len(cobros),
+                "total_cobrado": round(total_cobrado, 2),
+                "propinas": round(propinas, 2),
+                "efectivo_a_rendir": round(efectivo_a_rendir, 2),
+                "por_metodo": por_metodo,
+            },
+            "cobros": cobros,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener mi caja: {str(e)}",
         )
     finally:
         cursor.close()
