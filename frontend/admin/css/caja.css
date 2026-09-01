@@ -1,6 +1,7 @@
 /* ============================================================
-   ScanOrder Admin — Mi caja
-   Vista del mozo: cobros del turno, efectivo a rendir, propinas.
+   ScanOrder Admin — Caja
+   Mozo: mis cobros + rendición del efectivo por mesa.
+   Admin: consolidado del día (totales por método + por mozo).
    El shell (sidebar, layout, card, form-input, toast) vive en
    admin-shell.css.
    ============================================================ */
@@ -43,6 +44,12 @@
   line-height: 1;
 }
 
+.caja-stat-sub {
+  font-size: 0.72rem;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+}
+
 .caja-stat-destacado {
   background: var(--brand-50);
   border-color: var(--color-primary);
@@ -52,33 +59,18 @@
   color: var(--color-primary);
 }
 
+.caja-stat-alerta {
+  background: var(--state-esperando-bg);
+  border-color: var(--state-esperando-border);
+}
+
+.caja-stat-alerta .caja-stat-value {
+  color: var(--state-esperando-text);
+}
+
 /* ===== Cards ===== */
 .caja-card {
   margin-bottom: 16px;
-}
-
-.caja-metodos {
-  padding: 12px 20px 16px;
-}
-
-.caja-metodo-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--color-border);
-  font-size: 0.9rem;
-  color: var(--gray-700);
-}
-
-.caja-metodo-row:last-child {
-  border-bottom: none;
-}
-
-.caja-metodo-row strong {
-  font-family: var(--font-mono);
-  color: var(--gray-900);
 }
 
 /* ===== Tabla de cobros ===== */
@@ -142,6 +134,50 @@
 .caja-metodo-tag.metodo-efectivo { background: var(--state-libre-bg); color: var(--state-libre-text); }
 .caja-metodo-tag.metodo-tarjeta,
 .caja-metodo-tag.metodo-qr        { background: var(--brand-50); color: var(--brand-700); }
+
+/* Botón de rendición y estado */
+.caja-btn-rendir,
+.caja-btn-rendido {
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.76rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.caja-btn-rendir {
+  background: var(--color-primary);
+  color: var(--gray-0);
+}
+
+.caja-btn-rendir:hover { background: var(--color-primary-hover); }
+
+.caja-btn-rendido {
+  background: var(--state-libre-bg);
+  color: var(--state-libre-text);
+  border-color: var(--state-libre-border);
+}
+
+.caja-na {
+  color: var(--gray-300);
+}
+
+.caja-tabla td.caja-pendiente {
+  color: var(--state-esperando-text);
+  font-weight: 700;
+}
+
+.mozo-tag {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--gray-100);
+  color: var(--gray-500);
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
 
 .caja-nota {
   margin-top: 12px;

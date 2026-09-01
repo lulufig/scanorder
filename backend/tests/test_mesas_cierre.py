@@ -532,6 +532,18 @@ def test_stock_no_se_descuenta_al_cobrar_solo_al_entregar_pedido_ya_cobrado(
 
 # ── GET /mesas/{id}/operacion — semáforo de antigüedad (minutos_en_estado) ────
 
+# Estos tests retroceden created_at hasta 40 min. Si falta menos de 45 min para
+# medianoche, ese instante cae en el día anterior y el endpoint lo filtra por
+# DATE(created_at) = CURDATE() — no es un bug del semáforo, es la ventana.
+from datetime import datetime as _dt
+
+_cerca_de_medianoche = pytest.mark.skipif(
+    (_dt.now().hour, _dt.now().minute) < (0, 45),
+    reason="a menos de 45 min de medianoche created_at retrocedido cae en ayer",
+)
+
+
+@_cerca_de_medianoche
 class TestOperacionMinutosEnEstado:
     """minutos_en_estado mide la antigüedad del pedido DENTRO de su estado
     actual (no desde created_at). Alimenta el semáforo verde/amarillo/rojo

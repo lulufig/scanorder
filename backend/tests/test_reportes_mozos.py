@@ -24,6 +24,7 @@ DATABASE_SQL_PATH = os.path.join(BACKEND_DIR, "..", "docs", "database.sql")
 MIG_010 = os.path.join(BACKEND_DIR, "migrations", "010_inventory.sql")
 MIG_014 = os.path.join(BACKEND_DIR, "migrations", "014_mozo_llamados.sql")
 MIG_015 = os.path.join(BACKEND_DIR, "migrations", "015_propina.sql")
+MIG_017 = os.path.join(BACKEND_DIR, "migrations", "017_cierre_rendido.sql")
 
 
 def _mysql_disponible() -> bool:
@@ -85,7 +86,7 @@ def schema(module_env):
         host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASSWORD, database=TEST_DB_NAME
     )
     cur = conn.cursor()
-    for path in (DATABASE_SQL_PATH, MIG_010, MIG_014, MIG_015):
+    for path in (DATABASE_SQL_PATH, MIG_010, MIG_014, MIG_015, MIG_017):
         for stmt in _parse_statements(path):
             cur.execute(stmt)
     conn.commit()
@@ -146,6 +147,15 @@ def reset_col_cache():
 
 
 @pytest.fixture
+def db_conn(schema):
+    conn = mysql.connector.connect(
+        host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASSWORD, database=TEST_DB_NAME
+    )
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
 def client(schema):
     from app.main import app
     return TestClient(app)
@@ -185,10 +195,10 @@ class TestReportePorMozo:
         assert lucia["llamados_atendidos"] == 2
         assert lucia["respuesta_promedio_min"] == 2.0
 
-    def test_admin_con_cierre_aparece_con_su_rol(self, client, admin_token):
-        mozos = {m["nombre"]: m for m in _get(client, admin_token).json()["mozos"]}
-        assert mozos["Admin Test"]["rol"] == "admin"
-        assert mozos["Admin Test"]["ventas_cobradas"] == 5000.0
+    def test_el_admin_no_aparece_en_el_reporte(self, client, admin_token):
+        # El roster de /reportes/mozos es solo rol='mozo' (ver "Control de mozos").
+        mozos = {m["nombre"] for m in _get(client, admin_token).json()["mozos"]}
+        assert "Admin Test" not in mozos
 
     def test_mozo_activo_sin_actividad_aparece_en_cero(self, client, admin_token):
         mozos = {m["nombre"]: m for m in _get(client, admin_token).json()["mozos"]}
@@ -202,8 +212,9 @@ class TestReportePorMozo:
 
     def test_totales(self, client, admin_token):
         totales = _get(client, admin_token).json()["totales"]
-        assert totales["mesas_cerradas"] == 3          # 2 Lucia + 1 admin
-        assert totales["ventas_cobradas"] == 8000.0
+        # Solo mozos: 2 cierres de Lucia (el del admin no entra).
+        assert totales["mesas_cerradas"] == 2
+        assert totales["ventas_cobradas"] == 3000.0
         assert totales["propinas"] == 300.0
         assert totales["pedidos_entregados"] == 3
 
@@ -226,32 +237,27 @@ class TestReportePorMozo:
         assert resp.status_code == 403
 
 
-class TestMiCaja:
-    """GET /reportes/mi-caja: los cobros del usuario actual en un día."""
+class TestCajaMia:
+    """GET /caja/mia: los cobros del usuario actual en un día."""
 
     def test_mozo_ve_sus_cobros_de_hoy(self, client, lucia_token):
-        resp = client.get(
-            "/reportes/mi-caja",
-            headers={"Authorization": f"Bearer {lucia_token}"},
-        )
+        resp = client.get("/caja/mia", headers={"Authorization": f"Bearer {lucia_token}"})
         assert resp.status_code == 200
         d = resp.json()
         r = d["resumen"]
         assert r["mesas_cobradas"] == 2
         assert r["total_cobrado"] == 3000.0
         assert r["propinas"] == 300.0
-        # la propina es aparte y del mozo: "a rendir" a la casa es solo la venta
-        # cobrada en efectivo.
         assert r["efectivo_a_rendir"] == 3000.0
+        assert r["efectivo_rendido"] == 0.0
+        assert r["efectivo_pendiente"] == 3000.0
         assert r["por_metodo"] == {"efectivo": 3000.0}
         assert len(d["cobros"]) == 2
         assert d["cobros"][0]["numero_mesa"] == 1  # JOIN a mesas, no el numero_mesa muerto
+        assert d["cobros"][0]["rendido"] is False  # efectivo, sin rendir
 
     def test_admin_ve_su_propia_caja(self, client, admin_token):
-        r = client.get(
-            "/reportes/mi-caja",
-            headers={"Authorization": f"Bearer {admin_token}"},
-        ).json()["resumen"]
+        r = client.get("/caja/mia", headers={"Authorization": f"Bearer {admin_token}"}).json()["resumen"]
         assert r["mesas_cobradas"] == 1
         assert r["total_cobrado"] == 5000.0
         assert r["efectivo_a_rendir"] == 0.0        # cobró con tarjeta
@@ -259,11 +265,90 @@ class TestMiCaja:
 
     def test_dia_sin_cobros_devuelve_vacio(self, client, lucia_token):
         r = client.get(
-            "/reportes/mi-caja?fecha=2020-01-01",
+            "/caja/mia?fecha=2020-01-01",
             headers={"Authorization": f"Bearer {lucia_token}"},
         ).json()
         assert r["resumen"]["mesas_cobradas"] == 0
         assert r["cobros"] == []
 
     def test_sin_auth_401(self, client):
-        assert client.get("/reportes/mi-caja").status_code in {401, 403}
+        assert client.get("/caja/mia").status_code in {401, 403}
+
+
+class TestCajaResumen:
+    """GET /caja/resumen: consolidado del día (solo admin)."""
+
+    def test_totales_y_por_mozo(self, client, admin_token):
+        d = client.get("/caja/resumen", headers={"Authorization": f"Bearer {admin_token}"}).json()
+        t = d["totales"]
+        assert t["efectivo"] == 3000.0   # 2 cierres de Lucia
+        assert t["tarjeta"] == 5000.0    # 1 del admin
+        assert t["total"] == 8000.0
+        assert t["propinas"] == 300.0
+
+        por_mozo = {m["nombre"]: m for m in d["por_mozo"]}
+        assert por_mozo["Lucia Mozo"]["efectivo_cobrado"] == 3000.0
+        assert por_mozo["Lucia Mozo"]["efectivo_rendido"] == 0.0
+        assert por_mozo["Lucia Mozo"]["efectivo_pendiente"] == 3000.0
+        assert por_mozo["Admin Test"]["otros_metodos"] == 5000.0
+
+    def test_mozo_no_puede_ver_el_resumen(self, client, lucia_token):
+        resp = client.get("/caja/resumen", headers={"Authorization": f"Bearer {lucia_token}"})
+        assert resp.status_code == 403
+
+
+class TestRendirCobro:
+    """POST /caja/cobros/{id}/rendir."""
+
+    def _cierre(self, db_conn, id_usuario, metodo):
+        cur = db_conn.cursor(dictionary=True)
+        cur.execute(
+            "SELECT id_cierre FROM cierres_mesa WHERE id_usuario_cierre = %s "
+            "AND metodo_pago = %s LIMIT 1",
+            (id_usuario, metodo),
+        )
+        return cur.fetchone()["id_cierre"]
+
+    def test_mozo_marca_y_desmarca_su_cobro(self, db_conn, client, lucia_token):
+        idc = self._cierre(db_conn, 10, "efectivo")  # Lucia
+        r = client.post(f"/caja/cobros/{idc}/rendir", json={"rendido": True},
+                        headers={"Authorization": f"Bearer {lucia_token}"})
+        assert r.status_code == 200 and r.json()["rendido"] is True
+        db_conn.commit()
+        mia = client.get("/caja/mia", headers={"Authorization": f"Bearer {lucia_token}"}).json()
+        assert mia["resumen"]["efectivo_rendido"] > 0
+
+        client.post(f"/caja/cobros/{idc}/rendir", json={"rendido": False},
+                    headers={"Authorization": f"Bearer {lucia_token}"})
+        db_conn.commit()
+        cur = db_conn.cursor()
+        cur.execute("SELECT rendido_at FROM cierres_mesa WHERE id_cierre = %s", (idc,))
+        assert cur.fetchone()[0] is None
+
+    def test_mozo_no_puede_rendir_cobro_ajeno(self, db_conn, client, lucia_token):
+        cur = db_conn.cursor()
+        cur.execute(
+            "INSERT INTO cierres_mesa (id_mesa, numero_mesa, metodo_pago, total_consumido, "
+            "monto_cobrado, vuelto, id_usuario_cierre) VALUES (1, 0, 'efectivo', 100, 100, 0, 11)"
+        )
+        ajeno = cur.lastrowid
+        db_conn.commit()
+        r = client.post(f"/caja/cobros/{ajeno}/rendir", json={"rendido": True},
+                        headers={"Authorization": f"Bearer {lucia_token}"})
+        assert r.status_code == 403
+
+    def test_admin_puede_rendir_cualquiera(self, db_conn, client, admin_token):
+        idc = self._cierre(db_conn, 10, "efectivo")
+        r = client.post(f"/caja/cobros/{idc}/rendir", json={"rendido": True},
+                        headers={"Authorization": f"Bearer {admin_token}"})
+        assert r.status_code == 200
+        db_conn.commit()
+        client.post(f"/caja/cobros/{idc}/rendir", json={"rendido": False},
+                    headers={"Authorization": f"Bearer {admin_token}"})
+        db_conn.commit()
+
+    def test_no_se_puede_rendir_un_cobro_no_efectivo(self, db_conn, client, admin_token):
+        idc = self._cierre(db_conn, 13, "tarjeta")  # el cierre del admin es tarjeta
+        r = client.post(f"/caja/cobros/{idc}/rendir", json={"rendido": True},
+                        headers={"Authorization": f"Bearer {admin_token}"})
+        assert r.status_code == 400
