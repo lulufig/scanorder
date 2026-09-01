@@ -30,7 +30,7 @@ No hay paso de build para el frontend: son archivos estáticos en `frontend/` qu
 
 ### Migraciones (`backend/migrations/`)
 
-16 migraciones (`001` a `016`), secuenciales, sin runner (se corren a mano contra MySQL en desarrollo local; en Docker las aplica `backend/scripts/init_app.sh` automáticamente — ver sección Docker más abajo).
+17 migraciones (`001` a `017`), secuenciales, sin runner (se corren a mano contra MySQL en desarrollo local; en Docker las aplica `backend/scripts/init_app.sh` automáticamente — ver sección Docker más abajo).
 
 **001-006, verificado ejecutándolas de verdad** contra una base descartable (`scanorder_migration_test`, dropeada al terminar; `scanorder_db` no se tocó):
 
@@ -44,7 +44,7 @@ No hay paso de build para el frontend: son archivos estáticos en `frontend/` qu
 - `002_menu_categorias_nuevas.sql` asume categorías ya existentes con IDs hardcodeados 1-4 (`UPDATE categorias ... WHERE id_categoria = 1`, etc.). Ni `docs/database.sql` ni ningún script del repo siembran esas filas — si esos IDs no existen, la migración no falla pero tampoco logra nada (0 filas afectadas, silencioso).
 - `001` y `004` no son redundantes entre sí pese al nombre similar de "trazabilidad": `001` corrige el tipo de la columna `estado` (bug ENUM→VARCHAR que dejaba pedidos con `estado=''`); `004` agrega las columnas de fecha por estado (`confirmado_at`, `preparacion_at`, `listo_at`, `entregado_at`) que usan `pedidos.py` y `reportes.py`. Cambios independientes sobre la misma tabla, ninguno reemplaza al otro.
 
-**007-016** — no reflejadas en `docs/database.sql` (salvo `008`, ver arriba); todas idempotentes, aplicadas automáticamente en orden por `init_app.sh` en Docker:
+**007-017** — no reflejadas en `docs/database.sql` (salvo `008`, ver arriba); todas idempotentes, aplicadas automáticamente en orden por `init_app.sh` en Docker:
 
 | # | Archivo | Qué hace |
 |---|---|---|
@@ -58,6 +58,7 @@ No hay paso de build para el frontend: son archivos estáticos en `frontend/` qu
 | 014 | `014_mozo_llamados.sql` | Crea tabla `mozo_llamados` (trazabilidad de llamados de mozo / pedidos de cuenta). **Complementa, no reemplaza**, los flags `mozo_solicitado`/`cuenta_solicitada` de `mesa_estado_operativo` (006), que siguen siendo la fuente de verdad de "hay un llamado abierto". Solo agrega timing (`solicitado_at` → cronómetro y escalada visual en el panel del mozo) y atribución (`tomado_por`/`tomado_at` = "voy yo"; `atendido_por`/`atendido_at` = quién lo cerró). Ver "Llamados de mozo con cronómetro y acuse" más abajo. |
 | 015 | `015_propina.sql` | Agrega `cierres_mesa.propina DECIMAL(10,2) DEFAULT 0.00`. La propina es un **eje independiente de la cuenta**: el cliente paga el total y deja la propina aparte (así se maneja en la ciudad del cliente). NO entra en `monto_cobrado` ni afecta el `vuelto` (`vuelto = max(0, monto_cobrado - total_consumido)`). `cerrar_mesa` solo valida `propina >= 0` y la registra. INSERT con guard `tabla_tiene_columna(cursor, "cierres_mesa", "propina")`. Ver "Cobro de mesa" más abajo. |
 | 016 | `016_mesa_mozo_asignado.sql` | Agrega `mesas.id_mozo_asignado INT NULL` (sin FK, igual que `mozo_llamados`). Asignación simple mesa → mozo responsable, **sin sistema de turnos**. El mozo la toma desde el panel (`POST /mesas/{id}/asignarme`); es un **aviso, no un bloqueo** (si otro mozo cobra, el frontend confirma pero lo deja — la atribución real sigue siendo `cierres_mesa.id_usuario_cierre`). Se limpia sola al cobrar/liberar (una asignación por ciclo). Ver "Asignación de mozo a mesa" más abajo. |
+| 017 | `017_cierre_rendido.sql` | Agrega `cierres_mesa.rendido_at` + `rendido_por` (sin FK). Rendición del efectivo **por cobro** (no por turno): el mozo cobra una mesa en efectivo, lleva la plata a caja y marca ese cobro como "entregado". Solo aplica a `metodo_pago = 'efectivo'`. NULL = pendiente. Ver "Caja" más abajo. |
 
 ## Modelo de roles y autenticación (desde `refactor/roles-mozo`)
 
@@ -175,7 +176,7 @@ Para el MVP académico: comportamiento aceptado y documentado.
 
 - `main.py`: bootstrap de FastAPI, configuración de CORS (incluye auto-detección del origen desde `MENU_URL`) y registro de routers. No monta `/static` a propósito — los QR se sirven solo vía endpoint autenticado (`/mesas/{id}/qr`) para no exponer tokens embebidos en las imágenes.
 - `database.py`: conexión directa con `mysql-connector-python` (sin ORM, sin pool gestionado por librería — cada función abre/cierra su propia conexión).
-- `routes/`: un router por dominio (`auth`, `admin`, `productos`, `mesas`, `pedidos`, `reportes`, `inventario`). La autorización por rol usa la dependencia `require_role(...)` de `utils/dependencies.py` vía `Depends(...)` — **excepto** en `/auth/register`, `/pedidos/ws/cocina` (device_token) y el WS de mesa (qr_token manual).
+- `routes/`: un router por dominio (`auth`, `admin`, `productos`, `mesas`, `pedidos`, `reportes`, `inventario`, `caja`). La autorización por rol usa la dependencia `require_role(...)` de `utils/dependencies.py` vía `Depends(...)` — **excepto** en `/auth/register`, `/pedidos/ws/cocina` (device_token) y el WS de mesa (qr_token manual).
 - `utils/security.py`: hashing de passwords (bcrypt vía passlib) y JWT (encode/decode).
 - `utils/dependencies.py`: `get_current_user` (valida Bearer JWT), `get_current_user_optional` (ídem pero devuelve None si no hay token), `require_role(*roles)` (variadic: acepta uno o varios roles).
 - `utils/qr.py`: generación de PNG de QR con `qrcode[pil]`.
@@ -307,7 +308,15 @@ Los reportes de descarga ya **no son CSV**: se generan como `.xlsx` (openpyxl) o
 
 Cada fuente está guardada tras `_tabla_existe()` (degrada a 0 si falta la tabla). Incluye al **admin** con su rol si tiene cierres/entregas. El roster son los usuarios `activo=TRUE` + cualquier usuario (aunque esté de baja) con actividad en el período; si **nadie** tuvo actividad, `mozos: []`. `formato=json` → `{fecha_inicio, fecha_fin, mozos:[...], totales:{...}}`; `excel`/`pdf` → archivo. Frontend: card "Reporte por mozo" en `reportes.html` (`verReporteMozos()` tabla inline + `descargarReporteMozos()`), rango default = mes en curso. Cubierto por `test_reportes_mozos.py` (integración, DB descartable).
 
-**`GET /reportes/mi-caja?fecha=YYYY-MM-DD`** (default hoy) — `require_role("mozo", "admin")`. Los cobros que hizo **el usuario actual** en un día (`cierres_mesa WHERE id_usuario_cierre = current_user`). Devuelve `{fecha, resumen: {mesas_cobradas, total_cobrado, propinas, efectivo_a_rendir, por_metodo}, cobros: [...]}`. `efectivo_a_rendir` = **solo** las ventas cobradas en efectivo (lo que el mozo le entrega a la casa). La propina es aparte y es del mozo — se muestra en `propinas` pero no se suma acá. El `numero_mesa` sale de un JOIN a `mesas` (la columna `cierres_mesa.numero_mesa` está muerta — siempre 0 desde la app). Página propia **`admin/caja.html`** + `js/caja.js` + `css/caja.css`, link "Mi caja" en el sidebar de `mesas.html` y `caja.html` (no en el resto de páginas admin). Sin sistema de turnos: "mi turno" = "hoy". Cubierto por `TestMiCaja` en `test_reportes_mozos.py`.
+### Caja (`routes/caja.py`, `admin/caja.html`)
+
+Router propio (`/caja`), separado de `reportes.py`. Todo sale de `cierres_mesa`. Sin sistema de turnos: "hoy" = el turno.
+
+- **`GET /caja/mia?fecha=`** (`mozo`/`admin`) — los cobros del **usuario actual** en un día (`id_usuario_cierre = current_user`). `resumen`: `mesas_cobradas`, `total_cobrado`, `propinas` (aparte, del mozo), `efectivo_a_rendir` (solo ventas en efectivo), `efectivo_rendido`, `efectivo_pendiente`, `por_metodo`. `cobros[]` con `rendido: bool|null` (null si no es efectivo). El `numero_mesa` sale de un JOIN a `mesas` (`cierres_mesa.numero_mesa` está muerta).
+- **`GET /caja/resumen?fecha=`** (`admin`) — foto de toda la caja del día: `totales` por método + `propinas`, y `por_mozo[]` con `efectivo_cobrado` / `efectivo_rendido` / `efectivo_pendiente` / `otros_metodos`. Ordenado por pendiente desc.
+- **`POST /caja/cobros/{id_cierre}/rendir`** (`mozo`/`admin`, body `{rendido: bool}`) — marca/desmarca un cobro **en efectivo** como "entregado a caja" (`rendido_at` / `rendido_por`). Tarjeta/QR → **400** (van directo a la cuenta del local). El mozo solo sus cobros; el admin cualquiera → **403** si no.
+- **Frontend** `admin/caja.html` + `js/caja.js` (una página, role-aware): el **mozo** ve "Mi caja" — sus cobros + botón "Entregar a caja" por cobro en efectivo + stat de pendiente. El **admin** ve "Caja" — totales del día + tabla por mozo con el efectivo pendiente de rendir. Link "Caja" en el sidebar de **todas** las páginas admin (sección Gestión).
+- Cubierto por `TestCajaMia` / `TestCajaResumen` / `TestRendirCobro` en `test_reportes_mozos.py`.
 
 ### Dashboard (`GET /reportes/dashboard`)
 
@@ -619,4 +628,4 @@ Después de guardar el token: si `data.user.must_change_password` es `true`, red
 
 ### Próxima migración
 
-La última migración aplicada es `016_mesa_mozo_asignado.sql` (ver tabla completa de migraciones más arriba). La siguiente incremental será `017_*.sql`. `init_app.sh` la va a recoger automáticamente (recorre `migrations/*.sql` y aplica todo lo que no empiece con `001`-`006`) — **no hace falta tocar el script**, pero la migración nueva tiene que ser idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `ADD CONSTRAINT IF NOT EXISTS`, `DROP COLUMN IF EXISTS`), porque se reaplica en cada arranque del contenedor.
+La última migración aplicada es `017_cierre_rendido.sql` (ver tabla completa de migraciones más arriba). La siguiente incremental será `018_*.sql`. `init_app.sh` la va a recoger automáticamente (recorre `migrations/*.sql` y aplica todo lo que no empiece con `001`-`006`) — **no hace falta tocar el script**, pero la migración nueva tiene que ser idempotente (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `ADD CONSTRAINT IF NOT EXISTS`, `DROP COLUMN IF EXISTS`), porque se reaplica en cada arranque del contenedor.

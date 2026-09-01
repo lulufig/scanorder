@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 # Importar rutas
-from app.routes import auth, productos, mesas, pedidos, reportes
+from app.routes import auth, productos, mesas, pedidos, reportes, caja
 from app.routes.admin import router as admin_router
 from app.routes.inventario import router as inventario_router, movimientos_router
 
@@ -54,6 +54,7 @@ app.include_router(productos.router)
 app.include_router(mesas.router)
 app.include_router(pedidos.router)
 app.include_router(reportes.router)
+app.include_router(caja.router)
 app.include_router(inventario_router)
 app.include_router(movimientos_router)
 

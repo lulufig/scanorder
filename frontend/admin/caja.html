@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ScanOrder — Mi caja</title>
+  <title>ScanOrder — Caja</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
@@ -31,7 +31,7 @@
 
     <div class="sidebar-section">Gestión</div>
     <a href="mesas.html"      class="sidebar-link"><i data-lucide="layout-grid"></i>Mesas</a>
-    <a href="caja.html"       class="sidebar-link active"><i data-lucide="wallet"></i>Mi caja</a>
+    <a href="caja.html"       class="sidebar-link active"><i data-lucide="wallet"></i>Caja</a>
     <a href="mesas-qr.html"   class="sidebar-link" data-role="admin"><i data-lucide="qr-code"></i>QR Mesas</a>
     <a href="productos.html"  class="sidebar-link" data-role="admin"><i data-lucide="utensils"></i>Productos</a>
     <a href="inventario.html" class="sidebar-link" data-role="admin"><i data-lucide="package"></i>Inventario</a>
@@ -49,48 +49,14 @@
   <main class="main">
     <div class="page-header">
       <div>
-        <h1 class="page-title">Mi caja</h1>
-        <p class="page-subtitle" id="caja-subtitle">Cobros que registraste en tu turno</p>
+        <h1 class="page-title" id="caja-title">Caja</h1>
+        <p class="page-subtitle" id="caja-subtitle">—</p>
       </div>
       <input class="form-input caja-fecha" type="date" id="caja-fecha" onchange="cargarCaja()" />
     </div>
 
-    <div class="caja-stats" id="caja-stats">
-      <div class="caja-stat">
-        <span class="caja-stat-label">Mesas cobradas</span>
-        <strong class="caja-stat-value" id="st-mesas">—</strong>
-      </div>
-      <div class="caja-stat">
-        <span class="caja-stat-label">Total cobrado</span>
-        <strong class="caja-stat-value" id="st-total">—</strong>
-      </div>
-      <div class="caja-stat">
-        <span class="caja-stat-label">Propinas</span>
-        <strong class="caja-stat-value" id="st-propinas">—</strong>
-      </div>
-      <div class="caja-stat caja-stat-destacado">
-        <span class="caja-stat-label">Efectivo a rendir</span>
-        <strong class="caja-stat-value" id="st-rendir">—</strong>
-      </div>
-    </div>
-
-    <div class="card caja-card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">Desglose por método</div>
-        </div>
-      </div>
-      <div class="caja-metodos" id="caja-metodos"></div>
-    </div>
-
-    <div class="card caja-card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">Mis cobros del día</div>
-          <div class="card-subtitle" id="caja-cobros-count">—</div>
-        </div>
-      </div>
-      <div class="caja-cobros-wrap" id="caja-cobros"></div>
+    <div id="caja-contenido">
+      <div class="caja-vacio">Cargando…</div>
     </div>
   </main>
 

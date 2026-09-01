@@ -15,7 +15,7 @@
     const tieneControlMozos = Boolean(document.getElementById("mozo-fecha-inicio"));
 
     // ── FECHAS POR DEFECTO (hoy) ─────────────────────────────────
-    const hoy = new Date().toISOString().split("T")[0];
+    const hoy = formatFechaLocalISO(new Date());   // fecha LOCAL, no UTC
     if (tieneReportes) {
       document.getElementById("fecha-inicio").value = hoy;
       document.getElementById("fecha-fin").value = hoy;
@@ -685,7 +685,7 @@
     }
 
     function formatFecha(date) {
-      return date.toISOString().split("T")[0];
+      return formatFechaLocalISO(date);   // fecha LOCAL, no UTC
     }
 
     // ── CALENDARIO (Reportes) ──────────────────────────────────────
@@ -856,7 +856,7 @@
     async function descargarResumenHoy(formato = "excel") {
       const fecha = document.getElementById("fecha-resumen")?.value;
       const params = fecha ? `?fecha=${fecha}` : "";
-      const fechaLabel = fecha || new Date().toISOString().split("T")[0];
+      const fechaLabel = fecha || formatFechaLocalISO(new Date());
       const extension = formato === "pdf" ? "pdf" : "xlsx";
       const formatoLabel = formato === "pdf" ? "PDF" : "Excel";
       const separator = params ? "&" : "?";
