@@ -12,6 +12,7 @@
 
     const tieneDashboard = Boolean(document.getElementById("ventas-chart"));
     const tieneReportes = Boolean(document.getElementById("fecha-inicio"));
+    const tieneControlMozos = Boolean(document.getElementById("mozo-fecha-inicio"));
 
     // ── FECHAS POR DEFECTO (hoy) ─────────────────────────────────
     const hoy = new Date().toISOString().split("T")[0];
@@ -20,12 +21,12 @@
       document.getElementById("fecha-fin").value = hoy;
       const fechaResumen = document.getElementById("fecha-resumen");
       if (fechaResumen) fechaResumen.value = hoy;
-      const mozoInicio = document.getElementById("mozo-fecha-inicio");
-      if (mozoInicio) {
-        const d = new Date();
-        mozoInicio.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-        document.getElementById("mozo-fecha-fin").value = hoy;
-      }
+    }
+
+    if (tieneControlMozos) {
+      const d = new Date();
+      document.getElementById("mozo-fecha-inicio").value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+      document.getElementById("mozo-fecha-fin").value = hoy;
     }
 
     if (tieneDashboard) {
@@ -768,6 +769,7 @@
     }
 
     if (tieneReportes) renderCalendario();
+    if (tieneControlMozos && !tieneReportes) verReporteMozos();
 
     // ── GENERAR REPORTE DE VENTAS ────────────────────────────────
     async function generarReporteVentas(formato = "excel") {
@@ -910,53 +912,515 @@
       }
     }
 
+    let ultimoReporteMozos = null;
+    let ultimoRegistroCobrosMozos = [];
+    let ultimoIdsVisiblesMozos = new Set();
+    let ultimoCierreSeleccionadoMozos = null;
+    let filtroMozoBusqueda = "";
+    let filtroMozoActividad = "todos";
+
+    function fechaLocalKey(valor) {
+      const fecha = new Date(valor);
+      if (Number.isNaN(fecha.getTime())) return "";
+      return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
+    }
+
+    function formatearFechaHoraCorta(valor) {
+      if (!valor) return "—";
+      const fecha = new Date(valor);
+      if (Number.isNaN(fecha.getTime())) return String(valor);
+      return fecha.toLocaleString("es-AR", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+
+    function formatearMetodoPago(metodo) {
+      return capitalizar(String(metodo || "otro").replaceAll("_", " "));
+    }
+
+    function obtenerCobrosFiltradosMozos(filtro = "recientes") {
+      let ordenados = [...ultimoRegistroCobrosMozos].sort(
+        (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
+      );
+      if (ultimoIdsVisiblesMozos.size) {
+        ordenados = ordenados.filter(cobro => ultimoIdsVisiblesMozos.has(String(cobro.id_usuario)));
+      } else {
+        ordenados = [];
+      }
+      const ahora = new Date();
+      const hoyKey = fechaLocalKey(ahora);
+      const ayer = new Date(ahora);
+      ayer.setDate(ayer.getDate() - 1);
+      const ayerKey = fechaLocalKey(ayer);
+      const haceSemana = new Date(ahora);
+      haceSemana.setDate(haceSemana.getDate() - 7);
+
+      if (filtro === "hoy") {
+        return ordenados.filter(cobro => fechaLocalKey(cobro.created_at) === hoyKey);
+      }
+      if (filtro === "ayer") {
+        return ordenados.filter(cobro => fechaLocalKey(cobro.created_at) === ayerKey);
+      }
+      if (filtro === "semana") {
+        return ordenados.filter(cobro => new Date(cobro.created_at || 0) >= haceSemana);
+      }
+      if (filtro === "todos") {
+        return ordenados;
+      }
+      return ordenados.slice(0, 8);
+    }
+
+    function renderRegistroCobrosMozos(filtro = "recientes") {
+      const contenedor = document.getElementById("mozos-registro-list");
+      const contador = document.getElementById("mozos-registro-contador");
+      if (!contenedor) return;
+      const cobros = obtenerCobrosFiltradosMozos(filtro);
+      if (contador) contador.textContent = `${cobros.length} movimiento${cobros.length === 1 ? "" : "s"}`;
+      if (!cobros.some(cobro => String(cobro.id_cierre) === String(ultimoCierreSeleccionadoMozos))) {
+        ultimoCierreSeleccionadoMozos = null;
+      }
+      const cobroSeleccionado = cobros.find(cobro => String(cobro.id_cierre) === String(ultimoCierreSeleccionadoMozos));
+
+      contenedor.innerHTML = cobros.length ? `
+        <div class="mozos-registro-split ${cobroSeleccionado ? "has-ticket" : ""}">
+          <div class="mozos-registro-movimientos">
+            ${cobros.map(cobro => `
+              <button type="button" class="mozo-cobro-item ${String(cobro.id_cierre) === String(cobroSeleccionado?.id_cierre) ? "is-active" : ""}" data-cierre-id="${String(cobro.id_cierre)}" onclick="seleccionarCierreMozo('${String(cobro.id_cierre)}')">
+                <span class="mozo-cobro-id">
+                  <i data-lucide="receipt-text"></i>
+                </span>
+                <span class="mozo-cobro-info">
+                  <strong>Cierre #${cobro.id_cierre}</strong>
+                  <span>${escapeHtml(cobro.mozo || "Mozo")} - ${cobro.numero_mesa ? `Mesa ${cobro.numero_mesa}` : "Mesa sin numero"}</span>
+                  <small>${formatearFechaHoraCorta(cobro.created_at)}</small>
+                </span>
+                <span class="mozo-cobro-side">
+                  <span class="mozo-metodo-badge">${escapeHtml(formatearMetodoPago(cobro.metodo_pago))}</span>
+                  <b>${formatPrecio(cobro.total_consumido)}</b>
+                </span>
+              </button>`).join("")}
+          </div>
+          <aside class="mozos-registro-detalle" id="mozos-registro-detalle" ${cobroSeleccionado ? "" : "hidden"}>
+            ${renderTicketCierreMozo(cobroSeleccionado)}
+          </aside>
+        </div>` : `
+        <div class="mozos-mini-empty">Sin cobros para este filtro.</div>`;
+      if (window.lucide) lucide.createIcons();
+    }
+
+    window.filtrarRegistroMozos = renderRegistroCobrosMozos;
+
+    function renderTicketCierreMozo(cobro) {
+      if (!cobro) {
+        return `<div class="mozo-ticket-empty">Selecciona un cierre para ver el detalle.</div>`;
+      }
+      return `
+        <div class="mozo-ticket-body">
+          <div class="mozo-ticket-title">
+            <div>
+              <span>Ticket de cierre</span>
+              <strong>${cobro.numero_mesa ? `Mesa ${cobro.numero_mesa}` : "Mesa sin numero"}</strong>
+            </div>
+            <b>#${cobro.id_cierre}</b>
+          </div>
+          <div class="mozo-ticket-lines">
+            <div><span>Mesa cobrada</span><strong>${cobro.numero_mesa ? `Mesa ${cobro.numero_mesa}` : "Mesa sin numero"}</strong></div>
+            <div><span>Numero de pedido o cierre</span><strong>Cierre #${cobro.id_cierre}</strong></div>
+            <div><span>Metodo de pago</span><strong>${escapeHtml(formatearMetodoPago(cobro.metodo_pago))}</strong></div>
+            <div><span>Total consumido</span><strong>${formatPrecio(cobro.total_consumido)}</strong></div>
+            <div><span>Monto cobrado</span><strong>${formatPrecio(cobro.monto_cobrado)}</strong></div>
+            <div><span>Vuelto</span><strong>${formatPrecio(cobro.vuelto)}</strong></div>
+            <div><span>Fecha y hora</span><strong>${formatearFechaHoraCorta(cobro.created_at)}</strong></div>
+            <div><span>Mozo responsable</span><strong>${escapeHtml(cobro.mozo || "Mozo")}</strong></div>
+          </div>
+          ${cobro.observaciones ? `
+            <div class="mozo-ticket-observacion">
+              <span>Observacion</span>
+              <p>${escapeHtml(cobro.observaciones)}</p>
+            </div>` : ""}
+        </div>`;
+    }
+
+    window.seleccionarCierreMozo = function seleccionarCierreMozo(idCierre) {
+      ultimoCierreSeleccionadoMozos = idCierre;
+      const cobro = ultimoRegistroCobrosMozos.find(item => String(item.id_cierre) === String(idCierre));
+      document.querySelectorAll(".mozo-cobro-item").forEach(item => {
+        item.classList.toggle("is-active", item.dataset.cierreId === String(idCierre));
+      });
+      const detalle = document.getElementById("mozos-registro-detalle");
+      if (detalle) {
+        detalle.hidden = false;
+        detalle.innerHTML = renderTicketCierreMozo(cobro);
+      }
+      const split = document.querySelector(".mozos-registro-split");
+      if (split) split.classList.add("has-ticket");
+      if (window.lucide) lucide.createIcons();
+    };
+
+    function mozoControlKey(mozo) {
+      return String(mozo.id_usuario ?? mozo.nombre ?? "");
+    }
+
+    function textoBusquedaMozo(mozo) {
+      return [
+        mozo.id_usuario,
+        mozo.nombre,
+        mozo.rol,
+        mozo.activo ? "activo" : "inactivo",
+      ].join(" ").toLowerCase();
+    }
+
+    function filtrarMozosControl(filas) {
+      const texto = filtroMozoBusqueda.trim().toLowerCase();
+      let visibles = texto
+        ? filas.filter(mozo => textoBusquedaMozo(mozo).includes(texto))
+        : [...filas];
+
+      if (filtroMozoActividad === "con-cobros") {
+        visibles = visibles.filter(mozo => Number(mozo.mesas_cerradas) > 0);
+      } else if (filtroMozoActividad === "sin-actividad") {
+        visibles = visibles.filter(mozo =>
+          Number(mozo.mesas_cerradas) === 0 &&
+          Number(mozo.ventas_cobradas) === 0 &&
+          Number(mozo.pedidos_entregados) === 0 &&
+          Number(mozo.llamados_atendidos) === 0
+        );
+      } else if (filtroMozoActividad === "mayor-recaudacion") {
+        visibles.sort((a, b) => (Number(b.ventas_cobradas) || 0) - (Number(a.ventas_cobradas) || 0));
+      } else if (filtroMozoActividad === "mayor-mesas") {
+        visibles.sort((a, b) => (Number(b.mesas_cerradas) || 0) - (Number(a.mesas_cerradas) || 0));
+      } else if (filtroMozoActividad === "respuesta-alta") {
+        visibles = visibles
+          .filter(mozo => mozo.respuesta_promedio_min != null)
+          .sort((a, b) => (Number(b.respuesta_promedio_min) || 0) - (Number(a.respuesta_promedio_min) || 0));
+      }
+
+      return visibles;
+    }
+
+    window.actualizarBusquedaMozos = function actualizarBusquedaMozos(valor) {
+      filtroMozoBusqueda = valor || "";
+      if (ultimoReporteMozos) {
+        renderTablaMozos(ultimoReporteMozos);
+        setTimeout(() => {
+          const input = document.getElementById("mozos-busqueda-control");
+          if (!input) return;
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+        }, 0);
+      }
+    };
+
+    window.actualizarActividadMozos = function actualizarActividadMozos(valor) {
+      filtroMozoActividad = valor || "todos";
+      if (ultimoReporteMozos) renderTablaMozos(ultimoReporteMozos);
+    };
+
     function renderTablaMozos(data) {
+      ultimoReporteMozos = data;
       const wrap = document.getElementById("mozos-tabla-wrap");
-      const filas = Array.isArray(data.mozos) ? data.mozos : [];
-      const t = data.totales || {};
+      const filas = (Array.isArray(data.mozos) ? data.mozos : [])
+        .filter(m => String(m.rol || "").toLowerCase() === "mozo");
+      const registroCobros = Array.isArray(data.registro_cobros) ? data.registro_cobros : [];
+      ultimoRegistroCobrosMozos = registroCobros;
+      const arqueo = Array.isArray(data.arqueo) ? data.arqueo : [];
+      const filasVisibles = filtrarMozosControl(filas);
+      ultimoIdsVisiblesMozos = new Set(filasVisibles.map(mozo => mozoControlKey(mozo)));
+      const idsVisibles = new Set(filasVisibles.map(mozo => String(mozo.id_usuario)));
+      const arqueoVisible = arqueo.filter(item => idsVisibles.has(String(item.id_usuario)));
+      const t = filasVisibles.reduce((acc, m) => {
+        acc.mesas_cerradas += Number(m.mesas_cerradas) || 0;
+        acc.ventas_cobradas += Number(m.ventas_cobradas) || 0;
+        acc.pedidos_entregados += Number(m.pedidos_entregados) || 0;
+        acc.llamados_atendidos += Number(m.llamados_atendidos) || 0;
+        return acc;
+      }, { mesas_cerradas: 0, ventas_cobradas: 0, pedidos_entregados: 0, llamados_atendidos: 0 });
+      const ticketPromedioGeneral = t.mesas_cerradas ? t.ventas_cobradas / t.mesas_cerradas : 0;
 
       if (!filas.length) {
-        wrap.innerHTML = `<p class="reporte-note">Sin actividad en el período seleccionado.</p>`;
+        wrap.innerHTML = `
+          <section class="mozos-filter-panel">
+            <div class="mozos-search-control">
+              <i data-lucide="search"></i>
+              <input id="mozos-busqueda-control" type="search" placeholder="Buscar mozo por nombre, rol o ID..." value="${escapeHtml(filtroMozoBusqueda)}" oninput="actualizarBusquedaMozos(this.value)" />
+            </div>
+            <select class="mozos-activity-filter" onchange="actualizarActividadMozos(this.value)">
+              <option value="todos">Todos los mozos</option>
+            </select>
+          </section>
+          <div class="mozos-empty">
+            <i data-lucide="user-check"></i>
+            <div>
+              <strong>Sin cobros de mozos en este periodo</strong>
+              <span>Cuando un mozo cierre mesas, el registro va a aparecer aca.</span>
+            </div>
+          </div>`;
+        if (window.lucide) lucide.createIcons();
+        return;
+      }
+
+      if (!filasVisibles.length) {
+        wrap.innerHTML = `
+          <section class="mozos-filter-panel">
+            <div class="mozos-search-control">
+              <i data-lucide="search"></i>
+              <input id="mozos-busqueda-control" type="search" placeholder="Buscar mozo por nombre, rol o ID..." value="${escapeHtml(filtroMozoBusqueda)}" oninput="actualizarBusquedaMozos(this.value)" />
+            </div>
+            <select class="mozos-activity-filter" onchange="actualizarActividadMozos(this.value)">
+              <option value="todos"${filtroMozoActividad === "todos" ? " selected" : ""}>Todos los mozos</option>
+              <option value="con-cobros"${filtroMozoActividad === "con-cobros" ? " selected" : ""}>Con cobros</option>
+              <option value="sin-actividad"${filtroMozoActividad === "sin-actividad" ? " selected" : ""}>Sin actividad</option>
+              <option value="mayor-recaudacion"${filtroMozoActividad === "mayor-recaudacion" ? " selected" : ""}>Mayor recaudacion</option>
+              <option value="mayor-mesas"${filtroMozoActividad === "mayor-mesas" ? " selected" : ""}>Mayor cantidad de mesas</option>
+              <option value="respuesta-alta"${filtroMozoActividad === "respuesta-alta" ? " selected" : ""}>Mayor tiempo de respuesta</option>
+            </select>
+          </section>
+          <div class="mozos-empty">
+            <i data-lucide="search-x"></i>
+            <div>
+              <strong>Sin coincidencias</strong>
+              <span>No hay mozos para la busqueda o filtro seleccionado.</span>
+            </div>
+          </div>`;
+        if (window.lucide) lucide.createIcons();
         return;
       }
 
       const resp = m => (m.respuesta_promedio_min != null ? `${m.respuesta_promedio_min}′` : "—");
+      const registroVisibleCount = registroCobros.filter(cobro => idsVisibles.has(String(cobro.id_usuario))).length;
+      const arqueoPorMozo = arqueoVisible.reduce((acc, item) => {
+        const id = item.id_usuario || item.mozo || "sin-id";
+        if (!acc.has(id)) {
+          acc.set(id, {
+            mozo: item.mozo || "Mozo sin nombre",
+            total: 0,
+            cobrado: 0,
+            vuelto: 0,
+            cantidad: 0,
+            metodos: {
+              efectivo: 0,
+              tarjeta: 0,
+              qr: 0,
+              otro: 0,
+            },
+          });
+        }
+        const grupo = acc.get(id);
+        const metodo = ["efectivo", "tarjeta", "qr"].includes(item.metodo_pago) ? item.metodo_pago : "otro";
+        grupo.total += Number(item.total_consumido) || 0;
+        grupo.cobrado += Number(item.monto_cobrado) || 0;
+        grupo.vuelto += Number(item.vuelto) || 0;
+        grupo.cantidad += Number(item.cantidad) || 0;
+        grupo.metodos[metodo] += Number(item.total_consumido) || 0;
+        return acc;
+      }, new Map());
+      const arqueos = Array.from(arqueoPorMozo.values())
+        .sort((a, b) => b.total - a.total);
+      const arqueoFinal = arqueos.reduce((acc, item) => {
+        acc.efectivo += item.metodos.efectivo;
+        acc.tarjeta += item.metodos.tarjeta;
+        acc.qr += item.metodos.qr;
+        acc.otros += item.metodos.otro;
+        acc.cobrado += item.cobrado;
+        acc.vuelto += item.vuelto;
+        return acc;
+      }, { efectivo: 0, tarjeta: 0, qr: 0, otros: 0, cobrado: 0, vuelto: 0 });
+      arqueoFinal.total = arqueoFinal.efectivo + arqueoFinal.tarjeta + arqueoFinal.qr + arqueoFinal.otros;
+
       wrap.innerHTML = `
-        <div class="mozos-tabla-scroll">
-          <table class="mozos-tabla">
-            <thead>
-              <tr>
-                <th>Mozo</th><th class="num">Mesas</th><th class="num">Ventas</th>
-                <th class="num">Ticket</th><th class="num">Entregados</th>
-                <th class="num">Llamados</th><th class="num">Resp.</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filas.map(m => `
-                <tr>
-                  <td>${escapeHtml(m.nombre)}${m.rol === "admin" ? ' <span class="mozo-tag">admin</span>' : ""}${m.activo ? "" : ' <span class="mozo-tag inactivo">inactivo</span>'}</td>
-                  <td class="num">${m.mesas_cerradas}</td>
-                  <td class="num">${formatPrecio(m.ventas_cobradas)}</td>
-                  <td class="num">${m.mesas_cerradas ? formatPrecio(m.ticket_promedio) : "—"}</td>
-                  <td class="num">${m.pedidos_entregados}</td>
-                  <td class="num">${m.llamados_atendidos}</td>
-                  <td class="num">${resp(m)}</td>
-                </tr>`).join("")}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td>Total</td>
-                <td class="num">${t.mesas_cerradas ?? 0}</td>
-                <td class="num">${formatPrecio(t.ventas_cobradas ?? 0)}</td>
-                <td class="num">—</td>
-                <td class="num">${t.pedidos_entregados ?? 0}</td>
-                <td class="num">${t.llamados_atendidos ?? 0}</td>
-                <td class="num">—</td>
-              </tr>
-            </tfoot>
-          </table>
+        <section class="mozos-filter-panel">
+          <div class="mozos-search-control">
+            <i data-lucide="search"></i>
+            <input id="mozos-busqueda-control" type="search" placeholder="Buscar mozo por nombre, rol o ID..." value="${escapeHtml(filtroMozoBusqueda)}" oninput="actualizarBusquedaMozos(this.value)" />
+          </div>
+          <select class="mozos-activity-filter" onchange="actualizarActividadMozos(this.value)">
+            <option value="todos"${filtroMozoActividad === "todos" ? " selected" : ""}>Todos los mozos</option>
+            <option value="con-cobros"${filtroMozoActividad === "con-cobros" ? " selected" : ""}>Con cobros</option>
+            <option value="sin-actividad"${filtroMozoActividad === "sin-actividad" ? " selected" : ""}>Sin actividad</option>
+            <option value="mayor-recaudacion"${filtroMozoActividad === "mayor-recaudacion" ? " selected" : ""}>Mayor recaudacion</option>
+            <option value="mayor-mesas"${filtroMozoActividad === "mayor-mesas" ? " selected" : ""}>Mayor cantidad de mesas</option>
+            <option value="respuesta-alta"${filtroMozoActividad === "respuesta-alta" ? " selected" : ""}>Mayor tiempo de respuesta</option>
+          </select>
+        </section>
+        <section class="mozos-panel mozos-resumen-card">
+          <div class="mozos-panel-head">
+            <div class="mozos-panel-titlebox">
+              <span>Resumen del periodo</span>
+              <small>${filasVisibles.length} mozo${filasVisibles.length === 1 ? "" : "s"}</small>
+            </div>
+          </div>
+          <div class="mozos-resumen">
+            <div class="mozo-kpi">
+              <span>Ventas cobradas</span>
+              <strong>${formatPrecio(t.ventas_cobradas)}</strong>
+            </div>
+            <div class="mozo-kpi">
+              <span>Mesas cerradas</span>
+              <strong>${t.mesas_cerradas}</strong>
+            </div>
+            <div class="mozo-kpi">
+              <span>Cobros registrados</span>
+              <strong>${registroVisibleCount}</strong>
+            </div>
+            <div class="mozo-kpi mozo-kpi-destacado">
+              <span>Ticket promedio</span>
+              <strong>${t.mesas_cerradas ? formatPrecio(ticketPromedioGeneral) : "—"}</strong>
+            </div>
+          </div>
+        </section>
+        <section class="mozos-panel mozos-caja-panel">
+          <div class="mozos-panel-head">
+            <div class="mozos-panel-titlebox">
+              <span>Arqueo final del turno</span>
+              <small>Cierre de caja</small>
+            </div>
+          </div>
+          <div class="mozos-caja-grid">
+            <div class="mozos-caja-total">
+              <span>Total general</span>
+              <strong>${formatPrecio(arqueoFinal.total)}</strong>
+              <small>${t.mesas_cerradas} mesa${t.mesas_cerradas === 1 ? "" : "s"} cerrada${t.mesas_cerradas === 1 ? "" : "s"}</small>
+            </div>
+            <div class="mozos-caja-metodos">
+              <div>
+                <span>Efectivo esperado</span>
+                <strong>${formatPrecio(arqueoFinal.efectivo)}</strong>
+              </div>
+              <div>
+                <span>Tarjeta</span>
+                <strong>${formatPrecio(arqueoFinal.tarjeta)}</strong>
+              </div>
+              <div>
+                <span>QR</span>
+                <strong>${formatPrecio(arqueoFinal.qr)}</strong>
+              </div>
+              <div>
+                <span>Otros</span>
+                <strong>${formatPrecio(arqueoFinal.otros)}</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+        <div class="mozos-cards-stack">
+          <section class="mozos-panel mozos-arqueo-panel">
+            <div class="mozos-panel-head">
+              <div class="mozos-panel-titlebox">
+                <span>Arqueo individual</span>
+                <small>${t.mesas_cerradas ? formatPrecio(ticketPromedioGeneral) : "—"} ticket promedio</small>
+              </div>
+            </div>
+            ${arqueos.length ? `
+              <div class="mozos-tabla-scroll mozos-arqueo-scroll">
+                <table class="mozos-tabla mozos-arqueo-tabla">
+                  <thead>
+                    <tr>
+                      <th>Mozo</th>
+                      <th class="num">Efectivo</th>
+                      <th class="num">Tarjeta</th>
+                      <th class="num">QR</th>
+                      <th class="num">Otros</th>
+                      <th class="num">Cierres</th>
+                      <th class="num">Cobrado</th>
+                      <th class="num">Vuelto</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${arqueos.map(item => `
+                      <tr>
+                        <td><strong>${escapeHtml(item.mozo)}</strong></td>
+                        <td class="num">${formatPrecio(item.metodos.efectivo)}</td>
+                        <td class="num">${formatPrecio(item.metodos.tarjeta)}</td>
+                        <td class="num">${formatPrecio(item.metodos.qr)}</td>
+                        <td class="num">${formatPrecio(item.metodos.otro)}</td>
+                        <td class="num">${item.cantidad}</td>
+                        <td class="num">${formatPrecio(item.cobrado)}</td>
+                        <td class="num">${formatPrecio(item.vuelto)}</td>
+                      </tr>`).join("")}
+                  </tbody>
+                </table>
+              </div>` : `
+              <div class="mozos-mini-empty">Sin arqueo para el rango seleccionado.</div>`}
+          </section>
+
+          <section class="mozos-panel mozos-registro-panel">
+            <div class="mozos-panel-head">
+              <div class="mozos-panel-titlebox">
+                <span>Registro de cobros</span>
+                <small id="mozos-registro-contador">0 movimientos</small>
+              </div>
+              <div class="mozos-registro-tools">
+                <select class="mozos-registro-filter" onchange="filtrarRegistroMozos(this.value)">
+                  <option value="recientes">Ultimos movimientos</option>
+                  <option value="hoy">Hoy</option>
+                  <option value="ayer">Ayer</option>
+                  <option value="semana">Ultima semana</option>
+                  <option value="todos">Todos del periodo</option>
+                </select>
+              </div>
+            </div>
+            <div class="mozos-registro-list" id="mozos-registro-list"></div>
+          </section>
         </div>
-        <p class="reporte-note">"Entregados" cuenta pedidos con descuento de stock. "Resp." = tiempo promedio entre el llamado y su atención (datos desde que se activó el registro de llamados).</p>`;
+        <section class="mozos-panel mozos-rendimiento-panel">
+          <div class="mozos-panel-head">
+            <div class="mozos-panel-titlebox">
+              <span>Rendimiento por mozo</span>
+              <small>Ventas, atencion y mesas cerradas</small>
+            </div>
+          </div>
+          <div class="mozos-tabla-scroll mozos-rendimiento-scroll">
+            <table class="mozos-tabla">
+              <thead>
+                <tr>
+                  <th>Mozo</th>
+                  <th class="num">Mesas cobradas</th>
+                  <th class="num">Ventas cobradas</th>
+                  <th class="num">Ticket prom.</th>
+                  <th class="num">Pedidos entregados</th>
+                  <th class="num">Llamados atendidos</th>
+                  <th class="num">Resp. prom.</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${filasVisibles.map(m => `
+                  <tr>
+                    <td>
+                      <div class="mozo-identidad">
+                        <span class="mozo-avatar">${escapeHtml(String(m.nombre || "M").charAt(0).toUpperCase())}</span>
+                        <span>
+                          <strong>${escapeHtml(m.nombre || "Mozo sin nombre")}</strong>
+                          ${m.activo ? '<small>Mozo activo</small>' : '<small class="mozo-inactivo-text">Mozo inactivo</small>'}
+                        </span>
+                      </div>
+                    </td>
+                    <td class="num">${m.mesas_cerradas}</td>
+                    <td class="num">${formatPrecio(m.ventas_cobradas)}</td>
+                    <td class="num">${m.mesas_cerradas ? formatPrecio(m.ticket_promedio) : "—"}</td>
+                    <td class="num">${m.pedidos_entregados}</td>
+                    <td class="num">${m.llamados_atendidos}</td>
+                    <td class="num">${resp(m)}</td>
+                  </tr>`).join("")}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td>Total</td>
+                  <td class="num">${t.mesas_cerradas}</td>
+                  <td class="num">${formatPrecio(t.ventas_cobradas)}</td>
+                  <td class="num">${t.mesas_cerradas ? formatPrecio(ticketPromedioGeneral) : "—"}</td>
+                  <td class="num">${t.pedidos_entregados}</td>
+                  <td class="num">${t.llamados_atendidos}</td>
+                  <td class="num">—</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+        <p class="reporte-note">El reporte muestra solo usuarios con rol mozo. Los administradores no se incluyen en este control operativo.</p>`;
+      renderRegistroCobrosMozos("recientes");
+      if (window.lucide) lucide.createIcons();
     }
 
     async function descargarReporteMozos(formato = "excel") {

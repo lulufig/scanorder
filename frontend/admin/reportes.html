@@ -27,6 +27,7 @@
     <div class="sidebar-section" data-role="admin">Reportes</div>
     <a href="index.html" class="sidebar-link" data-role="admin"><i data-lucide="layout-dashboard"></i>Dashboard</a>
     <a href="reportes.html" class="sidebar-link active" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
+    <a href="control-mozos.html" class="sidebar-link" data-role="admin"><i data-lucide="badge-dollar-sign"></i>Control de mozos</a>
 
     <div class="sidebar-section">Gestion</div>
     <a href="mesas.html" class="sidebar-link"><i data-lucide="layout-grid"></i>Mesas</a>
@@ -52,6 +53,7 @@
       </div>
     </div>
 
+    <section class="report-section reportes-section fade-in" style="animation-delay:0.05s;">
       <div class="reportes-grid">
         <div class="reporte-card calendar-card">
           <div class="reporte-card-header">
@@ -156,42 +158,6 @@
             </div>
           </div>
 
-          <div class="reporte-card">
-            <div class="reporte-card-header">
-              <div class="reporte-icon"><i data-lucide="user-check"></i></div>
-              <div>
-                <div class="reporte-titulo">Reporte por mozo</div>
-                <div class="reporte-desc">Mesas cerradas, ventas cobradas, pedidos entregados y respuesta a llamados</div>
-              </div>
-            </div>
-            <div class="reporte-card-body">
-              <div class="fechas-row">
-                <div class="form-group">
-                  <label class="form-label" for="mozo-fecha-inicio">Desde</label>
-                  <input class="form-input" type="date" id="mozo-fecha-inicio" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label" for="mozo-fecha-fin">Hasta</label>
-                  <input class="form-input" type="date" id="mozo-fecha-fin" />
-                </div>
-              </div>
-              <div class="reporte-actions reporte-actions-3">
-                <button class="btn-generar" id="btn-mozos-ver" onclick="verReporteMozos()">
-                  <i data-lucide="eye"></i>
-                  Ver
-                </button>
-                <button class="btn-generar btn-generar-outline" id="btn-mozos-excel" onclick="descargarReporteMozos('excel')">
-                  <i data-lucide="file-spreadsheet"></i>
-                  Excel
-                </button>
-                <button class="btn-generar btn-generar-outline" id="btn-mozos-pdf" onclick="descargarReporteMozos('pdf')">
-                  <i data-lucide="file-text"></i>
-                  PDF
-                </button>
-              </div>
-              <div class="mozos-tabla-wrap" id="mozos-tabla-wrap" hidden></div>
-            </div>
-          </div>
         </div>
       </div>
     </section>

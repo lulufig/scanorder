@@ -937,7 +937,7 @@ def reporte_por_mozo(
     try:
         cursor = connection.cursor(dictionary=True)
 
-        cursor.execute("SELECT id_usuario, nombre, rol, activo FROM usuarios")
+        cursor.execute("SELECT id_usuario, nombre, rol, activo FROM usuarios WHERE rol = 'mozo'")
         usuarios = {int(u["id_usuario"]): u for u in cursor.fetchall()}
 
         cierres = {}
@@ -989,6 +989,76 @@ def reporte_por_mozo(
             )
             llamados = {int(r["id_usuario"]): r for r in cursor.fetchall()}
 
+        registro_cobros = []
+        arqueo = []
+        if _tabla_existe(cursor, "cierres_mesa"):
+            cursor.execute(
+                """
+                SELECT cm.id_cierre,
+                       cm.id_usuario_cierre AS id_usuario,
+                       u.nombre AS mozo,
+                       m.numero AS numero_mesa,
+                       cm.metodo_pago,
+                       cm.total_consumido,
+                       cm.monto_cobrado,
+                       cm.vuelto,
+                       cm.observaciones,
+                       cm.created_at
+                FROM cierres_mesa cm
+                JOIN usuarios u ON u.id_usuario = cm.id_usuario_cierre
+                LEFT JOIN mesas m ON m.id_mesa = cm.id_mesa
+                WHERE u.rol = 'mozo'
+                  AND DATE(cm.created_at) BETWEEN %s AND %s
+                ORDER BY cm.created_at DESC, cm.id_cierre DESC
+                """,
+                (fecha_inicio, fecha_fin),
+            )
+            for row in cursor.fetchall():
+                fecha_cierre = row["created_at"]
+                registro_cobros.append({
+                    "id_cierre": int(row["id_cierre"]),
+                    "id_usuario": int(row["id_usuario"]),
+                    "mozo": row["mozo"],
+                    "numero_mesa": int(row["numero_mesa"]) if row["numero_mesa"] is not None else None,
+                    "metodo_pago": row["metodo_pago"],
+                    "total_consumido": float(row["total_consumido"] or 0),
+                    "monto_cobrado": float(row["monto_cobrado"] or 0),
+                    "vuelto": float(row["vuelto"] or 0),
+                    "observaciones": row["observaciones"] or "",
+                    "created_at": fecha_cierre.isoformat() if hasattr(fecha_cierre, "isoformat") else str(fecha_cierre),
+                })
+
+            cursor.execute(
+                """
+                SELECT cm.id_usuario_cierre AS id_usuario,
+                       u.nombre AS mozo,
+                       cm.metodo_pago,
+                       COUNT(*) AS cantidad,
+                       COALESCE(SUM(cm.total_consumido), 0) AS total_consumido,
+                       COALESCE(SUM(cm.monto_cobrado), 0) AS monto_cobrado,
+                       COALESCE(SUM(cm.vuelto), 0) AS vuelto
+                FROM cierres_mesa cm
+                JOIN usuarios u ON u.id_usuario = cm.id_usuario_cierre
+                WHERE u.rol = 'mozo'
+                  AND DATE(cm.created_at) BETWEEN %s AND %s
+                GROUP BY cm.id_usuario_cierre, u.nombre, cm.metodo_pago
+                ORDER BY u.nombre ASC, total_consumido DESC
+                """,
+                (fecha_inicio, fecha_fin),
+            )
+            arqueo = [
+                {
+                    "id_usuario": int(row["id_usuario"]),
+                    "mozo": row["mozo"],
+                    "metodo_pago": row["metodo_pago"],
+                    "cantidad": int(row["cantidad"]),
+                    "total_consumido": float(row["total_consumido"] or 0),
+                    "monto_cobrado": float(row["monto_cobrado"] or 0),
+                    "vuelto": float(row["vuelto"] or 0),
+                }
+                for row in cursor.fetchall()
+            ]
+
         # Si en todo el período no hubo ninguna actividad, no listamos el roster
         # entero en cero (se leería como "no hay datos"). Devolvemos lista vacía.
         hay_actividad = bool(cierres or entregas or llamados)
@@ -1034,27 +1104,76 @@ def reporte_por_mozo(
                 "fecha_fin": fecha_fin.isoformat(),
                 "mozos": filas,
                 "totales": totales,
+                "registro_cobros": registro_cobros,
+                "arqueo": arqueo,
             }
 
         title = "Maven Burger - Reporte por mozo"
         subtitle = f"Periodo: {fecha_inicio} al {fecha_fin}"
-        sections = [{
-            "title": "RENDIMIENTO POR MOZO",
-            "headers": [
-                "Mozo", "Rol", "Mesas cerradas", "Ventas cobradas",
-                "Ticket prom.", "Pedidos entregados", "Llamados atendidos",
-                "Resp. prom. (min)",
-            ],
-            "rows": [
-                [
-                    f["nombre"], f["rol"], f["mesas_cerradas"], f["ventas_cobradas"],
-                    f["ticket_promedio"], f["pedidos_entregados"], f["llamados_atendidos"],
-                    f["respuesta_promedio_min"] if f["respuesta_promedio_min"] is not None else "-",
-                ]
-                for f in filas
-            ] or [["Sin actividad en el periodo", "", "", "", "", "", "", ""]],
-            "money_cols": (4, 5),
-        }]
+        arqueo_export = {}
+        for item in arqueo:
+            key = item["id_usuario"]
+            if key not in arqueo_export:
+                arqueo_export[key] = {
+                    "mozo": item["mozo"],
+                    "efectivo": 0.0,
+                    "tarjeta": 0.0,
+                    "qr": 0.0,
+                    "otro": 0.0,
+                    "cantidad": 0,
+                    "monto_cobrado": 0.0,
+                    "vuelto": 0.0,
+                }
+            metodo = item["metodo_pago"] if item["metodo_pago"] in {"efectivo", "tarjeta", "qr"} else "otro"
+            arqueo_export[key][metodo] += item["total_consumido"]
+            arqueo_export[key]["cantidad"] += item["cantidad"]
+            arqueo_export[key]["monto_cobrado"] += item["monto_cobrado"]
+            arqueo_export[key]["vuelto"] += item["vuelto"]
+
+        sections = [
+            {
+                "title": "CONTROL DE COBROS DE MOZOS",
+                "headers": [
+                    "Mozo", "Mesas cerradas", "Ventas cobradas",
+                    "Ticket prom.", "Pedidos entregados", "Llamados atendidos",
+                    "Resp. prom. (min)",
+                ],
+                "rows": [
+                    [
+                        f["nombre"], f["mesas_cerradas"], f["ventas_cobradas"],
+                        f["ticket_promedio"], f["pedidos_entregados"], f["llamados_atendidos"],
+                        f["respuesta_promedio_min"] if f["respuesta_promedio_min"] is not None else "-",
+                    ]
+                    for f in filas
+                ] or [["Sin actividad en el periodo", "", "", "", "", "", ""]],
+                "money_cols": (3, 4),
+            },
+            {
+                "title": "REGISTRO DE COBROS",
+                "headers": ["Cierre", "Fecha", "Mozo", "Mesa", "Metodo", "Total", "Cobrado", "Vuelto"],
+                "rows": [
+                    [
+                        c["id_cierre"], c["created_at"], c["mozo"],
+                        f"Mesa {c['numero_mesa']}" if c["numero_mesa"] is not None else "-",
+                        c["metodo_pago"], c["total_consumido"], c["monto_cobrado"], c["vuelto"],
+                    ]
+                    for c in registro_cobros
+                ] or [["Sin cobros registrados", "", "", "", "", "", "", ""]],
+                "money_cols": (6, 7, 8),
+            },
+            {
+                "title": "ARQUEO INDIVIDUAL POR METODO",
+                "headers": ["Mozo", "Efectivo", "Tarjeta", "QR", "Otros", "Cierres", "Monto cobrado", "Vuelto"],
+                "rows": [
+                    [
+                        a["mozo"], a["efectivo"], a["tarjeta"], a["qr"], a["otro"],
+                        a["cantidad"], a["monto_cobrado"], a["vuelto"],
+                    ]
+                    for a in sorted(arqueo_export.values(), key=lambda row: row["monto_cobrado"], reverse=True)
+                ] or [["Sin datos de arqueo", "", "", "", "", "", "", ""]],
+                "money_cols": (2, 3, 4, 5, 7, 8),
+            },
+        ]
 
         filename = f"reporte_mozos_{fecha_inicio}_{fecha_fin}.{'pdf' if formato == 'pdf' else 'xlsx'}"
         if formato == "pdf":
