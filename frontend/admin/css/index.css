@@ -369,7 +369,6 @@
   margin-bottom: 18px;
   background: linear-gradient(90deg, #fff1f1 0%, #ffffff 58%);
   border: 1px solid #e9a6a6;
-  border-left: 6px solid #b42318;
   border-radius: var(--radius-md);
   box-shadow: 0 12px 28px rgba(180, 35, 24, 0.1);
 }

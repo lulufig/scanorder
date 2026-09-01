@@ -225,20 +225,31 @@
       if (!alerta) return;
 
       try {
-        const inventario = await fetchAPI("/inventario/", "GET");
-        const productos = Array.isArray(inventario) ? inventario : [];
+        const inventario = await fetchAPI("/inventario/?page=1&limit=1", "GET");
+        const resumen = inventario?.resumen || null;
+        const productos = Array.isArray(inventario)
+          ? inventario
+          : Array.isArray(inventario?.items)
+            ? inventario.items
+            : [];
         const criticos = productos
           .map(producto => ({ ...producto, estadoStock: normalizarEstadoStock(producto) }))
           .filter(producto => producto.estadoStock !== "OK");
+        const agotadosCount = resumen
+          ? Number(resumen.agotado) || 0
+          : criticos.filter(producto => producto.estadoStock === "AGOTADO").length;
+        const bajoMinimoCount = resumen
+          ? Number(resumen.bajo) || 0
+          : criticos.filter(producto => producto.estadoStock === "BAJO").length;
+        const total = resumen
+          ? Number(resumen.criticos) || (agotadosCount + bajoMinimoCount)
+          : criticos.length;
 
-        if (!criticos.length) {
+        if (!total) {
           alerta.hidden = true;
           return;
         }
 
-        const agotados = criticos.filter(producto => producto.estadoStock === "AGOTADO");
-        const bajoMinimo = criticos.filter(producto => producto.estadoStock === "BAJO");
-        const total = criticos.length;
         const title = document.getElementById("stock-alert-title");
         const metrics = document.getElementById("stock-alert-metrics");
 
@@ -249,11 +260,11 @@
         if (metrics) {
           metrics.innerHTML = `
             <div class="stock-alert-metric is-danger">
-              <strong>${agotados.length}</strong>
+              <strong>${agotadosCount}</strong>
               <span>Agotados</span>
             </div>
             <div class="stock-alert-metric">
-              <strong>${bajoMinimo.length}</strong>
+              <strong>${bajoMinimoCount}</strong>
               <span>Bajo mínimo</span>
             </div>
           `;
