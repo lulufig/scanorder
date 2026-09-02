@@ -1264,20 +1264,32 @@
             </div>
           </div>
           <div class="mozos-resumen">
-            <div class="mozo-kpi">
-              <span>Ventas cobradas</span>
+            <div class="mozo-kpi mozo-kpi-primary">
+              <div class="mozo-kpi-head">
+                <span class="mozo-kpi-icon"><i data-lucide="wallet-cards"></i></span>
+                <span>Ventas cobradas</span>
+              </div>
               <strong>${formatPrecio(t.ventas_cobradas)}</strong>
             </div>
             <div class="mozo-kpi">
-              <span>Mesas cerradas</span>
+              <div class="mozo-kpi-head">
+                <span class="mozo-kpi-icon"><i data-lucide="layout-grid"></i></span>
+                <span>Mesas cerradas</span>
+              </div>
               <strong>${t.mesas_cerradas}</strong>
             </div>
             <div class="mozo-kpi">
-              <span>Cobros registrados</span>
+              <div class="mozo-kpi-head">
+                <span class="mozo-kpi-icon"><i data-lucide="receipt-text"></i></span>
+                <span>Cobros registrados</span>
+              </div>
               <strong>${registroVisibleCount}</strong>
             </div>
             <div class="mozo-kpi mozo-kpi-destacado">
-              <span>Ticket promedio</span>
+              <div class="mozo-kpi-head">
+                <span class="mozo-kpi-icon"><i data-lucide="badge-dollar-sign"></i></span>
+                <span>Ticket promedio</span>
+              </div>
               <strong>${t.mesas_cerradas ? formatPrecio(ticketPromedioGeneral) : "—"}</strong>
             </div>
           </div>
@@ -1290,26 +1302,41 @@
             </div>
           </div>
           <div class="mozos-caja-grid">
-            <div class="mozos-caja-total">
-              <span>Total general</span>
+            <div class="mozos-caja-total mozos-caja-primary">
+              <div class="mozo-kpi-head">
+                <span class="mozo-kpi-icon"><i data-lucide="circle-dollar-sign"></i></span>
+                <span>Total general</span>
+              </div>
               <strong>${formatPrecio(arqueoFinal.total)}</strong>
               <small>${t.mesas_cerradas} mesa${t.mesas_cerradas === 1 ? "" : "s"} cerrada${t.mesas_cerradas === 1 ? "" : "s"}</small>
             </div>
             <div class="mozos-caja-metodos">
               <div>
-                <span>Efectivo esperado</span>
+                <div class="mozo-kpi-head">
+                  <span class="mozo-kpi-icon"><i data-lucide="banknote"></i></span>
+                  <span>Efectivo esperado</span>
+                </div>
                 <strong>${formatPrecio(arqueoFinal.efectivo)}</strong>
               </div>
               <div>
-                <span>Tarjeta</span>
+                <div class="mozo-kpi-head">
+                  <span class="mozo-kpi-icon"><i data-lucide="credit-card"></i></span>
+                  <span>Tarjeta</span>
+                </div>
                 <strong>${formatPrecio(arqueoFinal.tarjeta)}</strong>
               </div>
               <div>
-                <span>QR</span>
+                <div class="mozo-kpi-head">
+                  <span class="mozo-kpi-icon"><i data-lucide="qr-code"></i></span>
+                  <span>QR</span>
+                </div>
                 <strong>${formatPrecio(arqueoFinal.qr)}</strong>
               </div>
               <div>
-                <span>Otros</span>
+                <div class="mozo-kpi-head">
+                  <span class="mozo-kpi-icon"><i data-lucide="circle-ellipsis"></i></span>
+                  <span>Otros</span>
+                </div>
                 <strong>${formatPrecio(arqueoFinal.otros)}</strong>
               </div>
             </div>
@@ -1341,11 +1368,16 @@
                   <tbody>
                     ${arqueos.map(item => `
                       <tr>
-                        <td><strong>${escapeHtml(item.mozo)}</strong></td>
-                        <td class="num">${formatPrecio(item.metodos.efectivo)}</td>
-                        <td class="num">${formatPrecio(item.metodos.tarjeta)}</td>
-                        <td class="num">${formatPrecio(item.metodos.qr)}</td>
-                        <td class="num">${formatPrecio(item.metodos.otro)}</td>
+                        <td>
+                          <div class="mozo-arqueo-user">
+                            <span>${escapeHtml(String(item.mozo || "M").charAt(0).toUpperCase())}</span>
+                            <strong>${escapeHtml(item.mozo)}</strong>
+                          </div>
+                        </td>
+                        <td class="num metodo-efectivo">${formatPrecio(item.metodos.efectivo)}</td>
+                        <td class="num metodo-tarjeta">${formatPrecio(item.metodos.tarjeta)}</td>
+                        <td class="num metodo-qr">${formatPrecio(item.metodos.qr)}</td>
+                        <td class="num metodo-otros">${formatPrecio(item.metodos.otro)}</td>
                         <td class="num">${item.cantidad}</td>
                         <td class="num">${formatPrecio(item.cobrado)}</td>
                         <td class="num">${formatPrecio(item.vuelto)}</td>
