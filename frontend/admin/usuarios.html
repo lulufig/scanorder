@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
@@ -28,19 +28,43 @@
   <aside class="sidebar">
     <div class="sidebar-logo">ScanOrder</div>
 
-    <div class="sidebar-section" data-role="admin">Reportes</div>
-    <a href="index.html" class="sidebar-link" data-role="admin"><i data-lucide="layout-dashboard"></i>Dashboard</a>
-    <a href="reportes.html" class="sidebar-link" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
-    <div class="sidebar-section" data-role="admin">Control</div>
-    <a href="control-mozos.html" class="sidebar-link" data-role="admin"><i data-lucide="badge-dollar-sign"></i>Control de mozos</a>
-    <a href="caja.html"       class="sidebar-link"><i data-lucide="wallet"></i>Caja</a>
+    
+    <div class="sidebar-group" data-role="admin">
+      <button class="sidebar-section sidebar-group-toggle" type="button" aria-expanded="false">
+        <span>Reportes</span>
+        <i data-lucide="chevron-down"></i>
+      </button>
+      <div class="sidebar-group-links">
+        <a href="index.html" class="sidebar-link" data-role="admin"><i data-lucide="layout-dashboard"></i>Dashboard</a>
+        <a href="reportes.html" class="sidebar-link" data-role="admin"><i data-lucide="bar-chart-3"></i>Reportes</a>
+      </div>
+    </div>
 
-    <div class="sidebar-section">Gestión</div>
-    <a href="mesas.html"      class="sidebar-link"><i data-lucide="layout-grid"></i>Mesas</a>
-    <a href="mesas-qr.html"   class="sidebar-link" data-role="admin"><i data-lucide="qr-code"></i>QR Mesas</a>
-    <a href="productos.html"  class="sidebar-link" data-role="admin"><i data-lucide="utensils"></i>Productos</a>
-    <a href="inventario.html" class="sidebar-link" data-role="admin"><i data-lucide="package"></i>Inventario</a>
-    <a href="usuarios.html"   class="sidebar-link active" data-role="admin"><i data-lucide="users"></i>Usuarios</a>
+    <div class="sidebar-group">
+      <button class="sidebar-section sidebar-group-toggle" type="button" aria-expanded="false">
+        <span>Control</span>
+        <i data-lucide="chevron-down"></i>
+      </button>
+      <div class="sidebar-group-links">
+        <a href="control-mozos.html" class="sidebar-link" data-role="admin"><i data-lucide="badge-dollar-sign"></i>Control de mozos</a>
+        <a href="caja.html" class="sidebar-link"><i data-lucide="wallet"></i>Caja</a>
+      </div>
+    </div>
+
+    <div class="sidebar-group">
+      <button class="sidebar-section sidebar-group-toggle" type="button" aria-expanded="false">
+        <span>Gestión</span>
+        <i data-lucide="chevron-down"></i>
+      </button>
+      <div class="sidebar-group-links">
+        <a href="mesas.html" class="sidebar-link"><i data-lucide="layout-grid"></i>Mesas</a>
+        <a href="mesas-qr.html" class="sidebar-link" data-role="admin"><i data-lucide="qr-code"></i>QR Mesas</a>
+        <a href="productos.html" class="sidebar-link" data-role="admin"><i data-lucide="utensils"></i>Productos</a>
+        <a href="inventario.html" class="sidebar-link" data-role="admin"><i data-lucide="package"></i>Inventario</a>
+        <a href="usuarios.html" class="sidebar-link active" data-role="admin"><i data-lucide="users"></i>Usuarios</a>
+      </div>
+    </div>
+
 
     <div class="sidebar-bottom">
       <div class="user-info">
@@ -259,3 +283,4 @@
   <script src="js/usuarios.js" defer></script>
 </body>
 </html>
+

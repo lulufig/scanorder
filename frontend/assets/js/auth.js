@@ -150,8 +150,92 @@ function applyRoleVisibility() {
     rolLabel.textContent = role === ROLES.MOZO ? "Mozo" : "Administración";
   }
 
-  if (role === ROLES.ADMIN) return;
-  document.querySelectorAll('[data-role="admin"]').forEach((el) => {
-    el.style.display = "none";
+  if (role !== ROLES.ADMIN) {
+    document.querySelectorAll('[data-role="admin"]').forEach((el) => {
+      el.style.display = "none";
+    });
+    setupMozoSidebar();
+    return;
+  }
+
+  initSidebarGroups();
+}
+
+function setupMozoSidebar() {
+  document.body.classList.add("sidebar-role-mozo");
+
+  const groups = [...document.querySelectorAll(".sidebar-group")];
+  const gestionGroup = groups.find((group) =>
+    group.querySelector(".sidebar-group-toggle span")?.textContent?.trim().toLowerCase().includes("gest")
+  );
+  const controlGroup = groups.find((group) =>
+    group.querySelector(".sidebar-group-toggle span")?.textContent?.trim().toLowerCase() === "control"
+  );
+
+  if (!gestionGroup) return;
+
+  const gestionLinks = gestionGroup.querySelector(".sidebar-group-links");
+  const cajaLink = document.querySelector('.sidebar-link[href="caja.html"]');
+  if (gestionLinks && cajaLink && cajaLink.parentElement !== gestionLinks) {
+    gestionLinks.appendChild(cajaLink);
+  }
+
+  gestionGroup.classList.add("is-open");
+  gestionGroup.dataset.mozoMenu = "true";
+  const gestionToggle = gestionGroup.querySelector(".sidebar-group-toggle");
+  if (gestionToggle) gestionToggle.setAttribute("aria-expanded", "true");
+
+  if (controlGroup) {
+    controlGroup.style.display = "none";
+  }
+}
+
+function initSidebarGroups() {
+  const groups = [...document.querySelectorAll(".sidebar-group")]
+    .filter((group) => group.offsetParent !== null && group.dataset.mozoMenu !== "true");
+  if (!groups.length) return;
+  const storageKey = "scanorder_sidebar_groups_open";
+  let savedGroups = null;
+  try {
+    savedGroups = JSON.parse(localStorage.getItem(storageKey) || "null");
+  } catch (_) {
+    localStorage.removeItem(storageKey);
+  }
+
+  const saveOpenGroups = () => {
+    const openGroups = {};
+    groups.forEach((group) => {
+      const label = group.querySelector(".sidebar-group-toggle span")?.textContent?.trim();
+      if (label) openGroups[label] = group.classList.contains("is-open");
+    });
+    localStorage.setItem(storageKey, JSON.stringify(openGroups));
+  };
+
+  groups.forEach((group) => {
+    const toggle = group.querySelector(".sidebar-group-toggle");
+    if (!toggle) return;
+
+    const label = toggle.querySelector("span")?.textContent?.trim();
+    const hasActiveLink = Boolean(group.querySelector(".sidebar-link.active"));
+    const hasSavedState = savedGroups && label && Object.prototype.hasOwnProperty.call(savedGroups, label);
+    const shouldOpen = hasActiveLink || (hasSavedState ? savedGroups[label] : false);
+
+    if (shouldOpen) {
+      group.classList.add("is-open");
+      toggle.setAttribute("aria-expanded", "true");
+    } else {
+      group.classList.remove("is-open");
+      toggle.setAttribute("aria-expanded", "false");
+    }
+
+    if (toggle.dataset.sidebarReady === "true") return;
+    toggle.dataset.sidebarReady = "true";
+
+    toggle.addEventListener("click", () => {
+      const isOpen = !group.classList.contains("is-open");
+      group.classList.toggle("is-open", isOpen);
+      toggle.setAttribute("aria-expanded", String(isOpen));
+      saveOpenGroups();
+    });
   });
 }

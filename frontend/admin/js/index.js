@@ -42,7 +42,7 @@
       currency: "ARS",
       maximumFractionDigits: 0,
     });
-    const META_VENTAS_DIARIA = 120000;
+    const META_VENTAS_DIARIA = 1000000;
     let ventasChartData = [];
 
     async function cargarDashboard() {
