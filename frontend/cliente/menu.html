@@ -266,6 +266,13 @@
     </div>
   </div>
 
+  <script>
+    // Producción (dominio público del túnel): la API vive en su propio subdominio.
+    // Local (localhost / IP LAN): config.js se autoresuelve, no se toca.
+    if (location.hostname === "menu.scanorder.tech") {
+      window.SCANORDER_API_URL = "https://api.scanorder.tech";
+    }
+  </script>
   <script src="../assets/js/config.js"></script>
   <script src="../assets/js/api.js"></script>
 
